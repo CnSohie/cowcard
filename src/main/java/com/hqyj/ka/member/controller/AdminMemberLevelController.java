@@ -5,7 +5,9 @@ import com.hqyj.ka.common.ApiResponse;
 import com.hqyj.ka.member.entity.MemberLevel;
 import com.hqyj.ka.member.entity.MemberLevelPrice;
 import com.hqyj.ka.member.service.MemberLevelService;
+import com.hqyj.ka.order.dto.OrderDtos.SensitiveAuthRequest;
 import com.hqyj.ka.security.RateLimitFilter;
+import com.hqyj.ka.user.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,9 +22,13 @@ import java.util.List;
 public class AdminMemberLevelController {
     private final MemberLevelService levelService;
     private final AuditService auditService;
+    private final AuthService authService;
 
-    public record SavePriceRequest(Long productId, BigDecimal price) {}
-    public record AssignRequest(Long levelId) {}
+    public record SaveLevelRequest(Long id, String name, String slug, String icon, BigDecimal discountRate,
+                                   BigDecimal rechargeThreshold, BigDecimal spendThreshold, int sortWeight,
+                                   boolean defaultLevel, boolean enabled, String password, String totpCode) {}
+    public record SavePriceRequest(Long productId, BigDecimal price, String password, String totpCode) {}
+    public record AssignRequest(Long levelId, String password, String totpCode) {}
 
     @GetMapping
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('member-level:manage','member:manage')")
@@ -32,16 +38,32 @@ public class AdminMemberLevelController {
 
     @PostMapping
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('member-level:manage','member:manage')")
-    public ApiResponse<MemberLevel> save(@RequestBody MemberLevel req, HttpServletRequest http) {
-        MemberLevel saved = levelService.saveLevel(req);
+    public ApiResponse<MemberLevel> save(@RequestBody SaveLevelRequest req, HttpServletRequest http) {
+        authService.verifySensitive((Long) http.getAttribute("uid"), req.password(), req.totpCode(),
+                "member-level-save", RateLimitFilter.clientIp(http));
+        MemberLevel level = new MemberLevel();
+        level.setId(req.id());
+        level.setName(req.name());
+        level.setSlug(req.slug());
+        level.setIcon(req.icon());
+        level.setDiscountRate(req.discountRate());
+        level.setRechargeThreshold(req.rechargeThreshold());
+        level.setSpendThreshold(req.spendThreshold());
+        level.setSortWeight(req.sortWeight());
+        level.setDefaultLevel(req.defaultLevel());
+        level.setEnabled(req.enabled());
+        MemberLevel saved = levelService.saveLevel(level);
         auditService.record(String.valueOf(http.getAttribute("uname")), "MEMBER_LEVEL_SAVE",
                 "level:" + saved.getId(), RateLimitFilter.clientIp(http), saved.getSlug());
         return ApiResponse.ok(saved);
     }
 
-    @DeleteMapping("/{id}")
+    @PostMapping("/{id}/delete")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('member-level:manage','member:manage')")
-    public ApiResponse<Void> delete(@PathVariable Long id, HttpServletRequest http) {
+    public ApiResponse<Void> delete(@PathVariable Long id, @RequestBody SensitiveAuthRequest req,
+                                    HttpServletRequest http) {
+        authService.verifySensitive((Long) http.getAttribute("uid"), req.password(), req.totpCode(),
+                "member-level-delete", RateLimitFilter.clientIp(http));
         levelService.deleteLevel(id);
         auditService.record(String.valueOf(http.getAttribute("uname")), "MEMBER_LEVEL_DELETE",
                 "level:" + id, RateLimitFilter.clientIp(http), null);
@@ -50,7 +72,9 @@ public class AdminMemberLevelController {
 
     @PostMapping("/backfill-default")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('member-level:manage','member:manage')")
-    public ApiResponse<Void> backfill(HttpServletRequest http) {
+    public ApiResponse<Void> backfill(@RequestBody SensitiveAuthRequest req, HttpServletRequest http) {
+        authService.verifySensitive((Long) http.getAttribute("uid"), req.password(), req.totpCode(),
+                "member-level-backfill", RateLimitFilter.clientIp(http));
         levelService.backfillDefault();
         auditService.record(String.valueOf(http.getAttribute("uname")), "MEMBER_LEVEL_BACKFILL",
                 "members", RateLimitFilter.clientIp(http), null);
@@ -61,6 +85,8 @@ public class AdminMemberLevelController {
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('member-level:manage','member:manage')")
     public ApiResponse<Void> assign(@PathVariable Long memberId, @RequestBody AssignRequest req,
                                     HttpServletRequest http) {
+        authService.verifySensitive((Long) http.getAttribute("uid"), req.password(), req.totpCode(),
+                "member-level-assign", RateLimitFilter.clientIp(http));
         levelService.assignLevel(memberId, req.levelId());
         auditService.record(String.valueOf(http.getAttribute("uname")), "MEMBER_LEVEL_ASSIGN",
                 "member:" + memberId, RateLimitFilter.clientIp(http), "level:" + req.levelId());
@@ -77,16 +103,21 @@ public class AdminMemberLevelController {
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('member-level:manage','member:manage')")
     public ApiResponse<MemberLevelPrice> savePrice(@PathVariable Long levelId, @RequestBody SavePriceRequest req,
                                                    HttpServletRequest http) {
+        authService.verifySensitive((Long) http.getAttribute("uid"), req.password(), req.totpCode(),
+                "member-level-price-save", RateLimitFilter.clientIp(http));
         MemberLevelPrice saved = levelService.savePrice(levelId, req.productId(), req.price());
         auditService.record(String.valueOf(http.getAttribute("uname")), "MEMBER_LEVEL_PRICE_SAVE",
                 "level:" + levelId, RateLimitFilter.clientIp(http), "product:" + req.productId());
         return ApiResponse.ok(saved);
     }
 
-    @DeleteMapping("/{levelId}/prices/{productId}")
+    @PostMapping("/{levelId}/prices/{productId}/delete")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('member-level:manage','member:manage')")
     public ApiResponse<Void> deletePrice(@PathVariable Long levelId, @PathVariable Long productId,
+                                         @RequestBody SensitiveAuthRequest req,
                                          HttpServletRequest http) {
+        authService.verifySensitive((Long) http.getAttribute("uid"), req.password(), req.totpCode(),
+                "member-level-price-delete", RateLimitFilter.clientIp(http));
         levelService.deletePrice(levelId, productId);
         auditService.record(String.valueOf(http.getAttribute("uname")), "MEMBER_LEVEL_PRICE_DELETE",
                 "level:" + levelId, RateLimitFilter.clientIp(http), "product:" + productId);

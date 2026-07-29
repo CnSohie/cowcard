@@ -8,10 +8,13 @@ import com.hqyj.ka.common.ErrorCode;
 import com.hqyj.ka.common.util.OrderNoGenerator;
 import com.hqyj.ka.coupon.service.CouponService;
 import com.hqyj.ka.config.AppProperties;
+import com.hqyj.ka.catalog.service.InventoryService;
 import com.hqyj.ka.order.dto.OrderDtos.CreateOrderRequest;
 import com.hqyj.ka.order.dto.OrderDtos.OrderView;
+import com.hqyj.ka.order.dto.OrderDtos.PresaleVoucherClaimResponse;
 import com.hqyj.ka.order.entity.Order;
 import com.hqyj.ka.order.entity.OrderDeliveryRecord;
+import com.hqyj.ka.order.entity.PresaleVoucher;
 import com.hqyj.ka.order.event.OrderPaidEvent;
 import com.hqyj.ka.order.repo.OrderDeliveryRecordRepository;
 import com.hqyj.ka.order.repo.OrderRepository;
@@ -50,6 +53,7 @@ public class OrderService {
     private final OrderDeliveryRecordRepository deliveryRecordRepository;
     private final ProductRepository productRepository;
     private final CardService cardService;
+    private final InventoryService inventoryService;
     private final PasswordEncoder passwordEncoder;
     private final CouponService couponService;
     private final AppProperties props;
@@ -144,16 +148,6 @@ public class OrderService {
             order.setDiscountAmount(order.getDiscountAmount().add(discount));
             baseAmount = baseAmount.subtract(discount);
         }
-        if (Boolean.TRUE.equals(req.useWallet()) && memberId != null) {
-            BigDecimal walletUse = walletService.balance(memberId)
-                    .min(baseAmount.subtract(new BigDecimal("0.01"))).max(BigDecimal.ZERO);
-            if (walletUse.signum() > 0) {
-                walletService.debit(memberId, walletUse, WalletTxn.Type.PURCHASE,
-                        "ORDER", null, "下单钱包抵扣 " + order.getOrderNo());
-                order.setWalletPaidAmount(walletUse);
-                baseAmount = baseAmount.subtract(walletUse);
-            }
-        }
         order.setAmount(baseAmount);
         order.setContact(req.contact().trim().toLowerCase());
         if (req.queryPassword() != null && !req.queryPassword().isBlank()) {
@@ -165,9 +159,20 @@ public class OrderService {
         order.setExpireAt(LocalDateTime.now().plusMinutes(expireMinutes()));
         order.setBuyerIp(buyerIp);
         order = orderRepository.save(order);
-        String presaleToken = null;
-        if (presale) presaleToken = presaleVoucherService.createForOrder(order, product).token();
-        return new CreatedOrder(order, queryToken, presaleToken);
+        if (presale) {
+            presaleVoucherService.createForOrder(order, product);
+        }
+        if (Boolean.TRUE.equals(req.useWallet()) && memberId != null) {
+            BigDecimal walletUse = walletService.balance(memberId)
+                    .min(baseAmount.subtract(new BigDecimal("0.01"))).max(BigDecimal.ZERO);
+            if (walletUse.signum() > 0) {
+                walletService.debit(memberId, walletUse, WalletTxn.Type.PURCHASE,
+                        "ORDER", order.getId(), "下单钱包抵扣 " + order.getOrderNo());
+                order.setWalletPaidAmount(walletUse);
+                order.setAmount(baseAmount.subtract(walletUse));
+            }
+        }
+        return new CreatedOrder(order, queryToken, null);
     }
 
     /**
@@ -210,6 +215,7 @@ public class OrderService {
 
         int updated = orderRepository.casStatus(order.getId(), Order.Status.EXPIRED, Order.Status.PAID);
         if (updated != 1) return false; // 非 PENDING/EXPIRED(已支付/已关闭等),不可补
+        restoreReleasedHoldsForManualPaid(order);
         orderRepository.findById(order.getId()).ifPresent(o -> {
             o.setPaidAt(LocalDateTime.now());
             o.setPaidChannel("MANUAL");
@@ -237,6 +243,7 @@ public class OrderService {
             evictProductCache();
         }
         if (updated == 1) refundWalletHold(order, "订单关闭退回钱包抵扣");
+        if (updated == 1) releaseCouponHold(order);
         if (updated == 1 && order.getDeliveryMode() == Order.DeliveryMode.PRESALE_VOUCHER) {
             presaleVoucherService.voidByOrder(order.getId());
         }
@@ -246,7 +253,7 @@ public class OrderService {
     /** 撤销充值:仅充值单;已入账则从会员可用余额扣回,余额不足时拒绝避免负数。 */
     @Transactional
     public boolean refundRechargeManually(String orderNo) {
-        Order order = orderRepository.findByOrderNo(orderNo)
+        Order order = orderRepository.lockByOrderNo(orderNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
         if (order.getOrderType() != Order.OrderType.RECHARGE) {
             throw new BusinessException(ErrorCode.ORDER_STATE_INVALID, "只有充值订单可以撤销充值");
@@ -265,7 +272,7 @@ public class OrderService {
     /** 管理员退款到会员钱包:支持部分多次退款,累计不超过订单实付总额。 */
     @Transactional
     public void refundToWallet(String orderNo, BigDecimal amount, String actor, String note) {
-        Order order = orderRepository.findByOrderNo(orderNo)
+        Order order = orderRepository.lockByOrderNo(orderNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
         if (order.getMemberId() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "游客订单不支持退款到钱包");
@@ -276,7 +283,7 @@ public class OrderService {
         if (amount == null || amount.scale() > 2 || amount.signum() <= 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "退款金额无效");
         }
-        BigDecimal paidTotal = order.getAmount().add(order.getWalletPaidAmount());
+        BigDecimal paidTotal = paidTotal(order);
         BigDecimal refunded = order.getWalletRefundedAmount() == null ? BigDecimal.ZERO : order.getWalletRefundedAmount();
         if (refunded.add(amount).compareTo(paidTotal) > 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "退款累计金额不能超过订单实付金额");
@@ -289,7 +296,7 @@ public class OrderService {
     /** 商品单补发:支付已确认但首次发卡失败时,补卡后从 PAID 重试分配卡密。 */
     @Transactional
     public boolean retryDeliverGoodsManually(String orderNo) {
-        Order order = orderRepository.findByOrderNo(orderNo)
+        Order order = orderRepository.lockByOrderNo(orderNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
         if (order.getOrderType() != Order.OrderType.GOODS) {
             throw new BusinessException(ErrorCode.ORDER_STATE_INVALID, "只有商品订单可以补发卡密");
@@ -302,16 +309,15 @@ public class OrderService {
         order.setStatus(Order.Status.DELIVERED);
         order.setDeliveredAt(LocalDateTime.now());
         syncProductStock(order.getProductId());
-        memberLevelService.addSpend(order.getMemberId(), order.getAmount().add(order.getWalletPaidAmount()));
-        commissionService.onSpend(order.getMemberId(), order.getAmount(),
-                "ORDER", order.getId(), "人工补发 " + order.getOrderNo());
+        BigDecimal paidTotal = paidTotal(order);
+        recordSpendSideEffects(order, paidTotal, "人工补发 " + order.getOrderNo());
         return true;
     }
 
     /** 人工发货:已支付商品单 → DELIVERED,交付内容写入订单快照供买家查单查看。 */
     @Transactional
     public boolean manualDeliver(String orderNo, String content, String staffNote, String operator) {
-        Order order = orderRepository.findByOrderNo(orderNo)
+        Order order = orderRepository.lockByOrderNo(orderNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
         if (order.getOrderType() != Order.OrderType.GOODS
                 || order.getDeliveryMode() != Order.DeliveryMode.MANUAL) {
@@ -331,9 +337,8 @@ public class OrderService {
         record.setStaffNote(staffNote == null ? null : staffNote.trim());
         record.setOperator(operator);
         deliveryRecordRepository.save(record);
-        memberLevelService.addSpend(order.getMemberId(), order.getAmount().add(order.getWalletPaidAmount()));
-        commissionService.onSpend(order.getMemberId(), order.getAmount(),
-                "ORDER", order.getId(), "人工发货 " + order.getOrderNo());
+        BigDecimal paidTotal = paidTotal(order);
+        recordSpendSideEffects(order, paidTotal, "人工发货 " + order.getOrderNo());
         return true;
     }
 
@@ -365,7 +370,7 @@ public class OrderService {
                     "ORDER", order.getId(), "在线充值 " + order.getOrderNo());
             order.setStatus(Order.Status.DELIVERED);
             order.setDeliveredAt(LocalDateTime.now());
-            memberLevelService.addRecharge(order.getMemberId(), order.getAmount());
+            recordRechargeSideEffects(order);
             return;
         }
 
@@ -377,7 +382,7 @@ public class OrderService {
             presaleVoucherService.activate(order.getId());
             order.setStatus(Order.Status.DELIVERED);
             order.setDeliveredAt(LocalDateTime.now());
-            memberLevelService.addSpend(order.getMemberId(), order.getAmount().add(order.getWalletPaidAmount()));
+            recordSpendSideEffects(order, paidTotal(order), "预售凭证 " + order.getOrderNo());
             return;
         }
 
@@ -387,9 +392,8 @@ public class OrderService {
             order.setDeliveredAt(LocalDateTime.now());
             syncProductStock(order.getProductId());
             // 推广佣金:仅商品消费产生,随发卡成功结算一次(重试补发不会重复,因状态已 DELIVERED)
-            memberLevelService.addSpend(order.getMemberId(), order.getAmount().add(order.getWalletPaidAmount()));
-            commissionService.onSpend(order.getMemberId(), order.getAmount(),
-                    "ORDER", order.getId(), "好友下单 " + order.getOrderNo());
+            BigDecimal paidTotal = paidTotal(order);
+            recordSpendSideEffects(order, paidTotal, "好友下单 " + order.getOrderNo());
         } catch (BusinessException e) {
             // 库存被并发买空:订单保持 PAID,后台告警人工处理(补卡后可重触发)
             log.error("deliver failed for order {}: {}", order.getOrderNo(), e.getMessage());
@@ -399,11 +403,25 @@ public class OrderService {
     /** 游客查单:订单号 + 联系方式(+ 可选查询密码)双凭证,防遍历。 */
     @Transactional(readOnly = true)
     public OrderView query(String orderNo, String contact, String queryPassword, String queryToken) {
-        Order order = orderRepository.findByOrderNo(orderNo)
-                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+        Order order = authorizeOrder(orderRepository.findByOrderNo(orderNo)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND)), contact, queryPassword, queryToken);
+        return toView(order, order.getStatus() == Order.Status.DELIVERED);
+    }
+
+    @Transactional
+    public PresaleVoucherClaimResponse claimPresaleVoucherToken(String orderNo, String contact,
+                                                               String queryPassword, String queryToken) {
+        Order order = authorizeOrder(orderRepository.lockByOrderNo(orderNo)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND)), contact, queryPassword, queryToken);
+        PresaleVoucherService.IssuedVoucher issued = presaleVoucherService.issueForPaidOrder(order);
+        PresaleVoucher voucher = issued.voucher();
+        return new PresaleVoucherClaimResponse(issued.token(), voucher.getTokenHint(), voucher.getStatus().name());
+    }
+
+    private Order authorizeOrder(Order order, String contact, String queryPassword, String queryToken) {
         if (queryToken != null && !queryToken.isBlank()) {
             if (order.getQueryTokenHash() != null && passwordEncoder.matches(queryToken, order.getQueryTokenHash())) {
-                return toView(order, order.getStatus() == Order.Status.DELIVERED);
+                return order;
             }
             throw new BusinessException(ErrorCode.ORDER_NOT_FOUND);
         }
@@ -416,7 +434,7 @@ public class OrderService {
                 throw new BusinessException(ErrorCode.ORDER_NOT_FOUND);
             }
         }
-        return toView(order, order.getStatus() == Order.Status.DELIVERED);
+        return order;
     }
 
     private static String newQueryToken() {
@@ -431,22 +449,28 @@ public class OrderService {
     public void expireStaleOrders() {
         List<Order> stale = orderRepository.findTop200ByStatusAndExpireAtBefore(
                 Order.Status.PENDING, LocalDateTime.now());
+        int expired = 0;
+        boolean releasedAutoStock = false;
         for (Order order : stale) {
-            order.setStatus(Order.Status.EXPIRED);
+            if (orderRepository.casStatus(order.getId(), Order.Status.PENDING, Order.Status.EXPIRED) != 1) {
+                continue;
+            }
+            expired++;
             if (order.getOrderType() != Order.OrderType.RECHARGE
                     && order.getDeliveryMode() == Order.DeliveryMode.AUTO_CARD) { // 充值/人工单无库存可释放
                 productRepository.releaseStock(order.getProductId(), order.getQuantity());
+                releasedAutoStock = true;
             }
             if (order.getDeliveryMode() == Order.DeliveryMode.PRESALE_VOUCHER) {
                 presaleVoucherService.voidByOrder(order.getId());
             }
             refundWalletHold(order, "订单超时退回钱包抵扣");
+            releaseCouponHold(order);
         }
-        if (stale.stream().anyMatch(o -> o.getOrderType() != Order.OrderType.RECHARGE
-                && o.getDeliveryMode() == Order.DeliveryMode.AUTO_CARD)) {
+        if (releasedAutoStock) {
             evictProductCache();
         }
-        if (!stale.isEmpty()) log.info("expired {} stale orders", stale.size());
+        if (expired > 0) log.info("expired {} stale orders", expired);
     }
 
     /** 会员中心「我的订单」:仅本人;已交付的商品单附带卡密。 */
@@ -461,22 +485,24 @@ public class OrderService {
     public OrderView toView(Order order, boolean withCards) {
         boolean delivered = order.getStatus() == Order.Status.DELIVERED;
         boolean autoCard = order.getDeliveryMode() == Order.DeliveryMode.AUTO_CARD;
+        boolean manual = order.getDeliveryMode() == Order.DeliveryMode.MANUAL;
         List<String> cards = withCards && autoCard ? cardService.decryptForOrder(order.getId()) : List.of();
         String usageNote = withCards ? productRepository.findById(order.getProductId())
                 .map(Product::getUsageNote).orElse(null) : null;
-        String deliveryContent = withCards && !autoCard && delivered ? order.getManualDeliveryContent() : null;
+        String deliveryContent = withCards && manual && delivered ? order.getManualDeliveryContent() : null;
         var voucher = order.getDeliveryMode() == Order.DeliveryMode.PRESALE_VOUCHER
                 ? presaleVoucherService.findByOrder(order.getId()) : null;
+        boolean showVoucher = voucher != null && delivered;
         return new OrderView(order.getOrderNo(), order.getProductName(), order.getUnitPrice(),
                 order.getQuantity(), order.getAmount(), order.getDiscountAmount(), order.getWalletPaidAmount(),
                 order.getStatus().name(), order.getPaidChannel(),
                 order.getCreatedAt(), order.getExpireAt(), order.getPaidAt(), cards, usageNote,
                 order.getDeliveryMode().name(), order.getBuyerNote(), deliveryContent,
-                voucher == null ? null : voucher.getTokenHint(),
-                voucher == null ? null : voucher.getStatus().name(),
-                voucher == null ? null : voucher.getFulfillmentNote(),
-                voucher == null ? null : voucher.getPresaleStartAt(),
-                voucher == null ? null : voucher.getPresaleEndAt());
+                showVoucher ? voucher.getTokenHint() : null,
+                showVoucher ? voucher.getStatus().name() : null,
+                showVoucher ? voucher.getFulfillmentNote() : null,
+                showVoucher ? voucher.getPresaleStartAt() : null,
+                showVoucher ? voucher.getPresaleEndAt() : null);
     }
 
     private void refundWalletHold(Order order, String remark) {
@@ -484,7 +510,31 @@ public class OrderService {
                 && order.getWalletPaidAmount().signum() > 0) {
             walletService.credit(order.getMemberId(), order.getWalletPaidAmount(), WalletTxn.Type.WALLET_ORDER_REFUND,
                     "ORDER", order.getId(), remark + " " + order.getOrderNo());
-            order.setWalletPaidAmount(BigDecimal.ZERO);
+        }
+    }
+
+    private void releaseCouponHold(Order order) {
+        if (order.getCouponCode() != null && !order.getCouponCode().isBlank()) {
+            couponService.release(order.getCouponCode());
+        }
+    }
+
+    private void restoreReleasedHoldsForManualPaid(Order order) {
+        if (order.getMemberId() != null && order.getWalletPaidAmount() != null
+                && order.getWalletPaidAmount().signum() > 0) {
+            try {
+                walletService.debit(order.getMemberId(), order.getWalletPaidAmount(), WalletTxn.Type.PURCHASE,
+                        "ORDER", order.getId(), "过期订单补单重新扣回钱包抵扣 " + order.getOrderNo());
+            } catch (BusinessException e) {
+                if (e.getErrorCode() == ErrorCode.BALANCE_NOT_ENOUGH) {
+                    throw new BusinessException(ErrorCode.BALANCE_NOT_ENOUGH,
+                            "该超时订单的钱包抵扣已退回,但会员当前可用余额不足以重新扣回;请先让用户充值或人工调整余额后再补单");
+                }
+                throw e;
+            }
+        }
+        if (order.getCouponCode() != null && !order.getCouponCode().isBlank()) {
+            couponService.restoreUsage(order.getCouponCode());
         }
     }
 
@@ -493,11 +543,34 @@ public class OrderService {
         if (cache != null) cache.clear();
     }
 
+    private BigDecimal paidTotal(Order order) {
+        BigDecimal onlinePaid = order.getAmount() == null ? BigDecimal.ZERO : order.getAmount();
+        BigDecimal walletPaid = order.getWalletPaidAmount() == null ? BigDecimal.ZERO : order.getWalletPaidAmount();
+        return onlinePaid.add(walletPaid);
+    }
+
+    private void recordRechargeSideEffects(Order order) {
+        try {
+            memberLevelService.addRecharge(order.getMemberId(), order.getAmount());
+        } catch (RuntimeException e) {
+            log.warn("member recharge accounting failed, orderNo={}: {}", order.getOrderNo(), e.getMessage());
+        }
+    }
+
+    private void recordSpendSideEffects(Order order, BigDecimal paidTotal, String what) {
+        try {
+            memberLevelService.addSpend(order.getMemberId(), paidTotal);
+        } catch (RuntimeException e) {
+            log.warn("member spend accounting failed, orderNo={}: {}", order.getOrderNo(), e.getMessage());
+        }
+        try {
+            commissionService.onSpend(order.getMemberId(), paidTotal, "ORDER", order.getId(), what);
+        } catch (RuntimeException e) {
+            log.warn("commission accounting failed, orderNo={}: {}", order.getOrderNo(), e.getMessage());
+        }
+    }
+
     private void syncProductStock(Long productId) {
-        productRepository.findById(productId).ifPresent(product -> {
-            long available = cardService.availableCount(productId);
-            product.setStockCached(available > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) available);
-        });
-        evictProductCache();
+        inventoryService.syncAutoCardStock(productId);
     }
 }

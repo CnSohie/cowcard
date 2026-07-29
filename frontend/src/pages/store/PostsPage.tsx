@@ -4,6 +4,7 @@ import { BookOpen, ChevronLeft, ChevronRight, Eye, Lock, Pin, Search } from "luc
 import { mGet, type ArticleCard, type PageResult } from "../../lib/memberApi";
 import { money } from "../../lib/currency";
 import { useSeo } from "../../lib/seo";
+import { useI18n } from "../../lib/i18n";
 
 /** 文章列表:参考 handsome 主题的卡片流 + 分类筛选 + 搜索。 */
 
@@ -16,9 +17,11 @@ function fmtDate(s: string | null) {
 }
 
 export default function PostsPage() {
+  const { copy } = useI18n();
+  const t = copy.posts;
   useSeo({
-    title: "文章",
-    description: "教程、公告与付费专栏。",
+    title: t.title,
+    description: t.desc,
     canonical: `${window.location.origin}/posts`,
   });
 
@@ -67,14 +70,16 @@ export default function PostsPage() {
       {/* 头部 */}
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">文章</h1>
-          <p className="mt-1.5 text-sm text-ink/45">教程、公告与付费专栏{data ? ` · 共 ${data.total} 篇` : ""}</p>
+          <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">{t.title}</h1>
+          <p className="mt-1.5 text-sm text-ink/45">
+            {t.desc}{data ? ` · ${t.countPrefix ? `${t.countPrefix} ` : ""}${data.total} ${t.countSuffix}` : ""}
+          </p>
         </div>
         <div className="relative w-full sm:w-72">
           <Search size={15} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink/30" />
           <input
             className="input !rounded-full !pl-11"
-            placeholder="搜索标题 / 内容…"
+            placeholder={t.searchPh}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && apply({ q: input.trim(), page: 1 })}
@@ -85,7 +90,7 @@ export default function PostsPage() {
       {/* 分类 */}
       {cats.length > 0 && (
         <div className="mb-6 flex flex-wrap items-center gap-2">
-          <button className={category === "" ? "chip-on" : "chip"} onClick={() => apply({ category: "", page: 1 })}>全部</button>
+          <button className={category === "" ? "chip-on" : "chip"} onClick={() => apply({ category: "", page: 1 })}>{copy.common.all}</button>
           {cats.map((c) => (
             <button key={c} className={category === c ? "chip-on" : "chip"} onClick={() => apply({ category: c, page: 1 })}>
               {c}
@@ -96,11 +101,11 @@ export default function PostsPage() {
 
       {/* 列表 */}
       {loading ? (
-        <div className="card grid place-items-center py-24 text-ink/40">加载中…</div>
+        <div className="card grid place-items-center py-24 text-ink/40">{copy.common.loading}</div>
       ) : !data || data.items.length === 0 ? (
         <div className="card grid place-items-center gap-3 py-24 text-ink/40">
           <span className="grid h-14 w-14 place-items-center rounded-full bg-accent-soft"><BookOpen size={22} className="text-primary" /></span>
-          <p className="text-sm">{kw || category ? "没有找到匹配的文章" : "还没有文章,敬请期待"}</p>
+          <p className="text-sm">{kw || category ? t.noMatch : t.empty}</p>
         </div>
       ) : (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -120,12 +125,12 @@ export default function PostsPage() {
                 <div className="absolute left-3 top-3 flex gap-1.5">
                   {a.pinned && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-ink/70 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">
-                      <Pin size={10} /> 置顶
+                      <Pin size={10} /> {copy.common.pinned}
                     </span>
                   )}
                   {Number(a.price) > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/90 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">
-                      <Lock size={10} /> 付费
+                      <Lock size={10} /> {copy.common.paid}
                     </span>
                   )}
                 </div>
@@ -139,7 +144,7 @@ export default function PostsPage() {
                   <span>{fmtDate(a.publishedAt)}</span>
                   <span className="inline-flex items-center gap-1"><Eye size={11} /> {a.views}</span>
                   <span className="ml-auto font-bold text-ink">
-                    {Number(a.price) > 0 ? money(a.price) : <span className="text-primary">免费</span>}
+                    {Number(a.price) > 0 ? money(a.price) : <span className="text-primary">{copy.common.free}</span>}
                   </span>
                 </div>
               </div>
@@ -154,7 +159,7 @@ export default function PostsPage() {
           <button className="btn-ghost !px-3.5" disabled={page <= 1} onClick={() => apply({ page: page - 1 })}>
             <ChevronLeft size={15} />
           </button>
-          <span className="text-sm text-ink/50">第 {page} / {totalPages} 页</span>
+          <span className="text-sm text-ink/50">{t.page.replace("{page}", String(page)).replace("{total}", String(totalPages))}</span>
           <button className="btn-ghost !px-3.5" disabled={page >= totalPages} onClick={() => apply({ page: page + 1 })}>
             <ChevronRight size={15} />
           </button>

@@ -3,18 +3,19 @@ package com.hqyj.ka.common.util;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Base64;
 
-/** 订单号:yyyyMMddHHmmss + 3位序列 + 3位随机,单机唯一且不可预测遍历。 */
+/** 订单号:时间前缀 + 96-bit CSPRNG,兼顾排序可读性与防枚举。 */
 public final class OrderNoGenerator {
     private static final DateTimeFormatter F = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
-    private static final AtomicInteger SEQ = new AtomicInteger();
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private OrderNoGenerator() {}
 
     public static String next() {
-        int seq = SEQ.updateAndGet(v -> (v + 1) % 1000);
-        return LocalDateTime.now().format(F) + String.format("%03d", seq) + String.format("%03d", RANDOM.nextInt(1000));
+        byte[] bytes = new byte[12];
+        RANDOM.nextBytes(bytes);
+        return LocalDateTime.now().format(F)
+                + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }

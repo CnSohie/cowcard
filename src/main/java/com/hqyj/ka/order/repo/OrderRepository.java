@@ -3,10 +3,12 @@ package com.hqyj.ka.order.repo;
 import com.hqyj.ka.order.entity.Order;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -15,6 +17,10 @@ import java.util.Optional;
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Optional<Order> findByOrderNo(String orderNo);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from Order o where o.orderNo = :orderNo")
+    Optional<Order> lockByOrderNo(@Param("orderNo") String orderNo);
 
     /** 会员中心「我的订单」分页(含充值单)。 */
     Page<Order> findByMemberIdOrderByIdDesc(Long memberId, Pageable pageable);
@@ -39,6 +45,21 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     long countByStatusAndBuyerIp(Order.Status status, String buyerIp);
 
     List<Order> findByContactOrderByIdDesc(String contact);
+
+    @Query("select coalesce(sum(o.quantity), 0) from Order o " +
+           "where o.productId = :productId and o.orderType = com.hqyj.ka.order.entity.Order.OrderType.GOODS " +
+           "and o.deliveryMode = com.hqyj.ka.order.entity.Order.DeliveryMode.AUTO_CARD " +
+           "and o.status = com.hqyj.ka.order.entity.Order.Status.PENDING")
+    long sumPendingAutoCardQuantity(@Param("productId") Long productId);
+
+    @Query("select o from Order o where o.status in :statuses " +
+           "and exists (select 1 from PaymentTransaction t where t.orderId = o.id " +
+           "and t.status = com.hqyj.ka.payment.entity.PaymentTransaction.Status.SUCCESS) " +
+           "and (:kw is null or lower(o.orderNo) like lower(concat('%', :kw, '%')) " +
+           "or lower(o.contact) like lower(concat('%', :kw, '%')))")
+    Page<Order> findLatePaidOrders(@Param("statuses") List<Order.Status> statuses,
+                                   @Param("kw") String keyword,
+                                   Pageable pageable);
 
     /** 通用状态 CAS(人工关单等):只允许从 from 状态迁移,防止与支付回调竞态。 */
     @Modifying(clearAutomatically = true, flushAutomatically = true)

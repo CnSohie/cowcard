@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Lock, Zap } from "lucide-react";
 import { ApiError, post, setTokens } from "../../lib/api";
+import { CaptchaBox, captchaHeaders } from "../../lib/captcha";
 
 interface TokenResponse {
   accessToken: string; refreshToken: string; username: string;
@@ -16,14 +17,24 @@ export default function AdminLogin() {
   const [needTotp, setNeedTotp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaEnabled, setCaptchaEnabled] = useState(false);
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
+  const handleCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
+  const handleCaptchaEnabled = useCallback((enabled: boolean) => setCaptchaEnabled(enabled), []);
 
   async function login() {
     setBusy(true);
     setError("");
+    if (captchaEnabled && !captchaToken) {
+      setError("请先完成人机验证");
+      setBusy(false);
+      return;
+    }
     try {
       const r = await post<TokenResponse>("/auth/login", {
         username, password, totpCode: totpCode || undefined,
-      });
+      }, { headers: captchaHeaders(captchaToken) });
       setTokens(r.accessToken, r.refreshToken);
       localStorage.setItem("ka.auth", JSON.stringify(r.authorities));
       localStorage.setItem("ka.user", r.nickname || r.username);
@@ -36,6 +47,8 @@ export default function AdminLogin() {
         setError(e instanceof ApiError ? e.message : "登录失败");
       }
     } finally {
+      setCaptchaToken("");
+      setCaptchaResetKey((x) => x + 1);
       setBusy(false);
     }
   }
@@ -68,6 +81,12 @@ export default function AdminLogin() {
           </>
         )}
         {error && <p className="mb-3 text-xs text-red-500">{error}</p>}
+        <CaptchaBox
+          action="admin_login"
+          onToken={handleCaptchaToken}
+          onEnabledChange={handleCaptchaEnabled}
+          resetKey={captchaResetKey}
+        />
         <button className="btn-primary w-full !py-3.5" disabled={busy || !username || !password} onClick={login}>
           <Lock size={15} /> {busy ? "登录中…" : "登 录"}
         </button>

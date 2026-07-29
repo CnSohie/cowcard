@@ -60,7 +60,10 @@ public enum ErrorCode {
 
     // 上传 70xx
     UPLOAD_TYPE(7001, "仅支持 PNG / JPG / WEBP / GIF 图片"),
-    UPLOAD_TOO_LARGE(7002, "图片大小超出限制");
+    UPLOAD_TOO_LARGE(7002, "图片大小超出限制"),
+
+    // 安全校验 80xx
+    CAPTCHA_INVALID(8001, "请先完成人机验证");
 
     private final int code;
     private final String message;

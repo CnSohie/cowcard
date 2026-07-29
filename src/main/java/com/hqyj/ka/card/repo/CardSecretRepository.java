@@ -4,6 +4,7 @@ import com.hqyj.ka.card.entity.CardSecret;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -23,6 +24,13 @@ public interface CardSecretRepository extends JpaRepository<CardSecret, Long> {
     long countByProductIdAndStatus(Long productId, CardSecret.Status status);
 
     List<CardSecret> findByProductIdAndFingerprintIn(Long productId, List<String> fingerprints);
+
+    @Modifying
+    @Query(value = "insert ignore into card_secret(product_id, content_enc, fingerprint, status, created_at) " +
+            "values (:productId, :contentEnc, :fingerprint, 'AVAILABLE', CURRENT_TIMESTAMP(6))", nativeQuery = true)
+    int insertIgnoreAvailable(@Param("productId") Long productId,
+                              @Param("contentEnc") String contentEnc,
+                              @Param("fingerprint") String fingerprint);
 
     Page<CardSecret> findByProductIdOrderByIdDesc(Long productId, Pageable pageable);
 

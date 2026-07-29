@@ -61,6 +61,8 @@ public class AdminDashboardController {
         out.put("pendingOrders", orderRepository.countByStatus(Order.Status.PENDING));
         out.put("paidOrders", orderRepository.countByStatus(Order.Status.PAID));
         out.put("deliveredOrders", orderRepository.countByStatus(Order.Status.DELIVERED));
+        out.put("latePaidOrders", transactionRepository.countSuccessfulTxWithOrderStatusIn(
+                PaymentTransaction.Status.SUCCESS, List.of(Order.Status.EXPIRED, Order.Status.CLOSED)));
         out.put("totalOrders", orderRepository.count());
         return ApiResponse.ok(out);
     }

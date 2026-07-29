@@ -4,7 +4,7 @@ import com.hqyj.ka.audit.service.AuditService;
 import com.hqyj.ka.card.entity.CardSecret;
 import com.hqyj.ka.card.repo.CardSecretRepository;
 import com.hqyj.ka.card.service.CardService;
-import com.hqyj.ka.catalog.repo.ProductRepository;
+import com.hqyj.ka.catalog.service.InventoryService;
 import com.hqyj.ka.common.ApiResponse;
 import com.hqyj.ka.common.BusinessException;
 import com.hqyj.ka.common.ErrorCode;
@@ -37,7 +37,7 @@ public class AdminCardController {
 
     private final CardService cardService;
     private final CardSecretRepository cardRepository;
-    private final ProductRepository productRepository;
+    private final InventoryService inventoryService;
     private final AuditService auditService;
     private final AuthService authService;
 
@@ -82,8 +82,12 @@ public class AdminCardController {
     @PreAuthorize("hasAuthority('card:read')")
     public ApiResponse<Map<String, Long>> stats(@RequestParam Long productId, HttpServletRequest http) {
         requireUnlocked(http);
+        long available = cardService.availableCount(productId);
+        long sellable = inventoryService.sellableStock(productId);
         return ApiResponse.ok(Map.of(
-                "AVAILABLE", cardService.availableCount(productId),
+                "SELLABLE", sellable,
+                "RESERVED", Math.max(0, available - sellable),
+                "AVAILABLE", available,
                 "SOLD", cardRepository.countByProductIdAndStatus(productId, CardSecret.Status.SOLD),
                 "DISABLED", cardRepository.countByProductIdAndStatus(productId, CardSecret.Status.DISABLED)));
     }
@@ -96,9 +100,7 @@ public class AdminCardController {
     public ApiResponse<Map<String, Object>> importCards(@Valid @RequestBody ImportRequest req, HttpServletRequest http) {
         requireUnlocked(http);
         int[] result = cardService.importCards(req.productId(), req.lines());
-        // 冗余库存 = 实际可用卡密数(以真实计数校准,避免漂移)
-        productRepository.findById(req.productId()).ifPresent(p ->
-                p.setStockCached((int) cardService.availableCount(req.productId())));
+        inventoryService.syncAutoCardStock(req.productId());
         auditService.record((String) http.getAttribute("uname"), "CARD_IMPORT",
                 "product:" + req.productId(), RateLimitFilter.clientIp(http),
                 "{\"imported\":" + result[0] + ",\"dup\":" + result[1] + "}");
@@ -187,8 +189,7 @@ public class AdminCardController {
     }
 
     private void syncStock(Long productId) {
-        productRepository.findById(productId).ifPresent(p ->
-                p.setStockCached((int) cardService.availableCount(productId)));
+        inventoryService.syncAutoCardStock(productId);
     }
 
     private void requireUnlocked(HttpServletRequest http) {

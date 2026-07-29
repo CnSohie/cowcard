@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "presale_voucher", indexes = {
         @Index(name = "idx_voucher_hash", columnList = "tokenHash", unique = true),
-        @Index(name = "idx_voucher_order", columnList = "orderId"),
+        @Index(name = "idx_voucher_order", columnList = "orderId", unique = true),
         @Index(name = "idx_voucher_status", columnList = "status,presaleEndAt")
 })
 @EntityListeners(AuditingEntityListener.class)
@@ -43,6 +43,9 @@ public class PresaleVoucher {
 
     @Column(nullable = false, length = 20)
     private String tokenHint;
+
+    /** 明文提货码是否已经向买家展示过。明文不落库,这里只记录一次性领取时间。 */
+    private LocalDateTime tokenClaimedAt;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

@@ -59,6 +59,16 @@ public class AdminArticleController {
         return ApiResponse.ok(view);
     }
 
+    /** 置顶/取消置顶切换。 */
+    @PostMapping("/{id}/pin")
+    @PreAuthorize("hasAuthority('article:write')")
+    public ApiResponse<AdminArticleView> pin(@PathVariable Long id, HttpServletRequest http) {
+        AdminArticleView view = articleService.togglePinned(id);
+        auditService.record(String.valueOf(http.getAttribute("uname")), "ARTICLE_PIN_TOGGLE",
+                "article:" + id, RateLimitFilter.clientIp(http), String.valueOf(view.pinned()));
+        return ApiResponse.ok(view);
+    }
+
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('article:write')")
     public ApiResponse<Void> delete(@PathVariable Long id, HttpServletRequest http) {

@@ -36,6 +36,20 @@ public class CouponService {
         return calc(coupon, orderAmount);
     }
 
+    /** 待支付订单关闭/超时后释放优惠券占用;已支付订单不调用。 */
+    @Transactional
+    public void release(String code) {
+        if (code == null || code.isBlank()) return;
+        couponRepository.release(code.trim().toUpperCase());
+    }
+
+    /** 过期订单被确认迟到支付并人工补单时,恢复原订单的优惠券用量统计。 */
+    @Transactional
+    public void restoreUsage(String code) {
+        if (code == null || code.isBlank()) return;
+        couponRepository.restoreUsage(code.trim().toUpperCase());
+    }
+
     private Coupon load(String code, BigDecimal orderAmount) {
         Coupon coupon = couponRepository.findByCodeAndEnabledTrue(code.trim().toUpperCase())
                 .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_INVALID));

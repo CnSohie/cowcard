@@ -49,6 +49,9 @@ public class WalletService {
     public void credit(Long memberId, BigDecimal amount, WalletTxn.Type type,
                        String refType, Long refId, String remark) {
         if (memberId == null || amount == null || amount.signum() <= 0) return;
+        if (amount.scale() > 2) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "入账金额精度无效");
+        }
         ensureAccount(memberId);
         accountRepository.credit(memberId, amount);
         writeTxn(memberId, type, amount, refType, refId, remark);
@@ -58,6 +61,9 @@ public class WalletService {
     @Transactional
     public void debit(Long memberId, BigDecimal amount, WalletTxn.Type type,
                       String refType, Long refId, String remark) {
+        if (memberId == null || amount == null || amount.scale() > 2 || amount.signum() <= 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "出账金额无效");
+        }
         ensureAccount(memberId);
         if (accountRepository.debit(memberId, amount) == 0) {
             throw new BusinessException(ErrorCode.BALANCE_NOT_ENOUGH);

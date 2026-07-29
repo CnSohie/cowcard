@@ -11,6 +11,7 @@ import com.hqyj.ka.member.repo.MemberLevelRepository;
 import com.hqyj.ka.member.repo.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -97,7 +98,7 @@ public class MemberLevelService {
         member.setLevelId(level.getId());
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void addRecharge(Long memberId, BigDecimal amount) {
         if (memberId == null || amount == null || amount.signum() <= 0) return;
         Member member = memberRepository.findById(memberId).orElse(null);
@@ -106,7 +107,7 @@ public class MemberLevelService {
         autoUpgrade(member);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void addSpend(Long memberId, BigDecimal amount) {
         if (memberId == null || amount == null || amount.signum() <= 0) return;
         Member member = memberRepository.findById(memberId).orElse(null);

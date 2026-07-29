@@ -112,6 +112,11 @@ export default function ArticlesAdmin() {
     load();
   }
 
+  async function togglePin(id: number) {
+    await post(`/admin/articles/${id}/pin`);
+    load();
+  }
+
   async function remove(id: number) {
     if (confirmDel !== id) {
       setConfirmDel(id);
@@ -330,7 +335,11 @@ export default function ArticlesAdmin() {
                       : <span className="grid h-10 w-14 shrink-0 place-items-center rounded-lg bg-accent-soft"><BookOpen size={15} className="text-primary" /></span>}
                     <div className="min-w-0">
                       <p className="flex items-center gap-1.5 truncate font-medium text-ink">
-                        {a.pinned && <Pin size={11} className="shrink-0 text-primary" />}
+                        {a.pinned && (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-bold text-primary">
+                            <Pin size={10} /> 置顶
+                          </span>
+                        )}
                         <span className="truncate">{a.title}</span>
                       </p>
                       <p className="truncate font-mono text-[11px] text-ink/35">/{a.slug}</p>
@@ -353,6 +362,10 @@ export default function ArticlesAdmin() {
                 <td className="td">
                   <div className="flex justify-end gap-1">
                     <button className="btn-ghost !px-2.5 !py-1.5" title="编辑" onClick={() => a.id && openEdit(a.id)}><Pencil size={13} /></button>
+                    <button className={`btn-ghost !px-2.5 !py-1.5 ${a.pinned ? "!border-primary/30 !bg-accent-soft !text-primary" : ""}`}
+                      title={a.pinned ? "取消置顶" : "置顶文章"} onClick={() => a.id && togglePin(a.id)}>
+                      <Pin size={13} />
+                    </button>
                     <button className="btn-ghost !px-2.5 !py-1.5" title={a.status === "PUBLISHED" ? "转草稿" : "发布"}
                       onClick={() => a.id && toggle(a.id)}>
                       {a.status === "PUBLISHED" ? <EyeOff size={13} /> : <Eye size={13} />}

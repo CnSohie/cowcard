@@ -44,12 +44,7 @@ public class CardService {
         for (String line : cleaned) {
             String fp = sha256(line);
             if (existing.contains(fp)) continue;
-            CardSecret c = new CardSecret();
-            c.setProductId(productId);
-            c.setContentEnc(AesGcmUtil.encrypt(line, key));
-            c.setFingerprint(fp);
-            cardRepository.save(c);
-            imported++;
+            imported += cardRepository.insertIgnoreAvailable(productId, AesGcmUtil.encrypt(line, key), fp);
         }
         return new int[]{imported, cleaned.size() - imported};
     }

@@ -17,6 +17,8 @@ import {
 import { money } from "../../lib/currency";
 import { findLocalOrder } from "../../lib/orderHistory";
 import { isMemberLoggedIn, mPost } from "../../lib/memberApi";
+import { useI18n } from "../../lib/i18n";
+import { CaptchaBox, captchaHeaders } from "../../lib/captcha";
 
 const CHAIN_LABEL: Record<string, string> = {
   BASE: "Base", POLYGON: "Polygon", BSC: "BNB Chain (BEP20)",
@@ -25,6 +27,8 @@ const CHAIN_LABEL: Record<string, string> = {
 export default function PayPage() {
   const { orderNo = "" } = useParams();
   const nav = useNavigate();
+  const { copy: ui } = useI18n();
+  const t = ui.pay;
   const [channels, setChannels] = useState<Channel[]>([]);
   const [chainOptions, setChainOptions] = useState<ChainOption[]>([]);
   const [channel, setChannel] = useState<string>("");
@@ -46,7 +50,15 @@ export default function PayPage() {
   const [summary, setSummary] = useState<PaySummary | null>(null);
   const [memberLoggedIn, setMemberLoggedIn] = useState(() => isMemberLoggedIn());
   const [now, setNow] = useState(() => Date.now());
+  const [presaleToken, setPresaleToken] = useState<string | null>(null);
+  const [presaleTokenHint, setPresaleTokenHint] = useState<string>("");
+  const [claimingPresaleToken, setClaimingPresaleToken] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaEnabled, setCaptchaEnabled] = useState(false);
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const pollRef = useRef<number | null>(null);
+  const handleCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
+  const handleCaptchaEnabled = useCallback((enabled: boolean) => setCaptchaEnabled(enabled), []);
 
   const isCrypto = channel.startsWith("CRYPTO");
 
@@ -57,7 +69,7 @@ export default function PayPage() {
         setSummary(s);
         setOrderStatus(s.status);
       })
-      .catch((e) => setError(e instanceof ApiError ? e.message : "订单加载失败"));
+      .catch((e) => setError(e instanceof ApiError ? e.message : t.loadFailed));
   }, [orderNo]);
 
   // 秒级时钟(倒计时渲染)
@@ -118,35 +130,76 @@ export default function PayPage() {
 
   useEffect(() => {
     if (orderStatus !== "DELIVERED" || summary?.orderType !== "GOODS") return;
+    if (summary.deliveryMode === "PRESALE_VOUCHER") return;
     const local = findLocalOrder(orderNo);
-    nav("/order", {
-      replace: true,
-      state: { orderNo, contact: local?.contact, queryToken: local?.queryToken },
-    });
-  }, [orderNo, orderStatus, summary?.orderType, nav]);
+    const timer = window.setTimeout(() => {
+      nav("/order", {
+        replace: true,
+        state: { orderNo, contact: local?.contact, queryToken: local?.queryToken },
+      });
+    }, 1600);
+    return () => window.clearTimeout(timer);
+  }, [orderNo, orderStatus, summary?.deliveryMode, summary?.orderType, nav]);
+
+  useEffect(() => {
+    if (orderStatus !== "DELIVERED" || summary?.orderType !== "GOODS" || summary.deliveryMode !== "PRESALE_VOUCHER") return;
+    if (presaleToken || claimingPresaleToken || presaleTokenHint) return;
+    const local = findLocalOrder(orderNo);
+    if (!local?.queryToken && !local?.contact) return;
+    setClaimingPresaleToken(true);
+    post<{ token: string | null; tokenHint: string; status: string }>("/orders/presale-token", {
+      orderNo,
+      contact: local?.contact || undefined,
+      queryToken: local?.queryToken || undefined,
+    })
+      .then((r) => {
+        if (r.token) setPresaleToken(r.token);
+        setPresaleTokenHint(r.tokenHint);
+      })
+      .catch((e) => setError(e instanceof ApiError ? e.message : t.claimFailed))
+      .finally(() => setClaimingPresaleToken(false));
+  }, [claimingPresaleToken, orderNo, orderStatus, presaleToken, presaleTokenHint, summary?.deliveryMode, summary?.orderType]);
 
   const createPay = useCallback(async () => {
     setBusy(true);
     setError("");
     setCreation(null);
     setIntent(null);
+    if (captchaEnabled && !captchaToken) {
+      setError("请先完成人机验证");
+      setBusy(false);
+      return;
+    }
     try {
       const extras = { returnBase: window.location.origin, ...(isCrypto ? { chain, token } : {}) };
-      const r = await mPost<PayCreation>("/pay/create", { orderNo, channelCode: channel, extras });
+      const r = await mPost<PayCreation>("/pay/create", { orderNo, channelCode: channel, extras },
+        { headers: captchaHeaders(captchaToken) });
       setCreation(r);
       if (r.kind === "CRYPTO") setIntent(r.data as unknown as CryptoIntent);
-      if (r.kind === "BALANCE") setOrderStatus("PAID");
+      if (r.kind === "BALANCE") {
+        const st = await get<string>(`/pay/status/${orderNo}`);
+        setOrderStatus(st);
+      }
       if (r.kind === "REDIRECT") window.location.href = String(r.data.url);
       if (r.kind === "HTML_FORM") {
         const w = window.open("", "_self");
         w?.document.write(String(r.data.html));
       }
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "支付创建失败");
+      if (e instanceof ApiError && (e.code === 401 || e.code === 1003)) {
+        setMemberLoggedIn(false);
+        if (channel === "BALANCE") {
+          const next = channels.find((c) => c.code !== "BALANCE");
+          setChannel(next?.code ?? "");
+        }
+      }
+      setError(e instanceof ApiError ? e.message : t.createFailed);
     } finally {
+      setCaptchaToken("");
+      setCaptchaResetKey((x) => x + 1);
       setBusy(false);
     }
-  }, [orderNo, channel, chain, token, isCrypto]);
+  }, [orderNo, channel, chain, token, isCrypto, channels, captchaEnabled, captchaToken]);
 
   /** 点击「连接钱包支付」:多钱包 → 选择弹层;单钱包 → 直付;无钱包 → 扫码/安装指引。 */
   function openWalletFlow() {
@@ -173,13 +226,13 @@ export default function PayPage() {
       const updated = await post<CryptoIntent>(`/pay/crypto/intent/${orderNo}/tx`, { txHash });
       setIntent(updated);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "钱包支付失败");
+      setError(e instanceof Error ? e.message : t.walletFailed);
     } finally {
       setWalletBusy(false);
     }
   }
 
-  function copy(text: string, tag: string) {
+  function copyText(text: string, tag: string) {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(tag);
       setTimeout(() => setCopied(""), 1500);
@@ -190,19 +243,26 @@ export default function PayPage() {
   async function submitTxId() {
     const v = txInput.trim();
     if (!/^0x[0-9a-fA-F]{64}$/.test(v)) {
-      setTxMsg("哈希格式不正确:应为 0x 开头共 66 位字符");
+      setTxMsg(t.txHashInvalid);
+      return;
+    }
+    if (captchaEnabled && !captchaToken) {
+      setTxMsg("请先完成人机验证");
       return;
     }
     setTxBusy(true);
     setTxMsg("");
     try {
-      const updated = await post<CryptoIntent>(`/pay/crypto/intent/${orderNo}/tx`, { txHash: v });
+      const updated = await post<CryptoIntent>(`/pay/crypto/intent/${orderNo}/tx`, { txHash: v },
+        { headers: captchaHeaders(captchaToken) });
       setIntent(updated);
       setTxForm(false);
       setTxInput("");
     } catch (e) {
-      setTxMsg(e instanceof ApiError ? e.message : "核销失败,请稍后再试");
+      setTxMsg(e instanceof ApiError ? e.message : t.txVerifyFailed);
     } finally {
+      setCaptchaToken("");
+      setCaptchaResetKey((x) => x + 1);
       setTxBusy(false);
     }
   }
@@ -213,22 +273,22 @@ export default function PayPage() {
       {!txForm ? (
         <button className="mx-auto flex items-center gap-1.5 text-xs text-ink/45 transition hover:text-primary"
           onClick={() => { setTxForm(true); setTxMsg(""); }}>
-          <FileSearch size={13} /> 已转账但一直未检测到?提交交易哈希(TXID)自助核销
+          <FileSearch size={13} /> {t.txHelp}
         </button>
       ) : (
         <div className="text-left">
-          <label className="label">交易哈希 TXID(钱包 / 交易所提现记录里复制)</label>
+          <label className="label">{t.txLabel}</label>
           <div className="flex gap-2">
             <input className="input flex-1 font-mono text-xs" placeholder="0x…"
               value={txInput} onChange={(e) => setTxInput(e.target.value.trim())}
               onKeyDown={(e) => e.key === "Enter" && submitTxId()} />
             <button className="btn-primary shrink-0 !px-5" disabled={txBusy || !txInput} onClick={submitTxId}>
-              {txBusy ? <Loader2 size={14} className="animate-spin" /> : "核销"}
+              {txBusy ? <Loader2 size={14} className="animate-spin" /> : t.txSubmit}
             </button>
           </div>
           {txMsg && <p className="mt-2 text-xs text-red-500">{txMsg}</p>}
           <p className="mt-2 text-[11px] leading-relaxed text-ink/35">
-            服务端会直接回查链上收据,核验收款地址与金额(支持本订单此前生成过的旧金额);验证通过立即进入确认流程。
+            {t.txNote}
           </p>
         </div>
       )}
@@ -238,23 +298,52 @@ export default function PayPage() {
   if (orderStatus === "PAID" || orderStatus === "DELIVERED") {
     const manualDelivery = summary?.orderType === "GOODS" && summary.deliveryMode === "MANUAL";
     const presaleDelivery = summary?.orderType === "GOODS" && summary.deliveryMode === "PRESALE_VOUCHER";
+    const autoDelivery = summary?.orderType === "GOODS" && summary.deliveryMode !== "MANUAL" && summary.deliveryMode !== "PRESALE_VOUCHER";
     return (
       <div className="card mx-auto max-w-lg animate-fade-up p-10 text-center">
         <span className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-full bg-accent">
           <PartyPopper size={28} />
         </span>
-        <h1 className="text-2xl font-extrabold tracking-tight">支付成功</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">{t.success}</h1>
         <p className="mt-2 text-sm text-ink/55">
           {summary?.orderType === "RECHARGE"
-            ? "余额已入账,可在会员中心查看。"
+              ? t.rechargeSuccess
             : presaleDelivery
-              ? "电子预售提货码已签发,请前往订单查询页保存并在开放时间内兑换。"
+              ? t.presaleSuccess
               : manualDelivery
-              ? (orderStatus === "DELIVERED" ? "人工发货已完成,请前往订单查询页查看交付内容。" : "已收到付款,订单正在等待后台人工处理。")
-              : orderStatus === "DELIVERED" ? "卡密已发放,请前往订单查询页提取。" : "已收到付款,正在自动发卡…"}
+              ? (orderStatus === "DELIVERED" ? t.manualDone : t.manualPending)
+              : orderStatus === "DELIVERED" ? t.cardDone : t.cardPending}
         </p>
+        {presaleDelivery && (
+          <div className="mt-6 rounded-2xl border border-primary/15 bg-accent-soft/70 p-4 text-left">
+            <p className="mb-2 text-xs font-bold text-primary">{t.oneTimeVoucher}</p>
+            {claimingPresaleToken ? (
+              <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink/50">{t.issuingVoucher}</p>
+            ) : presaleToken ? (
+              <button
+                onClick={() => copyText(presaleToken, "presale-token")}
+                className="group flex w-full items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3 text-left transition hover:brightness-95"
+              >
+                <code className="break-all font-mono text-sm font-semibold">{presaleToken}</code>
+                {copied === "presale-token" ? <CheckCircle2 size={15} className="shrink-0 text-primary" /> : <Copy size={15} className="shrink-0 text-ink/40 group-hover:text-ink" />}
+              </button>
+            ) : (
+              <p className="rounded-2xl bg-surface px-4 py-3 text-xs leading-relaxed text-ink/55">
+                {t.voucherHint} <span className="font-mono font-semibold text-ink/75">{presaleTokenHint || "-"}</span>。{t.voucherRetry}
+              </p>
+            )}
+            <p className="mt-3 text-[11px] leading-relaxed text-ink/45">
+              {t.voucherNote}
+            </p>
+          </div>
+        )}
+        {autoDelivery && orderStatus === "DELIVERED" && (
+          <p className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-accent-soft px-4 py-2 text-xs font-semibold text-primary">
+            <Loader2 size={13} className="animate-spin" /> {t.redirecting}
+          </p>
+        )}
         {summary?.orderType === "RECHARGE" ? (
-          <Link to="/me" className="btn-primary mt-7 inline-flex">回到会员中心</Link>
+          <Link to="/me" className="btn-primary mt-7 inline-flex">{t.backMember}</Link>
         ) : orderStatus === "DELIVERED" || manualDelivery ? (
           <Link to="/order" className="btn-primary mt-7 inline-flex"
             state={{
@@ -262,10 +351,10 @@ export default function PayPage() {
               contact: findLocalOrder(orderNo)?.contact,
               queryToken: findLocalOrder(orderNo)?.queryToken,
             }}>
-            {presaleDelivery ? "查看提货码" : manualDelivery ? "查看订单进度" : "查看卡密"}
+            {presaleDelivery ? t.viewOrder : manualDelivery ? t.viewProgress : t.viewCards}
           </Link>
         ) : (
-          <button className="btn-primary mt-7 inline-flex" disabled>正在发卡…</button>
+          <button className="btn-primary mt-7 inline-flex" disabled>{t.issuingCards}</button>
         )}
       </div>
     );
@@ -282,12 +371,12 @@ export default function PayPage() {
         <span className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-full bg-ink/[0.06]">
           <AlarmClockOff size={26} className="text-ink/45" />
         </span>
-        <h1 className="text-2xl font-extrabold tracking-tight">订单已超时关闭</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">{t.expiredTitle}</h1>
         <p className="mt-2 text-sm text-ink/55">
-          未在有效期内完成支付{summary?.orderType === "RECHARGE" ? "" : ",预占库存已释放"};请重新下单。
+          {t.expiredText.replace("{stock}", summary?.orderType === "RECHARGE" ? "" : t.stockReleased)}
         </p>
         <Link to={summary?.orderType === "RECHARGE" ? "/me" : "/"} className="btn-primary mt-7 inline-flex">
-          {summary?.orderType === "RECHARGE" ? "回到会员中心" : "重新选购"}
+          {summary?.orderType === "RECHARGE" ? t.backMember : ui.common.retry}
         </Link>
       </div>
     );
@@ -307,20 +396,25 @@ export default function PayPage() {
   return (
     <div className="mx-auto max-w-2xl animate-fade-up">
       <button onClick={() => nav(-1)} className="mb-6 flex items-center gap-1.5 text-sm text-ink/50 hover:text-ink">
-        <ArrowLeft size={15} /> 返回
+        <ArrowLeft size={15} /> {ui.common.back}
       </button>
       <div className="card p-6 md:p-8">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-extrabold tracking-tight">收银台</h1>
+          <h1 className="text-xl font-extrabold tracking-tight">{t.cashier}</h1>
           <span className="chip font-mono">{orderNo}</span>
         </div>
 
         {/* 订单摘要 + 剩余时间倒计时 */}
         {summary && (
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-accent-soft/60 px-5 py-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-accent-soft/60 px-5 py-4">
             <div className="min-w-0">
               <p className="truncate text-xs text-ink/50">{summary.productName}</p>
               <p className="text-2xl font-extrabold tracking-tight">{money(summary.amount)}</p>
+              {Number(summary.walletPaidAmount) > 0 && (
+                <p className="mt-1 text-[11px] leading-relaxed text-ink/45">
+                  {t.walletDeducted.replace("{paid}", money(summary.walletPaidAmount)).replace("{amount}", money(summary.amount))}
+                </p>
+              )}
             </div>
             {remainMs != null && (
               <div className={`flex items-center gap-2 rounded-full px-4 py-2.5 font-mono text-base font-bold tabular-nums transition-colors ${
@@ -328,13 +422,16 @@ export default function PayPage() {
                   ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
                   : "bg-surface text-ink/75"
               }`}
-                title="剩余支付时间,超时订单自动关闭">
+                title={t.remainTitle}>
                 <Timer size={16} className={remainMs <= 180_000 ? "animate-pulse" : ""} />
                 {fmtRemain(remainMs)}
               </div>
             )}
           </div>
         )}
+        <p className="mb-6 rounded-2xl border border-ink/[0.06] bg-surface px-4 py-3 text-xs leading-relaxed text-ink/45">
+          {t.memberPayNote}
+        </p>
 
         <div className="mb-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           {channels.map((c) => {
@@ -343,7 +440,7 @@ export default function PayPage() {
               <button
                 key={c.code}
                 disabled={balanceDisabled}
-                title={balanceDisabled ? (summary?.orderType === "RECHARGE" ? "充值订单不能使用余额支付" : "登录会员后可使用余额支付") : undefined}
+                title={balanceDisabled ? (summary?.orderType === "RECHARGE" ? t.balanceRechargeDisabled : t.balanceLoginRequired) : undefined}
                 onClick={() => { if (balanceDisabled) return; setChannel(c.code); setCreation(null); setIntent(null); }}
                 className={`rounded-2xl border px-3 py-3.5 text-sm font-semibold transition ${
                   balanceDisabled
@@ -361,13 +458,13 @@ export default function PayPage() {
               </button>
             );
           })}
-          {channels.length === 0 && <p className="col-span-4 text-sm text-ink/40">暂无可用支付方式</p>}
+          {channels.length === 0 && <p className="col-span-4 text-sm text-ink/40">{t.noChannels}</p>}
         </div>
 
         {isCrypto && (
           <div className="mb-5 space-y-3.5">
             <div>
-              <label className="label">选择网络</label>
+              <label className="label">{t.network}</label>
               <div className="flex flex-wrap gap-2">
                 {chainOptions.map((c) => (
                   <button
@@ -382,7 +479,7 @@ export default function PayPage() {
             </div>
             {selectedChain && (
               <div>
-                <label className="label">支付币种</label>
+                <label className="label">{t.token}</label>
                 <div className="flex gap-2">
                   {selectedChain.tokens.map((t) => (
                     <button
@@ -401,15 +498,22 @@ export default function PayPage() {
 
         {error && <p className="mb-4 text-sm text-red-500">{error}</p>}
 
+        <CaptchaBox
+          action="payment"
+          onToken={handleCaptchaToken}
+          onEnabledChange={handleCaptchaEnabled}
+          resetKey={captchaResetKey}
+        />
+
         {channel === "BALANCE" && summary?.orderType === "GOODS" && !memberLoggedIn && (
           <p className="mb-4 rounded-2xl bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-600 dark:text-amber-400">
-            余额支付需要登录下单会员账号。游客订单请选择其他支付方式。
+            {t.balanceWarn}
           </p>
         )}
 
         {!creation && (
           <button className="btn-primary w-full !py-3.5" disabled={busy || !channel} onClick={createPay}>
-            {busy ? <Loader2 size={16} className="animate-spin" /> : channel === "BALANCE" ? "确认使用余额支付" : "去支付"}
+            {busy ? <Loader2 size={16} className="animate-spin" /> : channel === "BALANCE" ? t.balancePay : t.payNow}
           </button>
         )}
 
@@ -419,7 +523,7 @@ export default function PayPage() {
               <QRCodeSVG value={String(creation.data.qrContent)} size={192} />
             </div>
             <p className="flex items-center gap-2 text-sm text-ink/60">
-              <Loader2 size={14} className="animate-spin text-primary" /> 请使用支付宝扫码,支付后自动发货
+              <Loader2 size={14} className="animate-spin text-primary" /> {t.alipayScan}
             </p>
           </div>
         )}
@@ -434,29 +538,29 @@ export default function PayPage() {
                   </div>
                   <div className="min-w-0 flex-1 space-y-3">
                     <div>
-                      <label className="label">转账金额(必须完全一致,金额即订单指纹)</label>
+                      <label className="label">{t.transferAmount}</label>
                       <button className="group flex w-full items-center justify-between rounded-xl bg-surface px-3.5 py-3"
-                        onClick={() => copy(intent.amount, "amount")}>
+                        onClick={() => copyText(intent.amount, "amount")}>
                         <span className="font-mono text-lg font-extrabold">{intent.amount} {intent.tokenSymbol}</span>
                         {copied === "amount" ? <CheckCircle2 size={15} className="text-primary" /> : <Copy size={15} className="text-ink/40 group-hover:text-ink" />}
                       </button>
                     </div>
                     <div>
-                      <label className="label">收款地址({CHAIN_LABEL[intent.chainCode] ?? intent.chainCode})</label>
+                      <label className="label">{t.receivingAddress}({CHAIN_LABEL[intent.chainCode] ?? intent.chainCode})</label>
                       <button className="group flex w-full items-center justify-between gap-2 rounded-xl bg-surface px-3.5 py-3"
-                        onClick={() => copy(intent.address, "addr")}>
+                        onClick={() => copyText(intent.address, "addr")}>
                         <span className="truncate font-mono text-xs">{intent.address}</span>
                         {copied === "addr" ? <CheckCircle2 size={15} className="shrink-0 text-primary" /> : <Copy size={15} className="shrink-0 text-ink/40 group-hover:text-ink" />}
                       </button>
                     </div>
                     <p className="text-[11px] leading-relaxed text-ink/50">
-                      · 请确保网络为 <b className="text-ink">{CHAIN_LABEL[intent.chainCode]}</b>,金额分毫不差(交易所提现请把手续费设为「外扣」)<br />
-                      · 请在页面顶部剩余时间内完成转账,到账 {intent.requiredConfirmations} 个区块确认后自动发货
+                      · {t.cryptoNote1.replace("{chain}", CHAIN_LABEL[intent.chainCode] ?? intent.chainCode)}<br />
+                      · {t.cryptoNote2.replace("{count}", String(intent.requiredConfirmations))}
                     </p>
                   </div>
                 </div>
                 <button className="btn-primary mt-5 w-full !py-3.5" disabled={walletBusy} onClick={openWalletFlow}>
-                  {walletBusy ? <Loader2 size={16} className="animate-spin" /> : <><Wallet size={16} /> 连接钱包一键支付</>}
+                  {walletBusy ? <Loader2 size={16} className="animate-spin" /> : <><Wallet size={16} /> {t.walletPay}</>}
                 </button>
                 {txSection}
               </>
@@ -464,9 +568,9 @@ export default function PayPage() {
             {intent.status === "CONFIRMING" && (
               <div className="py-5 text-center">
                 <Loader2 className="mx-auto mb-3 animate-spin text-primary" size={30} />
-                <p className="font-bold">已检测到转账,等待区块确认</p>
+                <p className="font-bold">{t.confirming}</p>
                 <p className="mt-1 text-sm text-ink/55">
-                  {intent.confirmations} / {intent.requiredConfirmations} 确认
+                  {intent.confirmations} / {intent.requiredConfirmations} {t.confirmUnit}
                 </p>
                 <div className="mx-auto mt-4 h-2 w-56 overflow-hidden rounded-full bg-ink/10">
                   <div className="h-full rounded-full bg-primary transition-all"
@@ -481,8 +585,8 @@ export default function PayPage() {
             )}
             {intent.status === "EXPIRED" && (
               <div className="py-5 text-center">
-                <p className="font-medium text-red-500">支付超时,请重新发起</p>
-                <button className="btn-ghost mt-4" onClick={createPay}>重新获取收款信息</button>
+                <p className="font-medium text-red-500">{t.cryptoExpired}</p>
+                <button className="btn-ghost mt-4" onClick={createPay}>{t.refreshIntent}</button>
                 {txSection}
               </div>
             )}
@@ -496,7 +600,7 @@ export default function PayPage() {
           onClick={() => setWalletPick(null)}>
           <div className="card w-full max-w-sm !bg-surface p-6" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="font-bold">{walletPick.length > 0 ? "选择钱包" : "未检测到浏览器钱包"}</h3>
+              <h3 className="font-bold">{walletPick.length > 0 ? t.pickWallet : t.noWallet}</h3>
               <button onClick={() => setWalletPick(null)}
                 className="grid h-8 w-8 place-items-center rounded-full text-ink/40 transition hover:bg-ink/[0.06] hover:text-ink">
                 <X size={15} />
@@ -515,18 +619,24 @@ export default function PayPage() {
                     <ChevronRight size={15} className="ml-auto text-ink/30" />
                   </button>
                 ))}
-                <p className="pt-1 text-[11px] text-ink/35">确认弹窗中的收款地址与金额和页面一致后再签名。</p>
+                <p className="pt-1 text-[11px] text-ink/35">{t.walletSignNote}</p>
               </div>
             ) : (
               <div className="space-y-3.5 text-sm leading-relaxed text-ink/60">
                 <p className="flex gap-2.5">
                   <Smartphone size={16} className="mt-0.5 shrink-0 text-primary" />
-                  手机钱包(OKX / imToken / TokenPocket…):直接扫描页面上的收款二维码,链、代币、金额自动填好。
+                  {t.mobileWallet}
                 </p>
                 <p className="flex gap-2.5">
                   <Wallet size={16} className="mt-0.5 shrink-0 text-primary" />
-                  电脑端:安装 <a className="font-semibold text-primary underline" href="https://metamask.io/download/"
-                    target="_blank" rel="noopener noreferrer">MetaMask</a> 等插件钱包后刷新本页,即可一键支付。
+                  {t.desktopWallet.includes("MetaMask") ? (
+                    <>
+                      {t.desktopWallet.split("MetaMask")[0]}
+                      <a className="font-semibold text-primary underline" href="https://metamask.io/download/"
+                        target="_blank" rel="noopener noreferrer">MetaMask</a>
+                      {t.desktopWallet.split("MetaMask")[1]}
+                    </>
+                  ) : t.desktopWallet}
                 </p>
               </div>
             )}

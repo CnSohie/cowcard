@@ -14,7 +14,8 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "card_secret", indexes = {
         @Index(name = "idx_card_alloc", columnList = "productId,status"),
-        @Index(name = "idx_card_order", columnList = "orderId")
+        @Index(name = "idx_card_order", columnList = "orderId"),
+        @Index(name = "uk_card_product_fingerprint", columnList = "productId,fingerprint", unique = true)
 })
 @Getter @Setter @NoArgsConstructor
 public class CardSecret {

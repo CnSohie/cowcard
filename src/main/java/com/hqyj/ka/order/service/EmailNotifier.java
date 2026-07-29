@@ -45,6 +45,8 @@ public class EmailNotifier {
         try {
             if (order.getOrderType() == Order.OrderType.RECHARGE) {
                 sendRecharge(order, cfg);
+            } else if (order.getDeliveryMode() == Order.DeliveryMode.PRESALE_VOUCHER) {
+                sendPresale(order, cfg);
             } else {
                 sendGoods(order, cfg);
             }
@@ -87,6 +89,13 @@ public class EmailNotifier {
         send(cfg, order.getContact(),
                 apply(template(cfg, "mail.template.recharge_subject", defaultRechargeSubject()), vars),
                 apply(template(cfg, "mail.template.recharge_body", defaultRechargeBody()), vars));
+    }
+
+    private void sendPresale(Order order, Map<String, String> cfg) {
+        Map<String, String> vars = orderVars(order, cfg);
+        send(cfg, order.getContact(),
+                apply(template(cfg, "mail.template.presale_subject", defaultPresaleSubject()), vars),
+                apply(template(cfg, "mail.template.presale_body", defaultPresaleBody()), vars));
     }
 
     private Map<String, String> orderVars(Order order, Map<String, String> cfg) {
@@ -223,6 +232,30 @@ public class EmailNotifier {
 
     private String defaultRechargeSubject() {
         return "【{{siteName}}】充值订单 {{orderNo}} 已入账";
+    }
+
+    private String defaultPresaleSubject() {
+        return "【{{siteName}}】预售订单 {{orderNo}} 已确认";
+    }
+
+    private String defaultPresaleBody() {
+        return """
+                你好,你的预售订单付款已确认。
+
+                订单号: {{orderNo}}
+                商品: {{productName}}
+                数量: {{quantity}}
+                实付金额: {{currencySymbol}}{{amount}} {{currencyCode}}
+                支付渠道: {{paidChannel}}
+                确认时间: {{deliveredAt}}
+
+                电子预售提货码不会通过邮件发送。请使用下单浏览器前往 {{queryUrl}} 查询订单,领取并妥善保存一次性明文提货码。
+                平台仅保存不可逆哈希,提货码丢失后无法找回。核销需登录会员账号,核销后可在会员中心跟进履约状态。
+
+                如需售后,请联系: {{supportContact}}
+
+                {{siteName}}
+                """;
     }
 
     private String defaultRechargeBody() {

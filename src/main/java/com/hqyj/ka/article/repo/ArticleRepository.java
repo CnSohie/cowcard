@@ -31,7 +31,7 @@ public interface ArticleRepository extends JpaRepository<Article, Long> {
     /** 后台列表:全状态可筛。 */
     @Query("select a from Article a where (:status is null or a.status = :status) " +
            "and (:q is null or a.title like concat('%', :q, '%')) " +
-           "order by a.id desc")
+           "order by a.pinned desc, a.id desc")
     Page<Article> adminSearch(@Param("status") Article.Status status,
                               @Param("q") String q, Pageable pageable);
 

@@ -11,6 +11,8 @@ import com.hqyj.ka.order.dto.OrderDtos.SensitiveAuthRequest;
 import com.hqyj.ka.order.entity.Order;
 import com.hqyj.ka.order.repo.OrderRepository;
 import com.hqyj.ka.order.service.OrderService;
+import com.hqyj.ka.payment.entity.PaymentTransaction;
+import com.hqyj.ka.payment.repo.PaymentTransactionRepository;
 import com.hqyj.ka.security.RateLimitFilter;
 import com.hqyj.ka.user.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,6 +24,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.math.BigDecimal;
 
@@ -34,6 +37,7 @@ public class AdminOrderController {
     private final OrderService orderService;
     private final AuditService auditService;
     private final AuthService authService;
+    private final PaymentTransactionRepository transactionRepository;
 
     public record ManualDeliverRequest(String password, String totpCode, String content, String staffNote) {}
     public record RefundToWalletRequest(String password, String totpCode, BigDecimal amount, String note) {}
@@ -43,6 +47,7 @@ public class AdminOrderController {
     @PreAuthorize("hasAuthority('order:read')")
     public ApiResponse<PageResult<AdminOrderView>> list(@RequestParam(required = false) String status,
                                                         @RequestParam(required = false) String q,
+                                                        @RequestParam(defaultValue = "false") boolean latePaid,
                                                         @RequestParam(defaultValue = "0") int page,
                                                         @RequestParam(defaultValue = "20") int size) {
         Order.Status st = null;
@@ -55,7 +60,10 @@ public class AdminOrderController {
         PageRequest pr = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100),
                 Sort.by(Sort.Direction.DESC, "id"));
         Page<Order> result;
-        if (st != null && kw != null) {
+        if (latePaid) {
+            result = orderRepository.findLatePaidOrders(
+                    List.of(Order.Status.EXPIRED, Order.Status.CLOSED), kw, pr);
+        } else if (st != null && kw != null) {
             result = orderRepository.findByStatusAndOrderNoContainingIgnoreCaseOrStatusAndContactContainingIgnoreCase(
                     st, kw, st, kw, pr);
         } else if (st != null) {
@@ -77,6 +85,8 @@ public class AdminOrderController {
         for (Order.Status s : Order.Status.values()) {
             m.put(s.name(), orderRepository.countByStatus(s));
         }
+        m.put("LATE_PAID", transactionRepository.countSuccessfulTxWithOrderStatusIn(
+                PaymentTransaction.Status.SUCCESS, List.of(Order.Status.EXPIRED, Order.Status.CLOSED)));
         return ApiResponse.ok(m);
     }
 
@@ -89,15 +99,37 @@ public class AdminOrderController {
         return ApiResponse.ok(toView(order));
     }
 
-    /** 管理端查看订单卡密(高敏操作,独立权限 + 审计) */
+    /** 管理端查看订单卡密(高敏操作,独立权限 + 2FA 信任期 + 审计) */
     @GetMapping("/{orderNo}/cards")
     @PreAuthorize("hasAuthority('order:write')")
     public ApiResponse<OrderView> cards(@PathVariable String orderNo, HttpServletRequest http) {
+        requireSensitiveTrusted(http);
+        return ApiResponse.ok(cardView(orderNo, http));
+    }
+
+    /** 管理端查看订单卡密:未在 2FA 信任期内时,通过密码 + TOTP 复核后返回明文。 */
+    @PostMapping("/{orderNo}/cards/view")
+    @PreAuthorize("hasAuthority('order:write')")
+    public ApiResponse<OrderView> cardsWithAuth(@PathVariable String orderNo,
+                                                @RequestBody SensitiveAuthRequest auth,
+                                                HttpServletRequest http) {
+        authService.verifySensitive((Long) http.getAttribute("uid"), auth.password(), auth.totpCode(),
+                "order-view-cards:" + orderNo, RateLimitFilter.clientIp(http));
+        return ApiResponse.ok(cardView(orderNo, http));
+    }
+
+    private OrderView cardView(String orderNo, HttpServletRequest http) {
         Order order = orderRepository.findByOrderNo(orderNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
         auditService.record((String) http.getAttribute("uname"), "ORDER_VIEW_CARDS",
                 "order:" + orderNo, RateLimitFilter.clientIp(http), null);
-        return ApiResponse.ok(orderService.toView(order, order.getStatus() == Order.Status.DELIVERED));
+        return orderService.toView(order, order.getStatus() == Order.Status.DELIVERED);
+    }
+
+    private void requireSensitiveTrusted(HttpServletRequest http) {
+        if (!authService.sensitiveTrusted((Long) http.getAttribute("uid"))) {
+            throw new BusinessException(ErrorCode.TOTP_REQUIRED, "请先完成 2FA 验证后查看订单卡密");
+        }
     }
 
     /**

@@ -4,8 +4,9 @@ import {
   Sun, SunMoon, Timer, Unlock,
 } from "lucide-react";
 import { ApiError, get, post } from "../../lib/api";
-import { applySiteTheme, previewTheme, THEMES, type ThemeName } from "../../lib/theme";
+import { applySiteTheme, THEMES, type ThemeName } from "../../lib/theme";
 import { setCurrency } from "../../lib/currency";
+import SensitiveConfirm from "../../components/SensitiveConfirm";
 
 const MODES = [
   { value: "auto", label: "跟随系统", icon: SunMoon },
@@ -24,6 +25,13 @@ const CURRENCIES = [
   { code: "TWD", label: "新台币", symbol: "NT$" },
   { code: "SGD", label: "新币", symbol: "S$" },
 ] as const;
+
+const THEME_NOTES: Record<ThemeName, { tone: string; note: string }> = {
+  mint: { tone: "安静、清爽、适合默认发卡站", note: "奶油底色 + 松绿色控件" },
+  ocean: { tone: "冷静、可信、适合支付感更强的站点", note: "浅灰蓝底 + 深海蓝主色" },
+  violet: { tone: "精致、内容感强、适合文章和会员站", note: "紫罗兰主色 + 柔和浅底" },
+  cow: { tone: "活泼、圆润、有奶牛牧场和小动物氛围", note: "蓝天 + 草地绿 + 奶牛斑点" },
+};
 
 const GOODS_SUBJECT = "【{{siteName}}】订单 {{orderNo}} 已发货";
 const GOODS_BODY = `你好,你的订单已完成发货。
@@ -56,12 +64,30 @@ const RECHARGE_BODY = `你好,你的余额充值已入账。
 
 {{siteName}}`;
 
+const PRESALE_SUBJECT = "【{{siteName}}】预售订单 {{orderNo}} 已确认";
+const PRESALE_BODY = `你好,你的预售订单付款已确认。
+
+订单号: {{orderNo}}
+商品: {{productName}}
+数量: {{quantity}}
+实付金额: {{currencySymbol}}{{amount}} {{currencyCode}}
+支付渠道: {{paidChannel}}
+确认时间: {{deliveredAt}}
+
+电子预售提货码不会通过邮件发送。请使用下单浏览器前往 {{queryUrl}} 查询订单,领取并妥善保存一次性明文提货码。
+平台仅保存不可逆哈希,提货码丢失后无法找回。核销需登录会员账号,核销后可在会员中心跟进履约状态。
+
+如需售后,请联系: {{supportContact}}
+
+{{siteName}}`;
+
 export default function SettingsAdmin() {
   const [cfg, setCfg] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [testTo, setTestTo] = useState("");
   const [testing, setTesting] = useState(false);
+  const [sensitive, setSensitive] = useState<"save" | "resetRateLimit" | null>(null);
 
   useEffect(() => {
     get<Record<string, string>>("/admin/config").then(setCfg).catch(() => void 0);
@@ -71,18 +97,31 @@ export default function SettingsAdmin() {
     setCfg((c) => ({ ...c, [key]: value }));
   }
 
-  async function save() {
+  async function save(auth: { password: string; totpCode: string }) {
     setBusy(true);
     setMsg("");
     try {
-      await post("/admin/config", cfg);
+      await post("/admin/config", { configs: cfg, ...auth });
       applySiteTheme(cfg["site.theme"], cfg["site.mode"]);
       setCurrency(cfg["site.currency"]);
       setMsg("已保存,商城前台即刻生效");
+      setSensitive(null);
     } catch (e) {
       setMsg(e instanceof ApiError ? e.message : "保存失败");
+      throw e;
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function resetRateLimit(auth: { password: string; totpCode: string }) {
+    try {
+      await post("/admin/config/rate-limit/reset", auth);
+      setMsg("已解除全部临时封禁并重置限流计数");
+      setSensitive(null);
+    } catch (e) {
+      setMsg(e instanceof ApiError ? e.message : "操作失败");
+      throw e;
     }
   }
 
@@ -185,15 +224,42 @@ export default function SettingsAdmin() {
 
       <div className="card mb-5 p-6">
         <h2 className="mb-1 flex items-center gap-2 font-bold"><Palette size={16} /> 全站主题</h2>
-        <p className="mb-4 text-xs text-ink/45">买家商城与管理后台共用;买家仍可自行切换明暗。点选即时预览,保存后生效。</p>
-        <label className="label">主题色系</label>
-        <div className="mb-4 flex flex-wrap gap-2.5">
+        <p className="mb-4 text-xs leading-relaxed text-ink/45">
+          买家商城与管理后台共用;买家仍可自行切换明暗。选择后需要点击保存才会生效,避免误触预览导致前台主题变化。CoW 奶牛牧场会启用小动物、草坡和奶牛斑点装饰。
+        </p>
+        <div className="mb-5 grid gap-3 sm:grid-cols-2">
           {THEMES.map((t) => (
             <button key={t.value}
-              onClick={() => { set("site.theme", t.value); previewTheme(t.value as ThemeName); }}
-              className={`chip !py-2.5 !pl-2.5 ${theme === t.value ? "chip-on" : ""}`}>
-              <span className="h-4 w-4 rounded-full" style={{ background: t.swatch }} />
-              {t.label}
+              onClick={() => set("site.theme", t.value)}
+              className={`group overflow-hidden rounded-3xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${
+                theme === t.value ? "border-primary/40 bg-accent-soft" : "border-ink/[0.08] bg-surface hover:border-primary/25"
+              }`}>
+              <div className="mb-4 flex h-16 items-end overflow-hidden rounded-2xl border border-ink/[0.06] bg-base px-3 pb-2">
+                <span className="mr-2 h-8 w-8 rounded-full shadow-sm" style={{ background: t.swatch }} />
+                <span className="h-5 w-14 rounded-full bg-accent-soft" />
+                <span className="ml-auto h-9 w-9 rounded-full bg-surface shadow-sm" />
+                {t.value === "cow" && (
+                  <span className="relative ml-2 h-9 w-14 rounded-[45%] border-2 border-ink bg-surface shadow-sm">
+                    <span className="absolute left-2 top-2 h-2.5 w-3 rounded-full bg-ink" />
+                    <span className="absolute bottom-2 right-3 h-2 w-2.5 rounded-full bg-ink" />
+                    <span className="absolute -right-3 top-1.5 h-5 w-4 rounded-r-full border-2 border-l-0 border-ink bg-surface" />
+                  </span>
+                )}
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-extrabold">{t.label}</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-ink/45">{THEME_NOTES[t.value].tone}</p>
+                </div>
+                <span className={`mt-0.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                  theme === t.value ? "bg-primary text-primary-contrast" : "bg-ink/[0.05] text-ink/35"
+                }`}>
+                  {theme === t.value ? "待保存" : "选择"}
+                </span>
+              </div>
+              <p className="mt-3 rounded-2xl bg-surface/70 px-3 py-2 text-[11px] text-ink/45">
+                {THEME_NOTES[t.value].note}
+              </p>
             </button>
           ))}
         </div>
@@ -266,16 +332,50 @@ export default function SettingsAdmin() {
           ))}
         </div>
         <button className="btn-ghost mt-4 !py-2.5 text-xs"
-          onClick={async () => {
-            try {
-              await post("/admin/config/rate-limit/reset");
-              setMsg("已解除全部临时封禁并重置限流计数");
-            } catch (e) {
-              setMsg(e instanceof ApiError ? e.message : "操作失败");
-            }
-          }}>
+          onClick={() => setSensitive("resetRateLimit")}>
           <Unlock size={13} /> 解除全部封禁(立即)
         </button>
+      </div>
+
+      <div className="card mb-5 p-6">
+        <h2 className="mb-1 flex items-center gap-2 font-bold"><ShieldCheck size={16} /> 人机验证(Captcha)</h2>
+        <p className="mb-4 text-xs leading-relaxed text-ink/45">
+          开启后,登录注册、下单、支付创建、TXID 核销、提货兑换、充值提现、礼品卡兑换、工单提交等公开表单都需要验证码。支持 Cloudflare Turnstile、Google reCAPTCHA 与 hCaptcha。
+        </p>
+        <label className="label">验证开关</label>
+        <div className="mb-4 flex flex-wrap gap-2.5">
+          {([["0", "关闭"], ["1", "开启"]] as const).map(([v, label]) => (
+            <button key={v} className={`chip !py-2.5 ${(cfg["security.captcha.enabled"] ?? "0") === v ? "chip-on" : ""}`}
+              onClick={() => set("security.captcha.enabled", v)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <label className="label">服务商</label>
+        <div className="mb-4 grid gap-2 sm:grid-cols-3">
+          {([
+            ["turnstile", "Cloudflare Turnstile"],
+            ["recaptcha", "Google reCAPTCHA"],
+            ["hcaptcha", "hCaptcha"],
+          ] as const).map(([v, label]) => (
+            <button key={v} className={`rounded-2xl border px-4 py-3 text-left text-sm font-bold transition ${
+              (cfg["security.captcha.provider"] ?? "turnstile") === v
+                ? "border-primary bg-primary text-primary-contrast"
+                : "border-ink/10 bg-surface text-ink/60 hover:border-primary/25 hover:text-ink"
+            }`} onClick={() => set("security.captcha.provider", v)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <label className="label">Site Key(公开)</label>
+        <input className="input mb-3 font-mono text-xs" value={cfg["security.captcha.site_key"] ?? ""}
+          placeholder="0x4AAAA... / 6Lc..." onChange={(e) => set("security.captcha.site_key", e.target.value)} />
+        <label className="label">Secret Key(服务端私钥)</label>
+        <input className="input font-mono text-xs" type="password" value={cfg["security.captcha.secret_key"] ?? ""}
+          placeholder="仅服务端验证使用,不会暴露给前台" onChange={(e) => set("security.captcha.secret_key", e.target.value)} />
+        <p className="mt-3 text-[11px] leading-relaxed text-ink/40">
+          建议优先使用 Cloudflare Turnstile。开启前请确认域名已加入对应服务商白名单,否则所有受保护表单会被拒绝。
+        </p>
       </div>
 
       <div className="card mb-5 p-6">
@@ -400,14 +500,39 @@ export default function SettingsAdmin() {
           <label className="label">邮件正文</label>
           <textarea className="input min-h-44 font-mono text-xs" value={cfg["mail.template.recharge_body"] ?? RECHARGE_BODY}
             onChange={(e) => set("mail.template.recharge_body", e.target.value)} />
+        </div>
+
+        <div className="mt-4 rounded-3xl border border-ink/[0.07] p-4">
+          <p className="section-label"><span className="h-1 w-4 rounded-full bg-accent" /> 预售确认模板</p>
+          <label className="label">邮件标题</label>
+          <input className="input mb-3" value={cfg["mail.template.presale_subject"] ?? PRESALE_SUBJECT}
+            onChange={(e) => set("mail.template.presale_subject", e.target.value)} />
+          <label className="label">邮件正文</label>
+          <textarea className="input min-h-52 font-mono text-xs" value={cfg["mail.template.presale_body"] ?? PRESALE_BODY}
+            onChange={(e) => set("mail.template.presale_body", e.target.value)} />
           <p className="mt-3 text-[11px] leading-relaxed text-ink/40">
-            可用变量: {"{{siteName}} {{orderNo}} {{productName}} {{amount}} {{quantity}} {{paidChannel}} {{deliveredAt}} {{cards}} {{balanceAmount}} {{currencySymbol}} {{currencyCode}} {{queryUrl}} {{supportContact}}"}
+            可用变量: {"{{siteName}} {{orderNo}} {{productName}} {{amount}} {{quantity}} {{paidChannel}} {{paidAt}} {{deliveredAt}} {{cards}} {{balanceAmount}} {{currencySymbol}} {{currencyCode}} {{queryUrl}} {{supportContact}}"}
           </p>
         </div>
       </div>
 
       {msg && <p className="mb-3 text-sm text-primary">{msg}</p>}
-      <button className="btn-primary" disabled={busy} onClick={save}><Save size={15} /> {busy ? "保存中…" : "保存全部设置"}</button>
+      <button className="btn-primary" disabled={busy} onClick={() => setSensitive("save")}><Save size={15} /> {busy ? "保存中…" : "保存全部设置"}</button>
+
+      {sensitive && (
+        <SensitiveConfirm
+          action={{
+            title: sensitive === "save" ? "保存站点设置" : "解除全部封禁",
+            confirmText: sensitive === "save" ? "确认保存" : "确认解除",
+            danger: sensitive === "resetRateLimit",
+            summary: sensitive === "save"
+              ? <span>将更新站点基础信息、SEO、货币、主题、邮件、限流、人机验证与钱包等配置。</span>
+              : <span>将清空当前全部临时封禁和限流计数,误封自救时使用。</span>,
+          }}
+          onClose={() => setSensitive(null)}
+          onConfirm={sensitive === "save" ? save : resetRateLimit}
+        />
+      )}
     </div>
   );
 }

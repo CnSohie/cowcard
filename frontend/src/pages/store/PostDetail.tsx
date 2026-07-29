@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, CalendarDays, Eye, Loader2, Lock, Sparkles, Tag, Wallet } from "lucide-react";
 import { ApiError } from "../../lib/api";
@@ -6,6 +6,7 @@ import { isMemberLoggedIn, mGet, mPost, type ArticleDetail } from "../../lib/mem
 import { renderMarkdown } from "../../lib/markdown";
 import { currencySymbol, money } from "../../lib/currency";
 import { useSeo } from "../../lib/seo";
+import { CaptchaBox, captchaHeaders } from "../../lib/captcha";
 
 /** 文章阅读页:handsome 风格排版(.prose-ka)+ 余额付费解锁。 */
 
@@ -23,6 +24,11 @@ export default function PostDetail() {
   const [buying, setBuying] = useState(false);
   const [buyErr, setBuyErr] = useState("");
   const [justUnlocked, setJustUnlocked] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaEnabled, setCaptchaEnabled] = useState(false);
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
+  const handleCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
+  const handleCaptchaEnabled = useCallback((enabled: boolean) => setCaptchaEnabled(enabled), []);
 
   useEffect(() => {
     setA(null);
@@ -51,16 +57,22 @@ export default function PostDetail() {
       nav(`/login?redirect=${encodeURIComponent(`/posts/${slug}`)}`);
       return;
     }
+    if (captchaEnabled && !captchaToken) {
+      setBuyErr("请先完成人机验证");
+      return;
+    }
     setBuyErr("");
     setBuying(true);
     try {
-      await mPost(`/member/articles/${a.id}/purchase`);
+      await mPost(`/member/articles/${a.id}/purchase`, undefined, { headers: captchaHeaders(captchaToken) });
       const fresh = await mGet<ArticleDetail>(`/posts/${slug}`);
       setA(fresh);
       setJustUnlocked(true);
     } catch (e) {
       setBuyErr(e instanceof ApiError ? e.message : "购买失败,请稍后再试");
     } finally {
+      setCaptchaToken("");
+      setCaptchaResetKey((x) => x + 1);
       setBuying(false);
     }
   }
@@ -132,6 +144,12 @@ export default function PostDetail() {
             <p className="mt-5 text-4xl font-extrabold tracking-tight">
               <span className="text-base font-semibold text-ink/40">{currencySymbol()}</span>{a.price}
             </p>
+            <CaptchaBox
+              action="article_purchase"
+              onToken={handleCaptchaToken}
+              onEnabledChange={handleCaptchaEnabled}
+              resetKey={captchaResetKey}
+            />
             <button className="btn-primary mx-auto mt-6 !px-8 !py-3.5" disabled={buying} onClick={purchase}>
               {buying
                 ? <><Loader2 size={15} className="animate-spin" /> 处理中…</>

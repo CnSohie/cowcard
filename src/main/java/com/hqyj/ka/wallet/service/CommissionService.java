@@ -7,15 +7,16 @@ import com.hqyj.ka.wallet.entity.WalletTxn;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 /**
  * 推广佣金:被邀请会员的「消费」(商品单/付费文章)按比例入邀请人钱包;充值绝不计佣。
- * 警示:不得把 walletService.credit 包进 try/catch —— credit 的 @Transactional 代理里抛出的
- * 异常已把当前事务标记 rollback-only,吞掉后提交时会 UnexpectedRollbackException 连累支付结算。
- * 仅费率解析允许容错(配置错写不应打断结算)。
+ * 使用 REQUIRES_NEW 独立事务:佣金入账失败只能影响佣金本身,不能拖垮订单支付/发货主事务。
+ * 费率解析允许容错(配置错写不应打断结算)。
  */
 @Slf4j
 @Service
@@ -40,9 +41,10 @@ public class CommissionService {
     }
 
     /**
-     * 消费结算钩子(与支付结算同事务:佣金与订单交付原子一致)。
+     * 消费结算钩子(独立事务:佣金失败不回滚订单/文章主交易)。
      * memberId 为消费者(可空=游客,无佣金);金额 × 费率 ÷ 100,保留 2 位向下取整。
      */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onSpend(Long memberId, BigDecimal amount, String refType, Long refId, String what) {
         if (memberId == null || amount == null || amount.signum() <= 0) return;
         BigDecimal r = rate();

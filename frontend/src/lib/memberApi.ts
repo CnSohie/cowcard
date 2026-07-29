@@ -46,7 +46,9 @@ export function memberInfo(): MemberInfo | null {
 }
 
 export function isMemberLoggedIn() {
-  return !!accessToken || !!localStorage.getItem("ka.m.access");
+  accessToken = localStorage.getItem("ka.m.access");
+  refreshToken = localStorage.getItem("ka.m.refresh");
+  return !!accessToken;
 }
 
 export function memberLogout() {
@@ -55,9 +57,10 @@ export function memberLogout() {
 }
 
 http.interceptors.request.use((cfg) => {
-  accessToken = accessToken || localStorage.getItem("ka.m.access");
-  refreshToken = refreshToken || localStorage.getItem("ka.m.refresh");
+  accessToken = localStorage.getItem("ka.m.access");
+  refreshToken = localStorage.getItem("ka.m.refresh");
   if (accessToken) cfg.headers.Authorization = `Bearer ${accessToken}`;
+  else delete cfg.headers.Authorization;
   return cfg;
 });
 
@@ -84,15 +87,26 @@ http.interceptors.response.use(
     const body = resp.data;
     if (body && typeof body.code === "number" && body.code !== 0) {
       if (body.code === 1003) memberLogout();
-      if (body.code === 401 && (await tryRefresh())) return http.request(resp.config);
+      if (body.code === 401) {
+        const cfg = resp.config as typeof resp.config & { _memberRetried?: boolean };
+        if (!cfg._memberRetried && (await tryRefresh())) {
+          cfg._memberRetried = true;
+          return http.request(cfg);
+        }
+        memberLogout();
+      }
       throw new ApiError(body.code, body.message ?? "请求失败");
     }
     return resp;
   },
   async (err) => {
     const resp = err.response;
-    if (resp?.status === 401 && (await tryRefresh())) {
-      return http.request(err.config);
+    if (resp?.status === 401) {
+      const cfg = err.config as typeof err.config & { _memberRetried?: boolean };
+      if (!cfg?._memberRetried && (await tryRefresh())) {
+        cfg._memberRetried = true;
+        return http.request(cfg);
+      }
     }
     if (resp?.status === 401) {
       memberLogout();
@@ -121,8 +135,8 @@ export async function mGet<T>(url: string, params?: object): Promise<T> {
   return r.data.data as T;
 }
 
-export async function mPost<T>(url: string, data?: object): Promise<T> {
-  const r = await http.post(url, data);
+export async function mPost<T>(url: string, data?: object, options?: { headers?: Record<string, string> }): Promise<T> {
+  const r = await http.post(url, data, options);
   return r.data.data as T;
 }
 
@@ -134,19 +148,20 @@ export interface MemberTokenResponse {
   member: MemberInfo;
 }
 
-export async function memberLogin(email: string, password: string) {
-  const r = await mPost<MemberTokenResponse>("/member/auth/login", { email, password });
+export async function memberLogin(email: string, password: string, captchaToken?: string) {
+  const r = await mPost<MemberTokenResponse>("/member/auth/login", { email, password },
+    captchaToken ? { headers: { "X-Captcha-Token": captchaToken } } : undefined);
   setMemberTokens(r.accessToken, r.refreshToken);
   saveMemberInfo(r.member);
   return r.member;
 }
 
-export async function memberRegister(email: string, password: string, nickname?: string, ref?: string) {
+export async function memberRegister(email: string, password: string, nickname?: string, ref?: string, captchaToken?: string) {
   const r = await mPost<MemberTokenResponse>("/member/auth/register", {
     email, password,
     nickname: nickname || undefined,
     ref: ref || undefined,
-  });
+  }, captchaToken ? { headers: { "X-Captcha-Token": captchaToken } } : undefined);
   setMemberTokens(r.accessToken, r.refreshToken);
   saveMemberInfo(r.member);
   return r.member;

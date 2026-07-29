@@ -34,6 +34,9 @@ public class SettlementService {
     @Transactional
     public void settle(String orderNo, String channelCode, String channelTradeNo,
                        BigDecimal paidAmount, boolean exactAmount) {
+        if (channelTradeNo == null || channelTradeNo.isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "支付渠道流水号不能为空");
+        }
         Order order = orderRepository.findByOrderNo(orderNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 

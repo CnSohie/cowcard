@@ -342,9 +342,11 @@ export default function CardsAdmin() {
             )}
           </div>
 
-          <div className="mb-5 grid grid-cols-3 gap-2">
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
             {([
-              ["可售", stats.AVAILABLE ?? 0],
+              ["前台可售", stats.SELLABLE ?? stats.AVAILABLE ?? 0],
+              ["未售卡密", stats.AVAILABLE ?? 0],
+              ["待支付预占", stats.RESERVED ?? 0],
               ["已售", stats.SOLD ?? 0],
               ["停用", stats.DISABLED ?? 0],
             ] as const).map(([label, value]) => (
@@ -354,6 +356,9 @@ export default function CardsAdmin() {
               </div>
             ))}
           </div>
+          <p className="mb-5 text-[11px] leading-relaxed text-ink/40">
+            前台可售 = 未售卡密 - 待支付订单预占。补卡、停用、删除或订单发货后会自动按这个口径校准商品库存。
+          </p>
 
           <label className="label">导入卡密</label>
           <input ref={fileRef} type="file" accept=".txt,.csv,text/plain,text/csv" className="hidden"

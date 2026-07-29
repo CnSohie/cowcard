@@ -67,11 +67,29 @@ export default function ProductsAdmin() {
   async function saveProduct(stay = false) {
     if (!editing) return;
     setError("");
+    if (editing.categoryId === "") {
+      setError("请选择商品分类");
+      return;
+    }
+    if (editing.minBuy > editing.maxBuy) {
+      setError("单次最少购买数量不能大于单次最多");
+      return;
+    }
+    if (editing.deliveryMode === "PRESALE_VOUCHER") {
+      if (!editing.presaleEndAt) {
+        setError("预售商品必须填写最晚提货截止时间");
+        return;
+      }
+      if (editing.presaleStartAt && new Date(editing.presaleEndAt).getTime() <= new Date(editing.presaleStartAt).getTime()) {
+        setError("最晚提货截止时间必须晚于开放提货时间");
+        return;
+      }
+    }
     setSaving(true);
     try {
       const saved = await post<AdminProduct>("/admin/catalog/products", {
         ...editing,
-        categoryId: editing.categoryId === "" ? null : editing.categoryId,
+        categoryId: editing.categoryId,
         price: editing.price,
         presaleStartAt: editing.presaleStartAt || null,
         presaleEndAt: editing.presaleEndAt || null,
@@ -90,7 +108,9 @@ export default function ProductsAdmin() {
 
   /* ─────────── 全页编辑器 ─────────── */
   if (editing) {
-    const canSave = editing.name.trim() !== "" && editing.price.trim() !== "";
+    const canSave = editing.name.trim() !== "" && editing.price.trim() !== "" && editing.categoryId !== ""
+      && editing.minBuy <= editing.maxBuy
+      && (editing.deliveryMode !== "PRESALE_VOUCHER" || !!editing.presaleEndAt);
     return (
       <div className="animate-fade-up">
         {/* 顶栏 */}
@@ -110,7 +130,7 @@ export default function ProductsAdmin() {
           </div>
         </div>
         {error && <p className="mb-3 rounded-xl bg-red-500/10 px-4 py-2.5 text-xs text-red-500">{error}</p>}
-        {!canSave && <p className="mb-3 text-[11px] text-ink/35">填写商品名称与售价后即可保存</p>}
+        {!canSave && <p className="mb-3 text-[11px] text-ink/35">填写商品名称、分类、售价和有效售卖设置后即可保存</p>}
 
         <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
           {/* 左:名称 + 图文 */}
@@ -185,7 +205,7 @@ export default function ProductsAdmin() {
               <label className="label">所属分类</label>
               <select className="input mb-4" value={editing.categoryId}
                 onChange={(e) => setEditing({ ...editing, categoryId: e.target.value ? Number(e.target.value) : "" })}>
-                <option value="">未分类</option>
+                <option value="" disabled>请选择分类</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
               <label className="label">交付模式</label>

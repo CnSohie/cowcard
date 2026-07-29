@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import com.hqyj.ka.common.ApiResponse;
+import com.hqyj.ka.security.CaptchaService;
 import com.hqyj.ka.sysconfig.service.ConfigService;
 import com.hqyj.ka.member.service.MemberLevelService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,6 +31,7 @@ public class StoreController {
     private final CouponService couponService;
     private final ProductRepository productRepository;
     private final MemberLevelService memberLevelService;
+    private final CaptchaService captchaService;
 
     @GetMapping("/categories")
     public ApiResponse<List<CategoryView>> categories() {
@@ -69,6 +71,7 @@ public class StoreController {
     @GetMapping("/site")
     public ApiResponse<Map<String, String>> site() {
         Map<String, String> all = configService.all();
+        CaptchaService.PublicConfig captcha = captchaService.publicConfig();
         return ApiResponse.ok(Map.ofEntries(
                 Map.entry("siteName", all.getOrDefault("site.name", "Ka 发卡")),
                 Map.entry("announcement", all.getOrDefault("site.announcement", "")),
@@ -80,6 +83,9 @@ public class StoreController {
                 Map.entry("seoDescription", all.getOrDefault("seo.description", "自动发卡 · 数字商品秒级到账")),
                 Map.entry("seoKeywords", all.getOrDefault("seo.keywords", "")),
                 Map.entry("seoOgImage", all.getOrDefault("seo.og_image", "")),
-                Map.entry("seoIndex", all.getOrDefault("seo.index", "1"))));
+                Map.entry("seoIndex", all.getOrDefault("seo.index", "1")),
+                Map.entry("captchaEnabled", captcha.enabled() ? "1" : "0"),
+                Map.entry("captchaProvider", captcha.provider()),
+                Map.entry("captchaSiteKey", captcha.siteKey())));
     }
 }

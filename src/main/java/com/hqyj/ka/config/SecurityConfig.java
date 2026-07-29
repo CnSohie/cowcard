@@ -1,5 +1,6 @@
 package com.hqyj.ka.config;
 
+import com.hqyj.ka.security.CaptchaFilter;
 import com.hqyj.ka.security.JwtAuthenticationFilter;
 import com.hqyj.ka.security.RateLimitFilter;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -33,6 +34,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http,
                                            JwtAuthenticationFilter jwtFilter,
+                                           CaptchaFilter captchaFilter,
                                            RateLimitFilter rateLimitFilter) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
@@ -66,7 +68,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**").hasAuthority("KIND_ADMIN")
                 .anyRequest().authenticated())
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
-            .addFilterBefore(rateLimitFilter, JwtAuthenticationFilter.class);
+            .addFilterBefore(rateLimitFilter, JwtAuthenticationFilter.class)
+            .addFilterAfter(captchaFilter, RateLimitFilter.class);
         return http.build();
     }
 

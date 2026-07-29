@@ -12,6 +12,7 @@ import {
   type TxnView, type WalletSummary, type WithdrawView,
 } from "../../lib/memberApi";
 import { currencyCode, currencySymbol, money } from "../../lib/currency";
+import { CaptchaBox, captchaHeaders } from "../../lib/captcha";
 
 /** 会员中心:平台余额钱包(充值 / 提现)+ 明细 / 订单 / 已购 / 提现记录 / 推广。 */
 
@@ -34,6 +35,12 @@ const ORDER_STATUS: Record<string, { label: string; cls: string }> = {
   REFUNDED: { label: "已退款", cls: "bg-ink/[0.06] text-ink/45" },
 };
 
+const DELIVERY_MODE_LABEL: Record<string, string> = {
+  AUTO_CARD: "自动卡密",
+  MANUAL: "人工发货",
+  PRESALE_VOUCHER: "预售提货",
+};
+
 const WD_STATUS: Record<WithdrawView["status"], { label: string; cls: string }> = {
   PENDING: { label: "审核中", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
   APPROVED: { label: "已打款", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
@@ -46,6 +53,7 @@ const PRESALE_STATUS: Record<string, { label: string; cls: string }> = {
   VOID: { label: "已作废", cls: "bg-ink/[0.06] text-ink/45" },
 };
 const DEFAULT_REJECT_NOTE = "提现申请未通过审核,请核对收款信息后重新提交";
+const PENDING_PRESALE_HINT = "付款后签发";
 
 const WD_CHANNELS = [
   { code: "ALIPAY", label: "支付宝", placeholder: "支付宝账号(手机号 / 邮箱)+ 姓名" },
@@ -58,6 +66,21 @@ function fmtTime(s: string | null) {
   const d = new Date(s);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function orderStatusMeta(o: MemberOrderView) {
+  if (o.deliveryMode === "PRESALE_VOUCHER") {
+    if (o.status === "DELIVERED") return { label: "提货码已激活", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" };
+    if (o.status === "PAID") return { label: "已付款 · 激活中", cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400" };
+  }
+  if (o.deliveryMode === "MANUAL") {
+    if (o.status === "PAID") return { label: "待人工发货", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" };
+    if (o.status === "DELIVERED") return { label: "人工发货完成", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" };
+  }
+  if (o.deliveryMode === "AUTO_CARD" && o.status === "PAID") {
+    return { label: "已付款 · 正在发卡", cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400" };
+  }
+  return ORDER_STATUS[o.status] ?? { label: o.status, cls: "bg-ink/[0.06] text-ink/45" };
 }
 
 function Pager({ page, total, size, onPage }: { page: number; total: number; size: number; onPage: (p: number) => void }) {
@@ -121,6 +144,12 @@ export default function MemberCenter() {
   const [ticketMessage, setTicketMessage] = useState("");
   const [followUps, setFollowUps] = useState<Record<number, string>>({});
   const [ticketErr, setTicketErr] = useState("");
+  const [orderCopied, setOrderCopied] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaEnabled, setCaptchaEnabled] = useState(false);
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
+  const handleCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
+  const handleCaptchaEnabled = useCallback((enabled: boolean) => setCaptchaEnabled(enabled), []);
 
   const loggedIn = isMemberLoggedIn();
 
@@ -164,13 +193,18 @@ export default function MemberCenter() {
   async function doRecharge() {
     const v = Number(amount);
     if (!v || v <= 0) { setModalErr("请输入正确的充值金额"); return; }
+    if (captchaEnabled && !captchaToken) { setModalErr("请先完成人机验证"); return; }
     setModalErr(""); setBusy(true);
     try {
-      const r = await mPost<{ orderNo: string }>("/member/wallet/recharge", { amount });
+      const r = await mPost<{ orderNo: string }>("/member/wallet/recharge", { amount },
+        { headers: captchaHeaders(captchaToken) });
       nav(`/pay/${r.orderNo}`);
     } catch (e) {
       setModalErr(e instanceof ApiError ? e.message : "创建充值订单失败");
       setBusy(false);
+    } finally {
+      setCaptchaToken("");
+      setCaptchaResetKey((x) => x + 1);
     }
   }
 
@@ -178,9 +212,11 @@ export default function MemberCenter() {
     const v = Number(amount);
     if (!v || v <= 0) { setModalErr("请输入正确的提现金额"); return; }
     if (!wdAccount.trim()) { setModalErr("请填写收款账号"); return; }
+    if (captchaEnabled && !captchaToken) { setModalErr("请先完成人机验证"); return; }
     setModalErr(""); setBusy(true);
     try {
-      await mPost("/member/wallet/withdraw", { amount, channel: wdChannel, account: wdAccount.trim() });
+      await mPost("/member/wallet/withdraw", { amount, channel: wdChannel, account: wdAccount.trim() },
+        { headers: captchaHeaders(captchaToken) });
       setModal(""); setAmount(""); setWdAccount("");
       loadBase();
       switchTab("withdrawals");
@@ -188,15 +224,19 @@ export default function MemberCenter() {
     } catch (e) {
       setModalErr(e instanceof ApiError ? e.message : "提交失败,请稍后再试");
     } finally {
+      setCaptchaToken("");
+      setCaptchaResetKey((x) => x + 1);
       setBusy(false);
     }
   }
 
   async function doRedeemGift() {
     if (!giftCode.trim()) { setModalErr("请输入礼品卡码"); return; }
+    if (captchaEnabled && !captchaToken) { setModalErr("请先完成人机验证"); return; }
     setModalErr(""); setBusy(true);
     try {
-      await mPost("/member/wallet/gift-cards/redeem", { code: giftCode.trim() });
+      await mPost("/member/wallet/gift-cards/redeem", { code: giftCode.trim() },
+        { headers: captchaHeaders(captchaToken) });
       setModal(""); setGiftCode("");
       loadBase();
       switchTab("txns");
@@ -204,12 +244,15 @@ export default function MemberCenter() {
     } catch (e) {
       setModalErr(e instanceof ApiError ? e.message : "兑换失败");
     } finally {
+      setCaptchaToken("");
+      setCaptchaResetKey((x) => x + 1);
       setBusy(false);
     }
   }
 
   async function submitTicket() {
     if (!ticketSubject.trim() || !ticketMessage.trim()) return;
+    if (captchaEnabled && !captchaToken) { setTicketErr("请先完成人机验证"); return; }
     setTicketErr("");
     try {
       await mPost("/member/support-tickets", {
@@ -217,12 +260,15 @@ export default function MemberCenter() {
         category: "GENERAL",
         relatedOrderNo: ticketOrderNo.trim() || undefined,
         message: ticketMessage.trim(),
-      });
+      }, { headers: captchaHeaders(captchaToken) });
       setTicketSubject(""); setTicketOrderNo(""); setTicketMessage("");
       switchTab("support");
       mGet<PageResult<SupportTicketView>>("/member/support-tickets", { page: 0, size: 10 }).then(setTickets).catch(() => void 0);
     } catch (e) {
       setTicketErr(e instanceof ApiError ? e.message : "提交失败,请稍后再试");
+    } finally {
+      setCaptchaToken("");
+      setCaptchaResetKey((x) => x + 1);
     }
   }
 
@@ -243,6 +289,13 @@ export default function MemberCenter() {
     navigator.clipboard?.writeText(inviteLink).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
+    });
+  }
+
+  function copyOrderText(text: string, tag: string) {
+    navigator.clipboard?.writeText(text).then(() => {
+      setOrderCopied(tag);
+      setTimeout(() => setOrderCopied(""), 1500);
     });
   }
 
@@ -397,24 +450,100 @@ export default function MemberCenter() {
 
         {tab === "orders" && (
           <>
-            <table className="w-full min-w-[620px]">
-              <thead><tr><th className="th">订单号</th><th className="th">商品</th><th className="th">金额</th><th className="th">状态</th><th className="th">时间</th></tr></thead>
-              <tbody>
-                {(orders?.items ?? []).map((o) => {
-                  const st = ORDER_STATUS[o.status] ?? { label: o.status, cls: "bg-ink/[0.06] text-ink/45" };
-                  return (
-                    <tr key={o.orderNo} className="cursor-pointer hover:bg-ink/[0.02]" onClick={() => nav(`/pay/${o.orderNo}`)}>
-                      <td className="td font-mono text-xs">{o.orderNo}</td>
-                      <td className="td max-w-[180px] truncate font-medium">{o.productName}</td>
-                      <td className="td font-bold">{money(o.amount)}</td>
-                      <td className="td"><span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${st.cls}`}>{st.label}</span></td>
-                      <td className="td text-xs text-ink/45">{fmtTime(o.createdAt)}</td>
-                    </tr>
-                  );
-                })}
-                {orders && orders.items.length === 0 && <tr><td className="td text-center text-ink/40" colSpan={5}>暂无订单,<Link to="/" className="text-primary underline">去逛逛</Link></td></tr>}
-              </tbody>
-            </table>
+            <div className="space-y-3 p-1">
+              {(orders?.items ?? []).map((o) => {
+                const st = orderStatusMeta(o);
+                const modeLabel = DELIVERY_MODE_LABEL[o.deliveryMode] ?? o.deliveryMode;
+                const cardVisible = o.deliveryMode === "AUTO_CARD" && o.status === "DELIVERED" && o.cards.length > 0;
+                const manualDone = o.deliveryMode === "MANUAL" && o.status === "DELIVERED" && !!o.deliveryContent;
+                const presaleActive = o.deliveryMode === "PRESALE_VOUCHER" && ["PAID", "DELIVERED"].includes(o.status);
+                return (
+                  <div key={o.orderNo} className="rounded-3xl border border-ink/[0.06] bg-surface p-4 transition hover:border-primary/20 hover:shadow-soft">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate font-bold">{o.productName} × {o.quantity}</p>
+                          <span className="rounded-full bg-ink/[0.04] px-2.5 py-1 text-[11px] font-bold text-ink/45">{modeLabel}</span>
+                        </div>
+                        <p className="mt-1 font-mono text-[11px] text-ink/40">{o.orderNo}</p>
+                        <p className="mt-1 text-[11px] text-ink/40">{fmtTime(o.createdAt)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-extrabold">{money(o.amount)}</p>
+                        {Number(o.walletPaidAmount) > 0 && <p className="mt-0.5 text-[11px] text-ink/40">余额抵扣 {money(o.walletPaidAmount)}</p>}
+                        <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${st.cls}`}>{st.label}</span>
+                      </div>
+                    </div>
+
+                    {o.status === "PENDING" && (
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-amber-500/[0.08] px-4 py-3">
+                        <p className="text-xs leading-relaxed text-ink/55">订单尚未付款,不会发放卡密、人工交付内容或预售提货码。</p>
+                        <Link to={`/pay/${o.orderNo}`} className="btn-primary !px-4 !py-2 text-xs">继续支付</Link>
+                      </div>
+                    )}
+
+                    {cardVisible && (
+                      <div className="mt-4 space-y-2">
+                        <p className="label !mb-1 flex items-center gap-1.5"><KeyRound size={13} /> 已发放卡密</p>
+                        {o.cards.map((card, i) => {
+                          const tag = `${o.orderNo}-${i}`;
+                          return (
+                            <button key={tag} onClick={() => copyOrderText(card, tag)}
+                              className="group flex w-full items-center justify-between gap-3 rounded-2xl bg-accent-soft/70 px-4 py-3 text-left transition hover:brightness-95">
+                              <code className="break-all font-mono text-sm font-semibold">{card}</code>
+                              {orderCopied === tag ? <Check size={15} className="shrink-0 text-primary" /> : <Copy size={15} className="shrink-0 text-ink/35 group-hover:text-primary" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {manualDone && (
+                      <button onClick={() => copyOrderText(o.deliveryContent ?? "", `${o.orderNo}-manual`)}
+                        className="mt-4 group flex w-full items-center justify-between gap-3 rounded-2xl bg-accent-soft/70 px-4 py-3 text-left transition hover:brightness-95">
+                        <span className="whitespace-pre-wrap break-all text-sm leading-relaxed text-ink/70">{o.deliveryContent}</span>
+                        {orderCopied === `${o.orderNo}-manual` ? <Check size={15} className="shrink-0 text-primary" /> : <Copy size={15} className="shrink-0 text-ink/35 group-hover:text-primary" />}
+                      </button>
+                    )}
+
+                    {o.deliveryMode === "MANUAL" && o.status === "PAID" && (
+                      <p className="mt-4 rounded-2xl bg-sky-500/[0.08] px-4 py-3 text-xs leading-relaxed text-sky-600 dark:text-sky-400">
+                        已收到付款,正在等待后台人工发货。发货完成后这里会显示交付内容。
+                      </p>
+                    )}
+
+                    {o.deliveryMode === "PRESALE_VOUCHER" && (
+                      <div className="mt-4 rounded-2xl border border-primary/15 bg-accent-soft/55 px-4 py-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="flex items-center gap-1.5 text-sm font-bold text-primary"><TicketCheck size={14} /> 电子预售提货</p>
+                          {o.presaleVoucherHint && o.presaleVoucherHint !== PENDING_PRESALE_HINT && (
+                            <span className="font-mono text-[11px] text-ink/45">{o.presaleVoucherHint}</span>
+                          )}
+                        </div>
+                        <p className="mt-2 text-xs leading-relaxed text-ink/55">
+                          {presaleActive
+                            ? "付款已确认。明文提货码只在下单浏览器展示一次;如已保存提货码,可前往提货兑换中心绑定当前会员并查看后续履约。"
+                            : "订单未付款或已关闭,预售凭证不会激活,也不能用于核销。"}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {presaleActive && <Link to="/redeem" className="btn-primary !px-4 !py-2 text-xs">去核销提货</Link>}
+                          <Link to="/order" state={{ orderNo: o.orderNo, contact: me?.member.email }} className="btn-ghost !px-4 !py-2 text-xs">查询提货码</Link>
+                        </div>
+                      </div>
+                    )}
+
+                    {o.usageNote && (
+                      <p className="mt-4 whitespace-pre-wrap rounded-2xl border border-ink/[0.06] px-4 py-3 text-xs leading-relaxed text-ink/55">{o.usageNote}</p>
+                    )}
+                  </div>
+                );
+              })}
+              {orders && orders.items.length === 0 && (
+                <div className="py-14 text-center text-ink/40">
+                  暂无订单,<Link to="/" className="text-primary underline">去逛逛</Link>
+                </div>
+              )}
+            </div>
             {orders && <Pager page={page} total={orders.total} size={10} onPage={setPage} />}
           </>
         )}
@@ -475,6 +604,12 @@ export default function MemberCenter() {
               <label className="label">问题描述</label>
               <textarea className="input min-h-28 text-sm" value={ticketMessage} onChange={(e) => setTicketMessage(e.target.value)} placeholder="请描述问题、退款地址或需要补充的信息" />
               {ticketErr && <p className="mt-3 text-xs text-red-500">{ticketErr}</p>}
+              <CaptchaBox
+                action="support_ticket"
+                onToken={handleCaptchaToken}
+                onEnabledChange={handleCaptchaEnabled}
+                resetKey={captchaResetKey}
+              />
               <button className="btn-primary mt-4 w-full" disabled={!ticketSubject.trim() || !ticketMessage.trim()} onClick={submitTicket}>提交</button>
             </div>
             <div className="space-y-3">
@@ -638,6 +773,12 @@ export default function MemberCenter() {
               onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doRecharge()} />
           </div>
           {modalErr && <p className="mt-3 text-xs text-red-500">{modalErr}</p>}
+          <CaptchaBox
+            action="wallet_recharge"
+            onToken={handleCaptchaToken}
+            onEnabledChange={handleCaptchaEnabled}
+            resetKey={captchaResetKey}
+          />
           <button className="btn-primary mt-5 w-full !py-4 !text-base" disabled={busy} onClick={doRecharge}>
             {busy ? <><Loader2 size={14} className="animate-spin" /> 创建订单中…</> : "去支付"}
           </button>
@@ -654,6 +795,12 @@ export default function MemberCenter() {
             value={giftCode} onChange={(e) => setGiftCode(e.target.value.toUpperCase())}
             onKeyDown={(e) => e.key === "Enter" && doRedeemGift()} />
           {modalErr && <p className="mt-3 text-xs text-red-500">{modalErr}</p>}
+          <CaptchaBox
+            action="gift_card_redeem"
+            onToken={handleCaptchaToken}
+            onEnabledChange={handleCaptchaEnabled}
+            resetKey={captchaResetKey}
+          />
           <button className="btn-primary mt-5 w-full !py-4 !text-base" disabled={busy} onClick={doRedeemGift}>
             {busy ? <><Loader2 size={14} className="animate-spin" /> 兑换中…</> : "确认兑换"}
           </button>
@@ -692,6 +839,12 @@ export default function MemberCenter() {
           <textarea className="input min-h-24 !rounded-3xl text-sm leading-relaxed" placeholder={WD_CHANNELS.find((c) => c.code === wdChannel)?.placeholder}
             value={wdAccount} onChange={(e) => setWdAccount(e.target.value)} />
           {modalErr && <p className="mt-3 text-xs text-red-500">{modalErr}</p>}
+          <CaptchaBox
+            action="wallet_withdraw"
+            onToken={handleCaptchaToken}
+            onEnabledChange={handleCaptchaEnabled}
+            resetKey={captchaResetKey}
+          />
           <button className="btn-primary mt-5 w-full !py-4 !text-base" disabled={busy} onClick={doWithdraw}>
             {busy ? <><Loader2 size={14} className="animate-spin" /> 提交中…</> : "提交审核"}
           </button>

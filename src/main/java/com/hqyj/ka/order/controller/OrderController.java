@@ -34,4 +34,11 @@ public class OrderController {
     public ApiResponse<OrderView> query(@Valid @RequestBody QueryOrderRequest req) {
         return ApiResponse.ok(orderService.query(req.orderNo(), req.contact(), req.queryPassword(), req.queryToken()));
     }
+
+    /** 预售提货码一次性签发:复用查单凭证,且后端确认订单已付款交付后才返回明文码。 */
+    @PostMapping("/presale-token")
+    public ApiResponse<PresaleVoucherClaimResponse> claimPresaleToken(@Valid @RequestBody QueryOrderRequest req) {
+        return ApiResponse.ok(orderService.claimPresaleVoucherToken(
+                req.orderNo(), req.contact(), req.queryPassword(), req.queryToken()));
+    }
 }

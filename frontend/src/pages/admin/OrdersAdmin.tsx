@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useSearchParams } from "react-router-dom";
 import {
-  Ban, ChevronLeft, ChevronRight, HandCoins, KeyRound, Loader2,
+  AlertTriangle, Ban, ChevronLeft, ChevronRight, HandCoins, KeyRound, Loader2,
   PackageCheck, RefreshCw, Search, TicketCheck, Wallet, X,
 } from "lucide-react";
 import { ApiError, get, post, type OrderView } from "../../lib/api";
@@ -13,7 +14,7 @@ import { money } from "../../lib/currency";
 interface AdminOrder {
   id: number; orderNo: string; orderType: "GOODS" | "RECHARGE"; memberId: number | null;
   productName: string; unitPrice: string; quantity: number; amount: string;
-  discountAmount: string; couponCode: string | null; contact: string; status: string;
+  discountAmount: string; walletPaidAmount: string; couponCode: string | null; contact: string; status: string;
   paidChannel: string | null; buyerIp: string | null; createdAt: string;
   expireAt: string; paidAt: string | null; deliveredAt: string | null;
   deliveryMode: "AUTO_CARD" | "MANUAL" | "PRESALE_VOUCHER"; buyerNote: string | null; deliveryContent: string | null;
@@ -58,7 +59,10 @@ function StatusPill({ status }: { status: string }) {
 }
 
 export default function OrdersAdmin() {
-  const [status, setStatus] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialLatePaid = searchParams.get("latePaid") === "1";
+  const [status, setStatus] = useState(initialLatePaid ? "" : (searchParams.get("status") ?? ""));
+  const [latePaid, setLatePaid] = useState(initialLatePaid);
   const [q, setQ] = useState("");
   const [kw, setKw] = useState("");
   const [page, setPage] = useState(1);
@@ -73,20 +77,34 @@ export default function OrdersAdmin() {
   const [actBusy, setActBusy] = useState("");
   const [actErr, setActErr] = useState("");
   // 敏感操作确认(密码 + 2FA)
-  const [sensitive, setSensitive] = useState<"paid" | "close" | "refund" | "deliver" | "manualDeliver" | null>(null);
+  const [sensitive, setSensitive] = useState<"paid" | "close" | "refund" | "deliver" | "manualDeliver" | "cards" | null>(null);
   const [manualContent, setManualContent] = useState("");
+
+  function selectStatus(v: string) {
+    setLatePaid(false);
+    setStatus(v);
+    setPage(1);
+    setSearchParams(v ? { status: v } : {});
+  }
+
+  function selectLatePaid() {
+    setLatePaid(true);
+    setStatus("");
+    setPage(1);
+    setSearchParams({ latePaid: "1" });
+  }
 
   const load = useCallback(() => {
     setLoading(true);
     setError("");
     get<PageResult<AdminOrder>>("/admin/orders", {
-      status: status || undefined, q: kw || undefined, page: page - 1, size: SIZE,
+      status: status || undefined, latePaid: latePaid || undefined, q: kw || undefined, page: page - 1, size: SIZE,
     })
       .then(setData)
       .catch((e) => setError(e instanceof ApiError ? e.message : "订单加载失败,请检查后端日志"))
       .finally(() => setLoading(false));
     get<Record<string, number>>("/admin/orders/stats").then(setStats).catch(() => void 0);
-  }, [status, kw, page]);
+  }, [status, latePaid, kw, page]);
   useEffect(load, [load]);
 
   // 抽屉打开时锁滚动 + ESC 关闭
@@ -112,22 +130,25 @@ export default function OrdersAdmin() {
     setDetail(null);
   }
 
-  async function viewCards(orderNo: string) {
+  async function viewCards(orderNo: string, auth: { password: string; totpCode: string }) {
     setActBusy("cards");
     setActErr("");
     try {
-      setCards(await get<OrderView>(`/admin/orders/${orderNo}/cards`));
+      setCards(await post<OrderView>(`/admin/orders/${orderNo}/cards/view`, auth));
     } catch (e) {
       setActErr(e instanceof ApiError ? e.message : "卡密查询失败");
+      throw e;
     } finally {
       setActBusy("");
     }
   }
 
   /** 敏感操作执行(由 SensitiveConfirm 弹层携带密码+动态码调用)。 */
-  async function execSensitive(kind: "paid" | "close" | "refund" | "deliver" | "manualDeliver", auth: { password: string; totpCode: string }) {
+  async function execSensitive(kind: "paid" | "close" | "refund" | "deliver" | "manualDeliver" | "cards", auth: { password: string; totpCode: string }) {
     if (!detail) return;
-    if (kind === "paid") {
+    if (kind === "cards") {
+      await viewCards(detail.orderNo, auth);
+    } else if (kind === "paid") {
       const ok = await post<boolean>(`/admin/orders/${detail.orderNo}/mark-paid`, auth);
       if (!ok) throw new Error("补单失败:订单当前状态不允许(可能已支付或已人工关闭),请刷新查看");
       setDetail((d) => d && { ...d, status: "PAID" });
@@ -158,7 +179,7 @@ export default function OrdersAdmin() {
       });
     }
     setSensitive(null);
-    load();
+    if (kind !== "cards") load();
   }
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / SIZE)) : 1;
@@ -241,11 +262,11 @@ export default function OrdersAdmin() {
             const meta = v ? STATUS_META[v] : null;
             return (
               <button key={v}
-                onClick={() => { setStatus(v); setPage(1); }}
+                onClick={() => selectStatus(v)}
                 className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-semibold transition ${
-                  active ? "bg-surface text-ink shadow-sm" : "text-ink/50 hover:text-ink"
+                  active && !latePaid ? "bg-surface text-ink shadow-sm" : "text-ink/50 hover:text-ink"
                 }`}>
-                {meta && <span className={`h-1.5 w-1.5 rounded-full ${meta.dot} ${active ? "" : "opacity-60"}`} />}
+                {meta && <span className={`h-1.5 w-1.5 rounded-full ${meta.dot} ${active && !latePaid ? "" : "opacity-60"}`} />}
                 {l}
                 {n != null && (
                   v === "PENDING" && n > 0 ? (
@@ -257,6 +278,20 @@ export default function OrdersAdmin() {
               </button>
             );
           })}
+          <button
+            onClick={selectLatePaid}
+            className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-2 text-xs font-semibold transition ${
+              latePaid ? "bg-surface text-amber-600 shadow-sm dark:text-amber-400" : "text-ink/50 hover:text-ink"
+            }`}
+            title="已有成功支付流水,但订单仍超时或关闭,需要人工核实补单">
+            <AlertTriangle size={12} />
+            迟到到账
+            {(stats.LATE_PAID ?? 0) > 0 && (
+              <span className="rounded-full bg-amber-500/15 px-1.5 py-px font-mono text-[10px] font-bold tabular-nums text-amber-600 dark:text-amber-400">
+                {stats.LATE_PAID}
+              </span>
+            )}
+          </button>
         </div>
         <div className="relative ml-auto w-full sm:w-64">
           <Search size={14} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/30" />
@@ -265,6 +300,12 @@ export default function OrdersAdmin() {
             onKeyDown={(e) => e.key === "Enter" && (setKw(q.trim()), setPage(1))} />
         </div>
       </div>
+
+      {latePaid && (
+        <div className="mb-4 rounded-2xl border border-amber-500/20 bg-amber-500/[0.07] px-4 py-3 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+          当前只显示已有成功支付流水、但订单仍处于超时或关闭状态的异常单。处理前请核对渠道流水,再用详情里的人工补单恢复库存/优惠券/钱包抵扣。
+        </div>
+      )}
 
       {error && <p className="mb-3 rounded-xl bg-red-500/10 px-4 py-2.5 text-xs text-red-500">{error}</p>}
 
@@ -316,7 +357,9 @@ export default function OrdersAdmin() {
               </tr>
             ))}
             {data && data.items.length === 0 && (
-              <tr><td className="td py-14 text-center text-ink/45" colSpan={7}>没有匹配的订单</td></tr>
+              <tr><td className="td py-14 text-center text-ink/45" colSpan={7}>
+                {latePaid ? "目前没有迟到到账待处理订单" : "没有匹配的订单"}
+              </td></tr>
             )}
           </tbody>
         </table>
@@ -425,9 +468,9 @@ export default function OrdersAdmin() {
                     ) : <p className="text-sm text-ink/45">该订单暂无卡密(未发货)</p>
                   ) : (
                     <button className="btn-ghost !py-2.5 text-xs" disabled={actBusy === "cards"}
-                      onClick={() => viewCards(detail.orderNo)}>
+                      onClick={() => setSensitive("cards")}>
                       {actBusy === "cards" ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
-                      查看卡密(高敏操作,将记录审计)
+                      查看明文卡密(需要 2FA,将记录审计)
                     </button>
                   )}
                 </section>
@@ -451,13 +494,15 @@ export default function OrdersAdmin() {
               ? (isRecharge ? "人工充值入账" : "人工补单")
                 : sensitive === "refund" ? "撤销充值"
                 : sensitive === "deliver" ? "补发卡密"
-                  : sensitive === "manualDeliver" ? "完成人工发货" : (isRecharge ? "取消充值" : "关闭订单"),
+                  : sensitive === "manualDeliver" ? "完成人工发货"
+                    : sensitive === "cards" ? "查看明文卡密" : (isRecharge ? "取消充值" : "关闭订单"),
             confirmText: sensitive === "paid"
               ? (isRecharge ? "确认入账余额" : isManualGoods ? "确认补单待发货" : "确认补单并发货")
               : sensitive === "refund" ? "确认撤销充值"
                 : sensitive === "deliver" ? "确认补发卡密"
-                  : sensitive === "manualDeliver" ? "确认交付" : (isRecharge ? "确认取消充值" : "确认关闭并释放库存"),
-            danger: sensitive === "close" || sensitive === "refund",
+                  : sensitive === "manualDeliver" ? "确认交付"
+                    : sensitive === "cards" ? "确认查看卡密" : (isRecharge ? "确认取消充值" : "确认关闭并释放库存"),
+            danger: sensitive === "close" || sensitive === "refund" || sensitive === "cards",
             summary: (
               <div className="space-y-1">
                 <div className="flex justify-between gap-3">
@@ -468,18 +513,33 @@ export default function OrdersAdmin() {
                   <span className="text-ink/45">{detail.productName}</span>
                   <span className="font-bold">{money(detail.amount)}</span>
                 </div>
+                {Number(detail.walletPaidAmount) > 0 && (
+                  <div className="flex justify-between gap-3">
+                    <span className="text-ink/45">钱包抵扣</span>
+                    <span className="font-bold">{money(detail.walletPaidAmount)}</span>
+                  </div>
+                )}
                 {sensitive === "paid" && (
                   <p className="pt-1 text-[11px] leading-relaxed text-ink/40">
-                    {isRecharge
-                      ? "请先核实渠道流水已实际到账;确认后会把充值金额计入会员余额。"
-                      : isManualGoods
-                        ? "请先核实渠道流水已实际到账;确认后订单会进入已支付待人工发货。"
-                        : "请先核实渠道流水已实际到账;确认后会立即尝试发货,操作不可撤销。"}
+                    {detail.status === "EXPIRED"
+                      ? (Number(detail.walletPaidAmount) > 0
+                          ? "这是超时订单补单:系统会先重新扣回已退的钱包抵扣,并恢复优惠券占用;若会员余额不足或库存不足,补单会被拒绝。请先核实渠道流水已实际到账。"
+                          : "这是超时订单补单:系统会恢复优惠券占用;自动卡商品还会重新回占库存,库存不足会拒绝补单。请先核实渠道流水已实际到账。")
+                      : isRecharge
+                        ? "请先核实渠道流水已实际到账;确认后会把充值金额计入会员余额。"
+                        : isManualGoods
+                          ? "请先核实渠道流水已实际到账;确认后订单会进入已支付待人工发货。"
+                          : "请先核实渠道流水已实际到账;确认后会立即尝试发货,操作不可撤销。"}
                   </p>
                 )}
                 {sensitive === "deliver" && (
                   <p className="pt-1 text-[11px] leading-relaxed text-ink/40">
                     适用于已支付但首次发卡失败的商品单;请先确认该商品已有足够未售卡密。
+                  </p>
+                )}
+                {sensitive === "cards" && (
+                  <p className="pt-1 text-[11px] leading-relaxed text-ink/40">
+                    此操作会解密并展示已售卡密明文,仅用于售后核验,系统会写入审计日志。
                   </p>
                 )}
               </div>

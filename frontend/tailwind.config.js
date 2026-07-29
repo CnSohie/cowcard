@@ -5,7 +5,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        // 全部走 CSS 变量:主题(mint/ocean/violet)× 模式(light/dark)在 index.css 中定义
+        // 全部走 CSS 变量:主题(mint/ocean/violet/cow)× 模式(light/dark)在 index.css 中定义
         base: "rgb(var(--c-bg) / <alpha-value>)",
         surface: "rgb(var(--c-surface) / <alpha-value>)",
         ink: "rgb(var(--c-ink) / <alpha-value>)",

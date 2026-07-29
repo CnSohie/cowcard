@@ -3,6 +3,7 @@ package com.hqyj.ka.order.service;
 import com.hqyj.ka.card.service.CardService;
 import com.hqyj.ka.catalog.entity.Product;
 import com.hqyj.ka.catalog.repo.ProductRepository;
+import com.hqyj.ka.catalog.service.InventoryService;
 import com.hqyj.ka.common.BusinessException;
 import com.hqyj.ka.common.ErrorCode;
 import com.hqyj.ka.order.entity.Order;
@@ -12,8 +13,6 @@ import com.hqyj.ka.order.repo.PresaleVoucherRepository;
 import com.hqyj.ka.wallet.entity.WalletTxn;
 import com.hqyj.ka.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.Cache;
-import org.springframework.cache.CacheManager;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,13 +30,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class PresaleVoucherService {
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final String PENDING_TOKEN_HINT = "付款后签发";
 
     private final PresaleVoucherRepository voucherRepository;
     private final OrderRepository orderRepository;
     private final CardService cardService;
     private final ProductRepository productRepository;
     private final WalletService walletService;
-    private final CacheManager cacheManager;
+    private final InventoryService inventoryService;
 
     public record IssuedVoucher(PresaleVoucher voucher, String token) {}
     public record RedeemResult(String status, String message, List<String> cards, String workNo) {}
@@ -48,7 +48,45 @@ public class PresaleVoucherService {
                               List<String> cards) {}
 
     @Transactional
-    public IssuedVoucher createForOrder(Order order, Product product) {
+    public PresaleVoucher createForOrder(Order order, Product product) {
+        PresaleVoucher v = new PresaleVoucher();
+        v.setOrderId(order.getId());
+        v.setOrderNo(order.getOrderNo());
+        v.setProductId(order.getProductId());
+        v.setQuantity(order.getQuantity());
+        // 未付款阶段只创建不可兑换的占位哈希,不向前端签发明文提货码。
+        v.setTokenHash(sha256("pending:" + order.getOrderNo() + ":" + newToken()));
+        v.setTokenHint(PENDING_TOKEN_HINT);
+        v.setPresaleStartAt(product.getPresaleStartAt());
+        v.setPresaleEndAt(product.getPresaleEndAt());
+        v.setSettlementMode(product.getPresaleSettlementMode());
+        return voucherRepository.save(v);
+    }
+
+    @Transactional
+    public IssuedVoucher issueForPaidOrder(Order order) {
+        if (order.getOrderType() != Order.OrderType.GOODS
+                || order.getDeliveryMode() != Order.DeliveryMode.PRESALE_VOUCHER
+                || order.getStatus() != Order.Status.DELIVERED) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_INVALID, "订单尚未完成付款,不能签发提货码");
+        }
+        PresaleVoucher existing = voucherRepository.findLockedByOrderId(order.getId()).orElse(null);
+        if (existing != null) {
+            if (existing.getStatus() == PresaleVoucher.Status.ACTIVE && existing.getTokenClaimedAt() == null) {
+                String token = newToken();
+                existing.setTokenHash(sha256(token));
+                existing.setTokenHint(hint(token));
+                existing.setTokenClaimedAt(LocalDateTime.now());
+                return new IssuedVoucher(existing, token);
+            }
+            return new IssuedVoucher(existing, null);
+        }
+        Product product = productRepository.findById(order.getProductId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "商品不存在"));
+        LocalDateTime now = LocalDateTime.now();
+        if (product.getPresaleEndAt() != null && now.isAfter(product.getPresaleEndAt())) {
+            throw new BusinessException(ErrorCode.ORDER_EXPIRED, "已超过最晚提货截止时间,请联系售后处理");
+        }
         String token = newToken();
         PresaleVoucher v = new PresaleVoucher();
         v.setOrderId(order.getId());
@@ -56,10 +94,12 @@ public class PresaleVoucherService {
         v.setProductId(order.getProductId());
         v.setQuantity(order.getQuantity());
         v.setTokenHash(sha256(token));
-        v.setTokenHint(token.substring(0, 8) + "..." + token.substring(token.length() - 4));
+        v.setTokenHint(hint(token));
+        v.setTokenClaimedAt(LocalDateTime.now());
         v.setPresaleStartAt(product.getPresaleStartAt());
         v.setPresaleEndAt(product.getPresaleEndAt());
         v.setSettlementMode(product.getPresaleSettlementMode());
+        v.setStatus(PresaleVoucher.Status.ACTIVE);
         return new IssuedVoucher(voucherRepository.save(v), token);
     }
 
@@ -208,18 +248,17 @@ public class PresaleVoucherService {
     }
 
     private void syncProductStock(Long productId) {
-        productRepository.findById(productId).ifPresent(product -> {
-            long available = cardService.availableCount(productId);
-            product.setStockCached(available > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) available);
-        });
-        Cache cache = cacheManager.getCache("products");
-        if (cache != null) cache.clear();
+        inventoryService.syncAutoCardStock(productId);
     }
 
     private String newToken() {
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);
         return "PV-" + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private static String hint(String token) {
+        return token.substring(0, 8) + "..." + token.substring(token.length() - 4);
     }
 
     static String sha256(String s) {

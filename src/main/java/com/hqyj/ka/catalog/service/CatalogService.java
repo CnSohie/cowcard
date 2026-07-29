@@ -72,6 +72,9 @@ public class CatalogService {
     public Product saveProduct(SaveProductRequest req) {
         Product p = req.id() == null ? new Product()
                 : productRepository.findById(req.id()).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+        if (req.minBuy() > req.maxBuy()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "最小购买数量不能大于最大购买数量");
+        }
         p.setCategoryId(req.categoryId());
         p.setName(req.name());
         p.setBrief(req.brief());
@@ -80,10 +83,13 @@ public class CatalogService {
         p.setDeliveryMode(req.deliveryMode() == null || req.deliveryMode().isBlank()
                 ? Product.DeliveryMode.AUTO_CARD
                 : Product.DeliveryMode.valueOf(req.deliveryMode()));
-        if (p.getDeliveryMode() == Product.DeliveryMode.PRESALE_VOUCHER
-                && req.presaleStartAt() != null && req.presaleEndAt() != null
-                && !req.presaleEndAt().isAfter(req.presaleStartAt())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "最晚提货截止时间必须晚于开放提货时间");
+        if (p.getDeliveryMode() == Product.DeliveryMode.PRESALE_VOUCHER) {
+            if (req.presaleEndAt() == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "预售商品必须设置最晚提货截止时间");
+            }
+            if (req.presaleStartAt() != null && !req.presaleEndAt().isAfter(req.presaleStartAt())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "最晚提货截止时间必须晚于开放提货时间");
+            }
         }
         p.setManualPrompt(req.manualPrompt());
         p.setPresaleStartAt(req.presaleStartAt());

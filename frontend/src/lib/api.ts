@@ -88,8 +88,8 @@ export async function get<T>(url: string, params?: object): Promise<T> {
   return r.data.data as T;
 }
 
-export async function post<T>(url: string, data?: object): Promise<T> {
-  const r = await http.post(url, data);
+export async function post<T>(url: string, data?: object, options?: { headers?: Record<string, string> }): Promise<T> {
+  const r = await http.post(url, data, options);
   return r.data.data as T;
 }
 

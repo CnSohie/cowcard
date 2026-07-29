@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { CheckCircle2, Copy, History, KeyRound, Search, ShieldCheck, TicketCheck, X } from "lucide-react";
 import { ApiError, post, type OrderView } from "../../lib/api";
 import { consumePresaleVoucherToken, findLocalOrder, forgetOrder, localOrders, rememberOrder, type LocalOrder } from "../../lib/orderHistory";
 import { money } from "../../lib/currency";
+import { CaptchaBox, captchaHeaders } from "../../lib/captcha";
 
 const STATUS_LABEL: Record<string, [string, string]> = {
   PENDING: ["待支付", "text-amber-600 dark:text-amber-400"],
@@ -13,6 +14,14 @@ const STATUS_LABEL: Record<string, [string, string]> = {
   CLOSED: ["已关闭", "text-ink/40"],
   REFUNDED: ["已退款", "text-ink/40"],
 };
+
+interface PresaleVoucherClaim {
+  token: string | null;
+  tokenHint: string;
+  status: string;
+}
+
+const PENDING_PRESALE_HINT = "付款后签发";
 
 function fmtDate(s: string) {
   const d = new Date(s);
@@ -31,7 +40,12 @@ export default function OrderQueryPage() {
   const [copied, setCopied] = useState(-1);
   const [history, setHistory] = useState<LocalOrder[]>(() => localOrders());
   const [revealedPresaleToken, setRevealedPresaleToken] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaEnabled, setCaptchaEnabled] = useState(false);
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const autoQueryKey = useRef("");
+  const handleCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
+  const handleCaptchaEnabled = useCallback((enabled: boolean) => setCaptchaEnabled(enabled), []);
 
   // 从支付页跳来时:若本机历史里有这单,自动补全凭证并直接展示结果
   useEffect(() => {
@@ -54,31 +68,46 @@ export default function OrderQueryPage() {
     setError("");
     setOrder(null);
     setRevealedPresaleToken(null);
+    if (captchaEnabled && !captchaToken) {
+      setError("请先完成人机验证");
+      setBusy(false);
+      return;
+    }
     try {
-      const r = await post<OrderView>("/orders/query", {
+      const payload = {
         orderNo: no.trim(),
         contact: ct.trim() || undefined,
         queryPassword: token ? undefined : queryPassword || undefined,
         queryToken: token || undefined,
-      });
-      setOrder(r);
+      };
+      const r = await post<OrderView>("/orders/query", payload, { headers: captchaHeaders(captchaToken) });
       // 查询成功 → 留存/刷新本机凭证(其他设备下的单也能被记住)
       const previous = findLocalOrder(r.orderNo);
-      const oneTimePresaleToken = previous?.presaleVoucherToken ?? null;
+      let nextOrder = r;
+      const presalePaid = r.deliveryMode === "PRESALE_VOUCHER" && ["PAID", "DELIVERED"].includes(r.status);
+      let oneTimePresaleToken = presalePaid ? previous?.presaleVoucherToken ?? null : null;
+      if (!oneTimePresaleToken && presalePaid) {
+        const claimed = await post<PresaleVoucherClaim>("/orders/presale-token", payload);
+        nextOrder = { ...r, presaleVoucherHint: claimed.tokenHint, presaleVoucherStatus: claimed.status };
+        oneTimePresaleToken = claimed.token;
+      }
+      setOrder(nextOrder);
       const savedContact = ct.trim() || previous?.contact || "";
       rememberOrder({
-        orderNo: r.orderNo, contact: savedContact, productName: r.productName,
-        amount: String(r.amount), createdAt: r.createdAt, queryToken: token || undefined,
-        presaleVoucherToken: previous?.presaleVoucherToken,
+        orderNo: nextOrder.orderNo, contact: savedContact, productName: nextOrder.productName,
+        amount: String(nextOrder.amount), createdAt: nextOrder.createdAt, queryToken: token || undefined,
+        presaleVoucherToken: oneTimePresaleToken ?? previous?.presaleVoucherToken,
       }, { bump: !previous });
       if (oneTimePresaleToken) {
         setRevealedPresaleToken(oneTimePresaleToken);
-        consumePresaleVoucherToken(r.orderNo);
+        consumePresaleVoucherToken(nextOrder.orderNo);
       }
       setHistory(localOrders());
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "查询失败");
     } finally {
+      setCaptchaToken("");
+      setCaptchaResetKey((x) => x + 1);
       setBusy(false);
     }
   }
@@ -103,9 +132,14 @@ export default function OrderQueryPage() {
     });
   }
 
-  const statusInfo = order ? STATUS_LABEL[order.status] ?? [order.status, "text-ink/50"] : null;
+  const statusInfo = order ? (
+    order.deliveryMode === "PRESALE_VOUCHER" && order.status === "DELIVERED"
+      ? ["已付款 · 提货码已激活", "text-emerald-600 dark:text-emerald-400"]
+      : STATUS_LABEL[order.status] ?? [order.status, "text-ink/50"]
+  ) : null;
   const localOrder = order ? findLocalOrder(order.orderNo) : null;
   const fmtPresaleTime = (s: string | null) => s ? new Date(s).toLocaleString() : "商家另行公告";
+  const presaleReady = order?.deliveryMode === "PRESALE_VOUCHER" && ["PAID", "DELIVERED"].includes(order.status);
 
   return (
     <div className="mx-auto max-w-2xl animate-fade-up">
@@ -129,6 +163,12 @@ export default function OrderQueryPage() {
           <input className="input" type="password" placeholder="选填" value={queryPassword} onChange={(e) => setQueryPassword(e.target.value)} />
         </div>
         {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+        <CaptchaBox
+          action="order_query"
+          onToken={handleCaptchaToken}
+          onEnabledChange={handleCaptchaEnabled}
+          resetKey={captchaResetKey}
+        />
         <button className="btn-primary mt-5 w-full !py-3.5" disabled={busy || !orderNo || (!contact && !queryToken)}
           onClick={() => doQuery(orderNo, contact)}>
           {busy ? "查询中…" : "查询订单"}
@@ -179,7 +219,13 @@ export default function OrderQueryPage() {
           {order.deliveryMode === "PRESALE_VOUCHER" && (
             <div className="mt-6 rounded-2xl border border-primary/15 bg-accent-soft/60 p-4">
               <label className="label flex items-center gap-1.5"><TicketCheck size={13} /> 电子预售提货码</label>
-              {revealedPresaleToken ? (
+              {!presaleReady ? (
+                <p className="rounded-2xl bg-surface px-4 py-3 text-xs leading-relaxed text-ink/55">
+                  {order.status === "PENDING"
+                    ? "订单尚未完成付款,电子预售提货码不会激活,也不能用于核销提货。付款确认后,本下单浏览器会展示一次性明文提货码。"
+                    : "订单未完成付款或已关闭,电子预售提货码不会激活。如你已经付款,请联系售后并提供订单号核对。"}
+                </p>
+              ) : revealedPresaleToken ? (
                 <button onClick={() => copyCard(revealedPresaleToken, 8888)}
                   className="group flex w-full items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3 text-left transition hover:brightness-95">
                   <code className="break-all font-mono text-sm font-semibold">{revealedPresaleToken}</code>

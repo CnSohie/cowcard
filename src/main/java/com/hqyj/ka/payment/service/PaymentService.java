@@ -66,6 +66,9 @@ public class PaymentService {
         if (order.getExpireAt().isBefore(LocalDateTime.now())) {
             throw new BusinessException(ErrorCode.ORDER_EXPIRED);
         }
+        if (order.getMemberId() != null && (ctx.memberId() == null || !order.getMemberId().equals(ctx.memberId()))) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "请登录下单会员账号后支付该订单");
+        }
         PaymentChannel channel = channelRepository.findByCodeAndEnabledTrue(channelCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHANNEL_DISABLED));
 
@@ -74,9 +77,17 @@ public class PaymentService {
         tx.setOrderNo(order.getOrderNo());
         tx.setChannelCode(channelCode);
         tx.setAmount(order.getAmount());
-        transactionRepository.save(tx);
+        tx = transactionRepository.save(tx);
 
-        return registry.get(channelCode).create(order, decryptConfig(channel), ctx);
+        // 策略调用必须留在当前事务内。尤其余额支付依赖同一事务同时完成:
+        // 扣钱包余额 -> 订单 CAS 标记 PAID -> 发卡/入账 -> 支付流水 SUCCESS。
+        PayCreationResult result = registry.get(channelCode).create(order, decryptConfig(channel), ctx);
+        if (BalancePaymentStrategy.CODE.equals(channelCode) && "BALANCE".equals(result.kind())) {
+            tx.setStatus(PaymentTransaction.Status.SUCCESS);
+            tx.setChannelTradeNo("BALANCE:" + order.getOrderNo());
+            tx.setPaidAt(LocalDateTime.now());
+        }
+        return result;
     }
 
     /** 支付网关异步回调统一入口。返回应答报文体。 */

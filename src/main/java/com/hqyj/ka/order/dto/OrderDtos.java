@@ -27,6 +27,8 @@ public final class OrderDtos {
                                       BigDecimal walletPaidAmount, BigDecimal memberDiscountAmount,
                                       String presaleVoucherToken) {}
 
+    public record PresaleVoucherClaimResponse(String token, String tokenHint, String status) {}
+
     public record OrderView(String orderNo, String productName, BigDecimal unitPrice, int quantity,
                             BigDecimal amount, BigDecimal discountAmount, BigDecimal walletPaidAmount,
                             String status, String paidChannel,

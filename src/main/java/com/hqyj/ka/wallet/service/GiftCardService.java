@@ -49,15 +49,20 @@ public class GiftCardService {
     @Transactional
     public GiftCard redeem(Long memberId, String rawCode) {
         if (rawCode == null || rawCode.isBlank()) throw new BusinessException(ErrorCode.BAD_REQUEST, "请输入礼品卡码");
-        GiftCard card = giftCardRepository.findByCode(rawCode.trim().toUpperCase())
+        LocalDateTime now = LocalDateTime.now();
+        String code = rawCode.trim().toUpperCase();
+        GiftCard card = giftCardRepository.findByCode(code)
                 .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "礼品卡不存在"));
         if (card.getStatus() != GiftCard.Status.ACTIVE) throw new BusinessException(ErrorCode.BAD_REQUEST, "礼品卡不可兑换");
-        if (card.getExpireAt() != null && card.getExpireAt().isBefore(LocalDateTime.now())) {
+        if (card.getExpireAt() != null && card.getExpireAt().isBefore(now)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "礼品卡已过期");
+        }
+        if (giftCardRepository.redeemActive(code, GiftCard.Status.ACTIVE, GiftCard.Status.REDEEMED, memberId, now) == 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "礼品卡不可兑换");
         }
         card.setStatus(GiftCard.Status.REDEEMED);
         card.setRedeemedBy(memberId);
-        card.setRedeemedAt(LocalDateTime.now());
+        card.setRedeemedAt(now);
         walletService.credit(memberId, card.getAmount(), WalletTxn.Type.GIFT_CARD,
                 "GIFT_CARD", card.getId(), "礼品卡兑换 " + card.getCode());
         return card;

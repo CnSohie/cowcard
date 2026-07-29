@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Clock, TrendingUp, Wallet } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, TrendingUp, Wallet } from "lucide-react";
+import { Link } from "react-router-dom";
 import { get } from "../../lib/api";
 import { money } from "../../lib/currency";
 
 interface DayRevenue { date: string; amount: string; }
 interface Stats {
   todayRevenue: string; todayPaidCount: number; weekRevenue: string; revenue7d: DayRevenue[];
-  pendingOrders: number; paidOrders: number; deliveredOrders: number; totalOrders: number;
+  pendingOrders: number; paidOrders: number; deliveredOrders: number; latePaidOrders: number; totalOrders: number;
 }
 
 export default function Dashboard() {
@@ -18,11 +19,14 @@ export default function Dashboard() {
 
   const days = stats?.revenue7d ?? [];
   const max = Math.max(1, ...days.map((d) => Number(d.amount)));
+  const opsOrderLink = (stats?.latePaidOrders ?? 0) > 0
+    ? "/admin/orders?latePaid=1"
+    : (stats?.paidOrders ?? 0) > 0 ? "/admin/orders?status=PAID" : "/admin/orders";
 
   const tiles = [
     { label: "今日营收", value: stats ? money(stats.todayRevenue) : "—", icon: Wallet, hot: true },
     { label: "今日成交笔数", value: stats?.todayPaidCount ?? "—", icon: TrendingUp, hot: false },
-    { label: "待支付订单", value: stats?.pendingOrders ?? "—", icon: Clock, hot: false },
+    { label: "已收款待处理", value: stats ? (stats.paidOrders + stats.latePaidOrders) : "—", icon: AlertTriangle, hot: false },
     { label: "已发货订单", value: stats?.deliveredOrders ?? "—", icon: CheckCircle2, hot: false },
   ];
 
@@ -70,9 +74,18 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="card mt-5 p-5 text-sm leading-relaxed text-ink/55">
-        <p className="mb-1 font-semibold text-ink">运营提示</p>
-        「已支付 {stats?.paidOrders ?? 0} 单」大于 0 说明支付成功但库存不足导致发卡失败——请尽快补充卡密后在订单管理中补发。订单总量 {stats?.totalOrders ?? 0}。
+      <div className={`card mt-5 p-5 text-sm leading-relaxed ${
+        (stats?.paidOrders ?? 0) + (stats?.latePaidOrders ?? 0) > 0 ? "border-amber-500/25 bg-amber-500/[0.06]" : "text-ink/55"
+      }`}>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+          <p className="font-semibold text-ink">运营提示</p>
+          <Link to={opsOrderLink} className="text-xs font-bold text-primary hover:underline">查看订单</Link>
+        </div>
+        <p>
+          已支付待发货/待人工处理 <b className="text-ink">{stats?.paidOrders ?? 0}</b> 单；
+          迟到到账但订单已超时/关闭 <b className="text-ink">{stats?.latePaidOrders ?? 0}</b> 单。
+          前者通常需要补卡密或人工发货，后者需要先核实渠道流水后用订单管理的人工补单恢复资源占用。订单总量 {stats?.totalOrders ?? 0}。
+        </p>
       </div>
     </div>
   );

@@ -15,6 +15,8 @@ import com.hqyj.ka.wallet.entity.WalletTxn;
 import com.hqyj.ka.wallet.service.CommissionService;
 import com.hqyj.ka.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,7 @@ import java.util.stream.Collectors;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ArticleService {
 
     public static final String PAYWALL_MARKER = "<!--paywall-->";
@@ -93,7 +96,7 @@ public class ArticleService {
 
     // ---------- 会员 ----------
 
-    /** 余额购买:扣款 + 购买记录 + 计数 + 推广佣金,同一事务;唯一约束兜底并发双购。 */
+    /** 余额购买:先抢唯一购买记录,再扣款;重复点击在扣钱前失败。 */
     @Transactional
     public void purchase(Long memberId, Long articleId) {
         Article a = articleRepository.findById(articleId)
@@ -105,15 +108,24 @@ public class ArticleService {
         if (purchaseRepository.existsByMemberIdAndArticleId(memberId, articleId)) {
             throw new BusinessException(ErrorCode.ARTICLE_ALREADY_PURCHASED);
         }
-        walletService.debit(memberId, a.getPrice(), WalletTxn.Type.PURCHASE,
-                "ARTICLE", articleId, "购买文章《" + a.getTitle() + "》");
         ArticlePurchase p = new ArticlePurchase();
         p.setMemberId(memberId);
         p.setArticleId(articleId);
         p.setPrice(a.getPrice());
-        purchaseRepository.save(p);
+        try {
+            purchaseRepository.saveAndFlush(p);
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(ErrorCode.ARTICLE_ALREADY_PURCHASED);
+        }
+        walletService.debit(memberId, a.getPrice(), WalletTxn.Type.PURCHASE,
+                "ARTICLE", articleId, "购买文章《" + a.getTitle() + "》");
         articleRepository.incrementPurchaseCount(articleId);
-        commissionService.onSpend(memberId, a.getPrice(), "ARTICLE", articleId, "好友购买文章");
+        try {
+            commissionService.onSpend(memberId, a.getPrice(), "ARTICLE", articleId, "好友购买文章");
+        } catch (RuntimeException e) {
+            log.warn("article commission accounting failed, articleId={}, memberId={}: {}",
+                    articleId, memberId, e.getMessage());
+        }
     }
 
     @Transactional(readOnly = true)
@@ -199,6 +211,15 @@ public class ArticleService {
             a.setStatus(Article.Status.PUBLISHED);
             if (a.getPublishedAt() == null) a.setPublishedAt(LocalDateTime.now());
         }
+        return AdminArticleView.of(a);
+    }
+
+    /** 置顶切换:前台与后台列表都会置顶优先展示。 */
+    @Transactional
+    public AdminArticleView togglePinned(Long id) {
+        Article a = articleRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ARTICLE_NOT_FOUND));
+        a.setPinned(!a.isPinned());
         return AdminArticleView.of(a);
     }
 

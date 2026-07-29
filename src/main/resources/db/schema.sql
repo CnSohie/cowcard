@@ -95,7 +95,8 @@ CREATE TABLE IF NOT EXISTS card_secret (
   created_at  DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   sold_at     DATETIME(6),
   KEY idx_card_alloc (product_id, status),
-  KEY idx_card_order (order_id)
+  KEY idx_card_order (order_id),
+  UNIQUE KEY uk_card_product_fingerprint (product_id, fingerprint)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -155,6 +156,7 @@ CREATE TABLE IF NOT EXISTS presale_voucher (
   quantity         INT         NOT NULL,
   token_hash       VARCHAR(64) NOT NULL,
   token_hint       VARCHAR(20) NOT NULL,
+  token_claimed_at DATETIME(6),
   status           VARCHAR(20) NOT NULL DEFAULT 'WAITING_PAYMENT',
   presale_start_at DATETIME(6),
   presale_end_at   DATETIME(6),
@@ -167,7 +169,7 @@ CREATE TABLE IF NOT EXISTS presale_voucher (
   created_at       DATETIME(6),
   updated_at       DATETIME(6),
   UNIQUE KEY idx_voucher_hash (token_hash),
-  KEY idx_voucher_order (order_id),
+  UNIQUE KEY idx_voucher_order (order_id),
   KEY idx_voucher_member (redeem_member_id, id),
   KEY idx_voucher_status (status, presale_end_at)
 ) ENGINE=InnoDB;
@@ -442,3 +444,6 @@ CREATE TABLE IF NOT EXISTS article_purchase (
 --   ADD COLUMN member_id  BIGINT      NULL COMMENT '下单会员;游客单为空',
 --   ADD COLUMN query_token_hash VARCHAR(100) NULL COMMENT '当前浏览器取卡令牌 bcrypt',
 --   ADD KEY idx_order_member (member_id);
+--
+-- 预售提货码一次性展示时间(生产已有 presale_voucher 表时执行):
+-- ALTER TABLE presale_voucher ADD COLUMN token_claimed_at DATETIME(6) NULL AFTER token_hint;

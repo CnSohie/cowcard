@@ -84,8 +84,8 @@ export default function AdminLayout() {
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center justify-between border-b border-ink/[0.06] px-5">
         <div className="flex items-center gap-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-full bg-primary">
-            <Zap size={14} strokeWidth={2.5} className="text-accent dark:text-primary-contrast" />
+          <span className="brand-mark grid h-8 w-8 place-items-center rounded-full bg-primary">
+            <Zap size={14} strokeWidth={2.5} className="brand-mark-icon text-accent dark:text-primary-contrast" />
           </span>
           <span className="font-extrabold tracking-tight">Ka 后台</span>
         </div>

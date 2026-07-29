@@ -9,6 +9,7 @@ import PostDetail from "./pages/store/PostDetail";
 import MemberAuth from "./pages/store/MemberAuth";
 import MemberCenter from "./pages/store/MemberCenter";
 import TermsPage from "./pages/store/TermsPage";
+import AboutPage from "./pages/store/AboutPage";
 import RedeemPage from "./pages/store/RedeemPage";
 import AdminLogin from "./pages/admin/AdminLogin";
 import AdminLayout from "./pages/admin/AdminLayout";
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/register" element={<MemberAuth />} />
         <Route path="/me" element={<MemberCenter />} />
         <Route path="/tos" element={<TermsPage />} />
+        <Route path="/about" element={<AboutPage />} />
       </Route>
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/admin" element={<AdminLayout />}>
