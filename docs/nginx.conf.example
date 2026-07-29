@@ -1,0 +1,103 @@
+# ══════════════════════════════════════════════════════════════
+# Ka - Nginx 生产配置(前端静态直出 + API 反代 + 网络层限流)
+# 这是抵御 CC / 慢速攻击的第一道闸;容量型 DDoS 见 docs/SECURITY.md
+# ══════════════════════════════════════════════════════════════
+
+# ── 限流/限连区(放 http{} 段)──
+# 按真实客户端 IP 限流。若前面还有 Cloudflare/高防,应改用其回源真实 IP 头。
+limit_req_zone  $binary_remote_addr zone=api:10m   rate=20r/s;   # API 平均 20 请求/秒/IP
+limit_req_zone  $binary_remote_addr zone=login:10m rate=1r/s;    # 登录严格
+limit_conn_zone $binary_remote_addr zone=perip:10m;             # 并发连接数/IP
+limit_req_status 429;
+limit_conn_status 429;
+
+# 上游后端
+upstream ka_backend {
+    server 127.0.0.1:8080;
+    keepalive 32;
+}
+
+# HTTP → HTTPS 强跳
+server {
+    listen 80;
+    server_name your-domain.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name your-domain.com;
+
+    ssl_certificate     /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+
+    # ── 安全响应头 ──
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    server_tokens off;                       # 隐藏 Nginx 版本
+
+    # ── 慢速攻击 / 超大请求防护(网络层)──
+    client_body_timeout   10s;               # body 传输超时,克制 Slow POST
+    client_header_timeout 10s;               # header 传输超时,克制 Slowloris
+    send_timeout          10s;
+    client_max_body_size  2m;                # 请求体上限
+    client_body_buffer_size 16k;
+    keepalive_timeout     30s;
+    limit_conn perip 20;                     # 单 IP 最多 20 个并发连接
+
+    # 只放行必要方法,其余直接拒(挡大量畸形/探测请求)
+    if ($request_method !~ ^(GET|POST|PUT|DELETE|OPTIONS)$) { return 405; }
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript image/svg+xml;
+
+    # ── 前端静态文件(React 构建产物)──
+    root /opt/ka/frontend/dist;
+    index index.html;
+    location / {
+        try_files $uri /index.html;
+    }
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # ── 登录接口:最严限流 ──
+    location = /api/auth/login {
+        limit_req zone=login burst=3 nodelay;
+        limit_conn perip 10;
+        proxy_pass http://ka_backend;
+        include /etc/nginx/ka_proxy_params.conf;
+    }
+
+    # ── 一般 API ──
+    location /api/ {
+        limit_req zone=api burst=40 nodelay;
+        proxy_pass http://ka_backend;
+        include /etc/nginx/ka_proxy_params.conf;
+    }
+
+    # ── 支付回调:放宽限流(网关会重发,不能误杀),但仍限连 ──
+    location /api/pay/notify/ {
+        limit_req zone=api burst=100 nodelay;
+        proxy_pass http://ka_backend;
+        include /etc/nginx/ka_proxy_params.conf;
+    }
+}
+
+# ── /etc/nginx/ka_proxy_params.conf(反代公共头,关键:覆盖式写 XFF 防伪造)──
+#   proxy_http_version 1.1;
+#   proxy_set_header Connection "";
+#   proxy_set_header Host $host;
+#   proxy_set_header X-Real-IP $remote_addr;
+#   proxy_set_header X-Forwarded-For $remote_addr;      # ← 覆盖而非 $proxy_add_x_forwarded_for,杜绝客户端伪造 XFF
+#   proxy_set_header X-Forwarded-Proto $scheme;
+#   proxy_connect_timeout 5s;
+#   proxy_read_timeout 30s;

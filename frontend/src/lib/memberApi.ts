@@ -1,0 +1,262 @@
+import axios from "axios";
+import { ApiError, type OrderView } from "./api";
+
+/**
+ * 会员端 API 客户端:与管理端(api.ts)完全隔离的令牌体系(ka.m.*)。
+ * - 携带会员 JWT(kind=member);未登录则不带头,公开接口照常可用
+ * - 401 自动走 /api/member/auth/refresh 刷新一次
+ */
+const http = axios.create({ baseURL: "/api", timeout: 15000 });
+
+let accessToken: string | null = localStorage.getItem("ka.m.access");
+let refreshToken: string | null = localStorage.getItem("ka.m.refresh");
+
+export interface MemberInfo {
+  id: number;
+  email: string;
+  nickname: string;
+  inviteCode: string;
+  levelId?: number | null;
+  totalRecharge?: string;
+  totalSpend?: string;
+  createdAt?: string;
+}
+
+export function setMemberTokens(access: string | null, refresh: string | null) {
+  accessToken = access;
+  refreshToken = refresh;
+  if (access) localStorage.setItem("ka.m.access", access);
+  else localStorage.removeItem("ka.m.access");
+  if (refresh) localStorage.setItem("ka.m.refresh", refresh);
+  else localStorage.removeItem("ka.m.refresh");
+}
+
+export function saveMemberInfo(m: MemberInfo | null) {
+  if (m) localStorage.setItem("ka.m.user", JSON.stringify(m));
+  else localStorage.removeItem("ka.m.user");
+}
+
+export function memberInfo(): MemberInfo | null {
+  try {
+    const raw = localStorage.getItem("ka.m.user");
+    return raw ? (JSON.parse(raw) as MemberInfo) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isMemberLoggedIn() {
+  return !!accessToken || !!localStorage.getItem("ka.m.access");
+}
+
+export function memberLogout() {
+  setMemberTokens(null, null);
+  saveMemberInfo(null);
+}
+
+http.interceptors.request.use((cfg) => {
+  accessToken = accessToken || localStorage.getItem("ka.m.access");
+  refreshToken = refreshToken || localStorage.getItem("ka.m.refresh");
+  if (accessToken) cfg.headers.Authorization = `Bearer ${accessToken}`;
+  return cfg;
+});
+
+let refreshing: Promise<boolean> | null = null;
+
+async function tryRefresh(): Promise<boolean> {
+  if (!refreshToken) return false;
+  refreshing = refreshing ?? axios
+    .post("/api/member/auth/refresh", { refreshToken })
+    .then((r) => {
+      if (r.data.code === 0) {
+        setMemberTokens(r.data.data.accessToken, r.data.data.refreshToken);
+        return true;
+      }
+      return false;
+    })
+    .catch(() => false)
+    .finally(() => setTimeout(() => (refreshing = null), 0));
+  return refreshing ?? false;
+}
+
+http.interceptors.response.use(
+  async (resp) => {
+    const body = resp.data;
+    if (body && typeof body.code === "number" && body.code !== 0) {
+      if (body.code === 1003) memberLogout();
+      if (body.code === 401 && (await tryRefresh())) return http.request(resp.config);
+      throw new ApiError(body.code, body.message ?? "请求失败");
+    }
+    return resp;
+  },
+  async (err) => {
+    const resp = err.response;
+    if (resp?.status === 401 && (await tryRefresh())) {
+      return http.request(err.config);
+    }
+    if (resp?.status === 401) {
+      memberLogout();
+      throw new ApiError(401, "登录已过期,请重新登录");
+    }
+    if (resp?.status === 403 && resp.data?.code === 1003) {
+      memberLogout();
+      throw new ApiError(1003, resp.data?.message ?? "账户已被禁用");
+    }
+    if (resp?.status === 429) throw new ApiError(429, resp.data?.message ?? "请求过于频繁,请稍后再试");
+    if (!resp) {
+      throw new ApiError(-1, "连不上后端服务:请确认后端已启动(IntelliJ 控制台出现 Started KaApplication)");
+    }
+    if (typeof resp.data === "string" && [500, 502, 504].includes(resp.status)) {
+      throw new ApiError(resp.status, "后端服务未响应:可能正在启动或已停止,请查看 IntelliJ 控制台");
+    }
+    if (resp.status === 404 && !resp.data?.message) {
+      throw new ApiError(404, "接口不存在:后端可能还是旧版本,请重启后端使新接口生效");
+    }
+    throw new ApiError(resp.status, resp.data?.message ?? `请求失败(HTTP ${resp.status})`);
+  },
+);
+
+export async function mGet<T>(url: string, params?: object): Promise<T> {
+  const r = await http.get(url, { params });
+  return r.data.data as T;
+}
+
+export async function mPost<T>(url: string, data?: object): Promise<T> {
+  const r = await http.post(url, data);
+  return r.data.data as T;
+}
+
+// ---------- 认证 ----------
+
+export interface MemberTokenResponse {
+  accessToken: string;
+  refreshToken: string;
+  member: MemberInfo;
+}
+
+export async function memberLogin(email: string, password: string) {
+  const r = await mPost<MemberTokenResponse>("/member/auth/login", { email, password });
+  setMemberTokens(r.accessToken, r.refreshToken);
+  saveMemberInfo(r.member);
+  return r.member;
+}
+
+export async function memberRegister(email: string, password: string, nickname?: string, ref?: string) {
+  const r = await mPost<MemberTokenResponse>("/member/auth/register", {
+    email, password,
+    nickname: nickname || undefined,
+    ref: ref || undefined,
+  });
+  setMemberTokens(r.accessToken, r.refreshToken);
+  saveMemberInfo(r.member);
+  return r.member;
+}
+
+// ---------- 类型 ----------
+
+export interface PageResult<T> { items: T[]; total: number; page: number; size: number; }
+
+export interface MemberMe {
+  member: MemberInfo;
+  level: {
+    id: number;
+    name: string;
+    icon: string | null;
+    discountRate: string;
+    rechargeThreshold: string;
+    spendThreshold: string;
+  } | null;
+  balance: string;
+  frozen: string;
+  invitedCount: number;
+  commissionTotal: string;
+}
+
+export interface WalletSummary {
+  balance: string;
+  frozen: string;
+  totalCommission: string;
+  minWithdraw: string;
+  commissionRate: string;
+  freezeReason: string | null;
+}
+
+export interface TxnView {
+  id: number;
+  type: "RECHARGE" | "PURCHASE" | "COMMISSION" | "WITHDRAW_FREEZE" | "WITHDRAW_REJECT"
+    | "ADMIN_FREEZE" | "ADMIN_UNFREEZE" | "RECHARGE_REVERSAL" | "WALLET_ORDER_REFUND"
+    | "ADMIN_REFUND" | "GIFT_CARD" | "ADJUST";
+  amount: string;
+  balanceAfter: string;
+  remark: string | null;
+  createdAt: string;
+}
+
+export interface WithdrawView {
+  id: number;
+  amount: string;
+  channel: string;
+  account: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  reviewNote: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+}
+
+export interface PresaleVoucherView {
+  workNo: string;
+  orderNo: string;
+  productName: string;
+  quantity: number;
+  status: string;
+  tokenHint: string;
+  redeemContact: string | null;
+  fulfillmentNote: string | null;
+  presaleStartAt: string | null;
+  presaleEndAt: string | null;
+  redeemedAt: string | null;
+  fulfilledAt: string | null;
+  cards: string[];
+}
+
+export interface SupportTicketView {
+  id: number;
+  subject: string;
+  category: string | null;
+  relatedOrderNo: string | null;
+  message: string;
+  reply: string | null;
+  status: string;
+  priority: string;
+  createdAt: string;
+  updatedAt: string;
+  repliedAt: string | null;
+  messages: {
+    id: number;
+    senderType: "MEMBER" | "STAFF";
+    senderName: string | null;
+    content: string;
+    createdAt: string | null;
+  }[];
+  canFollowUp: boolean;
+}
+
+export interface ArticleCard {
+  id: number; slug: string; title: string; category: string | null; tags: string | null;
+  coverImage: string | null; summary: string | null; price: string; pinned: boolean;
+  views: number; purchaseCount: number; publishedAt: string | null;
+}
+
+export interface ArticleDetail {
+  id: number; slug: string; title: string; category: string | null; tags: string | null;
+  coverImage: string | null; summary: string | null; price: string; pinned: boolean;
+  views: number; publishedAt: string | null;
+  content: string; locked: boolean; purchased: boolean;
+}
+
+export interface PurchaseView {
+  id: number; articleId: number; title: string; slug: string | null;
+  price: string; createdAt: string;
+}
+
+export type MemberOrderView = OrderView;

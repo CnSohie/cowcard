@@ -1,0 +1,118 @@
+package com.hqyj.ka.payment.epay;
+
+import com.hqyj.ka.order.entity.Order;
+import com.hqyj.ka.payment.CallbackResult;
+import com.hqyj.ka.payment.PayContext;
+import com.hqyj.ka.payment.PayCreationResult;
+import com.hqyj.ka.payment.PaymentStrategy;
+import com.hqyj.ka.payment.crypto.FxRateService;
+import com.hqyj.ka.sysconfig.service.ConfigService;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.Map;
+import java.util.TreeMap;
+
+/**
+ * 易支付(Epay)协议适配器:兼容主流聚合支付平台的支付宝通道。
+ * config:gateway(如 https://pay.example.com), pid, key, notifyUrl, returnUrl, payType(默认 alipay)
+ * 协议:参数 ASCII 升序拼接 + 商户密钥 → MD5 小写;notify 同规则验签。
+ * 注意:MD5 为协议规定,安全性依赖 key 保密与服务端金额核对,勿用于其他场景。
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class EpayStrategy implements PaymentStrategy {
+
+    public static final String CODE = "EPAY";
+
+    private final FxRateService fxRateService;
+    private final ConfigService configService;
+
+    @Override
+    public String channelCode() { return CODE; }
+
+    @Override
+    public PayCreationResult create(Order order, Map<String, String> config, PayContext ctx) {
+        Map<String, String> params = new TreeMap<>();
+        params.put("pid", config.get("pid"));
+        params.put("type", config.getOrDefault("payType", "alipay"));
+        params.put("out_trade_no", order.getOrderNo());
+        params.put("notify_url", config.get("notifyUrl"));
+        params.put("return_url", returnUrl(order, config, ctx));
+        params.put("name", order.getProductName());
+        params.put("money", fxRateService.siteToCny(order.getAmount()).toPlainString());
+        String sign = md5Sign(params, config.get("key"));
+
+        StringBuilder url = new StringBuilder(config.get("gateway"));
+        url.append(url.indexOf("?") >= 0 ? "&" : "/submit.php?");
+        params.forEach((k, v) -> url.append(k).append('=')
+                .append(URLEncoder.encode(v, StandardCharsets.UTF_8)).append('&'));
+        url.append("sign=").append(sign).append("&sign_type=MD5");
+        return PayCreationResult.redirect(url.toString());
+    }
+
+    @Override
+    public CallbackResult handleCallback(HttpServletRequest request, Map<String, String> config) {
+        Map<String, String> params = new HashMap<>();
+        request.getParameterMap().forEach((k, v) -> params.put(k, String.join(",", v)));
+
+        String givenSign = params.get("sign");
+        if (givenSign == null || !givenSign.equalsIgnoreCase(md5Sign(params, config.get("key")))) {
+            return CallbackResult.fail("fail");
+        }
+        if (!config.get("pid").equals(params.get("pid"))) return CallbackResult.fail("fail");
+        if (!"TRADE_SUCCESS".equals(params.get("trade_status"))) return CallbackResult.fail("success");
+        return CallbackResult.success(params.get("out_trade_no"), params.get("trade_no"),
+                new BigDecimal(params.get("money")), "success");
+    }
+
+    /** ASCII 升序,跳过 sign/sign_type/空值,k=v&…&key → md5 小写 */
+    static String md5Sign(Map<String, String> params, String key) {
+        StringBuilder sb = new StringBuilder();
+        new TreeMap<>(params).forEach((k, v) -> {
+            if (k.equals("sign") || k.equals("sign_type") || v == null || v.isEmpty()) return;
+            sb.append(k).append('=').append(v).append('&');
+        });
+        sb.setLength(sb.length() - 1);
+        sb.append(key);
+        try {
+            byte[] digest = MessageDigest.getInstance("MD5").digest(sb.toString().getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private String returnUrl(Order order, Map<String, String> config, PayContext ctx) {
+        String tpl = config.get("returnUrl");
+        if (tpl == null || tpl.isBlank()) {
+            String siteUrl = configService.all().get("site.url");
+            String base = (siteUrl == null || siteUrl.isBlank()) ? safeBase(ctx.extra("returnBase")) : siteUrl;
+            if (base == null || base.isBlank()) return config.getOrDefault("notifyUrl", "");
+            tpl = base.replaceAll("/+$", "") + "/pay/{{orderNo}}";
+        }
+        return tpl.replace("{{orderNo}}", order.getOrderNo());
+    }
+
+    private String safeBase(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            URI uri = URI.create(raw.trim());
+            if (!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme())) return null;
+            if (uri.getHost() == null) return null;
+            return uri.getScheme() + "://" + uri.getAuthority();
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+}

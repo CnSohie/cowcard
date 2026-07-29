@@ -1,0 +1,116 @@
+# ============================================================
+# Ka 发卡平台 - 开发环境默认配置
+# 生产环境使用 --spring.profiles.active=prod(application-prod.yml,全部密钥走环境变量)
+# ============================================================
+spring:
+  application:
+    name: ka
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/ka?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ka
+    password: ka_dev_password
+    hikari:
+      maximum-pool-size: 8
+      minimum-idle: 2
+      connection-timeout: 5000
+  jpa:
+    hibernate:
+      ddl-auto: update          # 开发便利;生产 = validate + db/schema.sql
+    open-in-view: false         # 连接不被视图层长占(2C2G 关键)
+    properties:
+      hibernate:
+        jdbc.batch_size: 50     # 卡密批量导入
+        order_inserts: true
+  cache:
+    type: caffeine              # 升级路线:多节点时改 redis,业务代码零改动
+  jackson:
+    time-zone: Asia/Shanghai
+  servlet:
+    multipart:
+      max-file-size: 6MB        # 略高于业务限制(ka.upload.max-size-mb),错误信息更友好
+      max-request-size: 8MB
+
+server:
+  port: 8080
+  # 请求头体积上限:防超大头攻击
+  max-http-request-header-size: 16KB
+  tomcat:
+    threads:
+      max: 50                   # 2 核 IO 密集足够
+      min-spare: 5
+    accept-count: 100
+    max-connections: 2000
+    # ── 慢速攻击(Slowloris / Slow POST)防护 ──
+    connection-timeout: 5s      # 建连后 5s 内未发完请求头即断开
+    keep-alive-timeout: 15s
+    max-keep-alive-requests: 100
+    max-swallow-size: 2MB       # 丢弃超限请求体上限,防慢速上传占用线程
+    # ── HTTP 参数污染 / 超大表单防护 ──
+    max-http-form-post-size: 256KB
+    max-parameter-count: 512
+  compression:
+    enabled: true
+    mime-types: application/json,text/html,text/plain
+
+ka:
+  upload:
+    dir: ./data/upload          # 图片存储目录(生产建议放数据盘并纳入备份)
+    max-size-mb: 5
+  security:
+    # !!! 仅开发环境默认值;生产必须由环境变量注入,见 .env.example !!!
+    jwt-secret: ${KA_JWT_SECRET:ZGV2LW9ubHktand0LXNlY3JldC1jaGFuZ2UtbWUtaW4tcHJvZCEh}
+    aes-key: ${KA_AES_KEY:ZGV2LW9ubHktYWVzLTI1Ni1rZXktY2hhbmdlLTMyYmI=}
+    access-token-ttl-minutes: 30
+    refresh-token-ttl-days: 7
+    login-max-failures: 5
+    login-lock-minutes: 15
+  order:
+    expire-minutes: 15
+    max-quantity-per-order: 100
+  crypto:
+    merchant-address: ${KA_MERCHANT_ADDRESS:0x6f7c765112257DCa683C1C0848ba873D2D4706E4}    # 商户收款地址(冷钱包,服务器无私钥;环境变量 KA_MERCHANT_ADDRESS 可覆盖)
+    scan-interval-ms: 15000
+    max-block-range: 800    # 公共 RPC 对 eth_getLogs 区间有限制(部分节点 ≤1000),取 800 保证兼容
+    intent-expire-minutes: 15
+    fx-rate: 7.20                # 初始/兜底汇率(1 USD = 7.20 CNY)
+    fx-auto-refresh: true        # 每小时自动刷新 USD/CNY(open.er-api.com,失败保留上次值)
+    fx-rate-url: https://open.er-api.com/v6/latest/USD
+    fx-refresh-ms: 3600000
+    chains:
+      - code: BASE
+        chain-id: 8453
+        enabled: true
+        confirmations: 6
+        rpc-urls:
+          - https://base-rpc.publicnode.com    # publicnode 对 eth_getLogs 更宽松,放首位
+          - https://mainnet.base.org
+        tokens:
+          - symbol: USDC
+            contract: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+            decimals: 6
+      - code: POLYGON
+        chain-id: 137
+        enabled: true
+        confirmations: 30
+        rpc-urls:
+          - https://polygon-bor-rpc.publicnode.com    # polygon-rpc.com 已开始返回 401,降为备用
+          - https://polygon-rpc.com
+        tokens:
+          - symbol: USDC
+            contract: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+            decimals: 6
+      - code: BSC
+        chain-id: 56
+        enabled: true
+        confirmations: 5
+        rpc-urls:
+          - https://bsc-dataseed.binance.org
+          - https://bsc-rpc.publicnode.com
+        tokens:
+          - symbol: USDT
+            contract: "0x55d398326f99059fF775485246999027B3197955"
+            decimals: 18        # 注意:BSC 上 USDT 为 18 位小数(与以太坊 6 位不同)
+
+logging:
+  level:
+    com.hqyj.ka: INFO

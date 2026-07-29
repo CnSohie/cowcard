@@ -1,0 +1,11 @@
+# Ka - MySQL 8 配置(2C2G:总内存预算 ≈450MB)
+[mysqld]
+innodb_buffer_pool_size = 256M
+innodb_log_buffer_size  = 16M
+innodb_flush_log_at_trx_commit = 1   # 资金数据,不降级
+max_connections   = 60
+performance_schema = OFF             # 省 ~100MB
+skip_name_resolve = ON
+tmp_table_size    = 32M
+max_heap_table_size = 32M
+table_open_cache  = 1000

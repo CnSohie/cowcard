@@ -1,0 +1,175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ══════════════════════════════════════════════════════════
+   多主题系统:主题色系(mint / ocean / violet)× 模式(light / dark)
+   - 后台「站点设置」选全站默认;买家端可自行切换明暗(localStorage)
+   - 变量为 R G B 三元组,供 Tailwind 透明度语法使用
+   ══════════════════════════════════════════════════════════ */
+
+/* 薄荷绿(默认,Gnosis Pay 风) */
+:root, [data-theme="mint"] {
+  --c-bg: 245 243 236;          /* 奶油 */
+  --c-surface: 255 255 255;
+  --c-ink: 16 30 23;            /* 墨绿黑 */
+  --c-primary: 15 61 46;        /* 松绿 */
+  --c-primary-dark: 10 44 33;
+  --c-primary-contrast: 255 255 255;
+  --c-accent: 200 241 105;      /* 柠檬绿 */
+  --c-accent-soft: 237 249 208;
+}
+[data-theme="mint"][data-mode="dark"] {
+  --c-bg: 10 15 13;
+  --c-surface: 21 29 25;
+  --c-ink: 236 242 237;
+  --c-primary: 200 241 105;     /* 暗色下柠檬绿升为主色 */
+  --c-primary-dark: 178 224 82;
+  --c-primary-contrast: 12 18 15;
+  --c-accent: 200 241 105;
+  --c-accent-soft: 42 56 40;
+}
+
+/* 海洋蓝 */
+[data-theme="ocean"] {
+  --c-bg: 243 246 249;
+  --c-surface: 255 255 255;
+  --c-ink: 12 24 38;
+  --c-primary: 13 51 96;
+  --c-primary-dark: 9 38 72;
+  --c-primary-contrast: 255 255 255;
+  --c-accent: 125 211 252;
+  --c-accent-soft: 224 242 254;
+}
+[data-theme="ocean"][data-mode="dark"] {
+  --c-bg: 8 14 22;
+  --c-surface: 17 26 38;
+  --c-ink: 232 240 248;
+  --c-primary: 125 211 252;
+  --c-primary-dark: 96 190 240;
+  --c-primary-contrast: 8 16 26;
+  --c-accent: 125 211 252;
+  --c-accent-soft: 30 48 66;
+}
+
+/* 紫罗兰 */
+[data-theme="violet"] {
+  --c-bg: 247 245 250;
+  --c-surface: 255 255 255;
+  --c-ink: 26 18 40;
+  --c-primary: 76 42 140;
+  --c-primary-dark: 58 30 110;
+  --c-primary-contrast: 255 255 255;
+  --c-accent: 216 180 254;
+  --c-accent-soft: 240 230 254;
+}
+[data-theme="violet"][data-mode="dark"] {
+  --c-bg: 13 10 20;
+  --c-surface: 24 19 36;
+  --c-ink: 240 236 248;
+  --c-primary: 216 180 254;
+  --c-primary-dark: 200 158 250;
+  --c-primary-contrast: 20 12 34;
+  --c-accent: 216 180 254;
+  --c-accent-soft: 48 38 70;
+}
+
+body {
+  @apply bg-base text-ink antialiased transition-colors duration-300;
+}
+
+@layer components {
+  .card {
+    @apply rounded-3xl border border-ink/[0.07] bg-surface;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm
+      font-semibold text-primary-contrast transition hover:bg-primary-dark active:scale-[0.98]
+      disabled:pointer-events-none disabled:opacity-40;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-ink/15 bg-surface
+      px-5 py-2.5 text-sm font-medium text-ink transition hover:border-ink/40
+      active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40;
+  }
+  .input {
+    @apply w-full rounded-2xl border border-ink/10 bg-surface px-4 py-3 text-sm text-ink
+      placeholder-ink/30 outline-none transition focus:border-primary focus:ring-4 focus:ring-accent/40;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-medium text-ink/50;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-ink/10 bg-surface
+      px-3.5 py-1.5 text-xs font-medium text-ink/70 transition;
+  }
+  .chip-on {
+    @apply !border-primary/45 !bg-accent-soft !text-primary;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-full bg-accent px-2.5 py-0.5 text-[11px] font-bold text-ink;
+  }
+  .th {
+    @apply px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider text-ink/40;
+  }
+  .td {
+    @apply border-t border-ink/[0.06] px-5 py-3.5 text-sm text-ink/80;
+  }
+  /* 右侧滑出抽屉(商品编辑 / 表单类) */
+  .drawer-panel {
+    @apply fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col bg-surface shadow-2xl;
+    animation: drawerIn 0.32s cubic-bezier(0.32, 0.72, 0.15, 1) both;
+  }
+  .drawer-mask {
+    @apply fixed inset-0 z-50 bg-ink/40 backdrop-blur-sm;
+    animation: maskIn 0.25s ease both;
+  }
+  .section-label {
+    @apply mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-ink/35;
+  }
+}
+
+@keyframes drawerIn {
+  from { transform: translateX(48px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+@keyframes maskIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── 文章排版(handsome 风阅读体验,跟随主题变量)── */
+.prose-ka { @apply text-[15px] leading-[1.9] text-ink/80; }
+.prose-ka > :first-child { margin-top: 0; }
+.prose-ka h1, .prose-ka h2, .prose-ka h3, .prose-ka h4 {
+  @apply mb-3 mt-8 font-bold tracking-tight text-ink;
+}
+.prose-ka h1 { @apply text-2xl; }
+.prose-ka h2 { @apply border-b border-ink/[0.07] pb-2 text-xl; }
+.prose-ka h3 { @apply text-lg; }
+.prose-ka p { @apply my-4; }
+.prose-ka a { @apply font-medium text-primary underline decoration-accent decoration-2 underline-offset-2 hover:opacity-80; }
+.prose-ka strong { @apply font-semibold text-ink; }
+.prose-ka ul, .prose-ka ol { @apply my-4 space-y-1.5 pl-6; }
+.prose-ka ul { list-style: disc; }
+.prose-ka ol { list-style: decimal; }
+.prose-ka blockquote {
+  @apply my-5 rounded-r-2xl border-l-4 border-accent bg-accent-soft/60 px-5 py-3 text-ink/70;
+}
+.prose-ka code {
+  @apply rounded-md bg-ink/[0.06] px-1.5 py-0.5 font-mono text-[13px] text-primary;
+}
+.prose-ka pre {
+  @apply my-5 overflow-x-auto rounded-2xl bg-ink p-5 text-sm leading-relaxed;
+}
+[data-mode="dark"] .prose-ka pre { @apply bg-ink/[0.07]; }
+.prose-ka pre code { @apply bg-transparent p-0; color: rgb(var(--c-bg) / 0.92); }
+[data-mode="dark"] .prose-ka pre code { color: rgb(var(--c-ink)); }
+.prose-ka img { @apply my-6 max-h-[520px] rounded-2xl; }
+.prose-ka hr { @apply my-8 border-ink/10; }
+.prose-ka table { @apply my-5 w-full text-sm; }
+.prose-ka th { @apply border-b-2 border-ink/10 px-3 py-2 text-left font-semibold text-ink; }
+.prose-ka td { @apply border-b border-ink/[0.06] px-3 py-2; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--c-ink) / 0.15); border-radius: 8px; }

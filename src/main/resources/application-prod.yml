@@ -1,0 +1,61 @@
+# ============================================================
+# 生产环境(2C2G):所有密钥环境变量注入,零明文
+# 启动:见 run.sh(含 JVM 调优参数)
+# ============================================================
+spring:
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/ka?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false
+    username: ${KA_DB_USER}
+    password: ${KA_DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 8      # 2 核经验值:cores*2 + 定时任务余量
+      minimum-idle: 2
+      connection-timeout: 5000
+      max-lifetime: 1200000
+  jpa:
+    hibernate:
+      ddl-auto: validate        # 生产禁止自动改表;结构以 db/schema.sql 为准
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.batch_size: 50
+        order_inserts: true
+
+server:
+  # 生产同样加固慢速攻击 / 超大请求
+  max-http-request-header-size: 16KB
+  tomcat:
+    connection-timeout: 5s
+    keep-alive-timeout: 15s
+    max-keep-alive-requests: 100
+    max-swallow-size: 2MB
+    max-http-form-post-size: 256KB
+    max-parameter-count: 512
+    remoteip:
+      remote-ip-header: X-Forwarded-For
+      protocol-header: X-Forwarded-Proto
+
+ka:
+  security:
+    jwt-secret: ${KA_JWT_SECRET}          # 必填:openssl rand -base64 48
+    aes-key: ${KA_AES_KEY}                # 必填:openssl rand -base64 32
+    # 生产在 Nginx/CDN 之后:信任 XFF 取真实客户端 IP(Nginx 必须覆盖式写 XFF)
+    trust-forward-header: true
+    rate-limit:
+      enabled: true
+      global-per-minute: 240
+      login-per-minute: 5
+      order-per-minute: 10
+      pay-per-minute: 30
+      ban-threshold: 5
+      ban-minutes: 10
+      max-ban-minutes: 240
+  crypto:
+    merchant-address: ${KA_MERCHANT_ADDRESS}
+
+logging:
+  level:
+    root: WARN
+    com.hqyj.ka: INFO
+  file:
+    name: /var/log/ka/app.log

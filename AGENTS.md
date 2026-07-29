@@ -1,0 +1,75 @@
+# Ka 发卡平台 - 项目约定
+
+## 项目定位
+自动发卡平台(对标独角数卡),Spring Boot 4.1 + MySQL 8 + React 18,目标 2C2G 单机。
+架构详见 docs/ARCHITECTURE.md(先读它)。
+
+## 已定决策(用户确认,勿改)
+- 前后端分离:后端纯 REST API,前端 React 18 + Vite + TS + Tailwind(要求界面美观)
+- 加密支付双模式:唯一金额法(CRYPTO_TRANSFER)+ 连接钱包直付(CRYPTO_WALLET),均无服务器私钥
+- 支持:USDC@Base、USDC@Polygon、USDT@BEP20(BSC 上 18 位小数!)
+- 支付宝双通道预留:官方 SDK(ALIPAY_OFFICIAL)+ 易支付协议(EPAY),策略模式
+- 2C2G:Caffeine 代替 Redis;无 web3j,自写 JSON-RPC 客户端;线程池全部收紧
+- 买家游客模式(不注册);后台 RBAC:SUPER_ADMIN/OPS/FINANCE/SUPPORT + 细粒度权限码
+
+## 代码约定
+- Spring Boot 4 用 Jackson 3:包名是 tools.jackson.*(注入 JsonMapper),严禁 import com.fasterxml.jackson.core/databind(类路径上没有,只有 annotation 包保留 com.fasterxml)
+- 包结构按业务域切分(user/catalog/card/order/payment/audit/sysconfig)
+- 金额:CNY 用 DECIMAL(20,2) BigDecimal;代币最小单位用 String 存 BigInteger
+- 所有入账路径:DB 唯一约束(tx_hash/channel_trade_no)+ 订单状态 CAS 双保险幂等
+- 卡密与渠道配置 AES-256-GCM 加密落库,主密钥仅环境变量 KA_AES_KEY
+- 管理端写操作 → AuditService.record();新支付渠道 = 实现 PaymentStrategy + 渠道记录
+- DTO 用 record;Controller 只做编排,业务在 Service;异常走 BusinessException + ErrorCode
+
+## 前端主题系统(勿破坏)
+- 多主题:mint/ocean/violet × light/dark,全部走 CSS 变量(index.css),Tailwind 色板映射 rgb(var(--c-*))
+- 语义令牌:base/surface/ink/primary(-dark/-contrast)/accent(-soft);新页面禁止硬编码颜色
+- 后台「站点设置」写 sys_config 的 site.theme / site.mode;买家本地明暗选择存 localStorage(ka.mode)优先级最高
+- darkMode 选择器为 [data-mode="dark"];状态色用 tailwind 色 + dark: 变体
+- 设计基调:Gnosis Pay 风,大字排版、药丸按钮、大圆角卡片、大量留白;响应式(管理端移动抽屉)
+
+## 已完成的完善项
+- TOTP 2FA 已落地:TotpService(RFC 6238 纯 JDK)、登录校验、/api/auth/totp/* 自助开关、前端「安全设置」页
+- 汇率自动刷新已落地:FxRateService(每小时,open.er-api.com,[3,15] 合理性校验,失败降级上次值)
+
+- 优惠券已落地:FIXED/PERCENT、门槛、限量原子核销、封顶到应付-0.01;下单/预览/管理端齐全
+- Telegram 成交通知已落地:TelegramNotifier(AFTER_COMMIT 异步),站点设置填 tg.bot_token/tg.chat_id 生效
+- 营收看板已落地:今日/近7天营收 + 单系列柱图
+- 图片上传已落地:/api/admin/files 本地存储(ka.upload.dir)+ 魔数校验,/files/** 公开访问;商品编辑改为右侧抽屉表单(drawer-panel)
+- 媒体文章已落地:article 包,content_md 用 <!--paywall--> 分隔免费/付费段,price=0 免费;前台 /posts 阅读(prose-ka 排版),付费用余额解锁
+- 会员体系已落地:member 包,独立 JWT(claim kind=member,前端令牌 ka.m.*),邀请码注册;封禁走 tokenVersion 失效
+- 余额钱包已落地:wallet 包,平台统一余额(充值=RECHARGE 订单复用支付渠道、买付费文章、收推广佣金);流水 wallet_txn 只追加;提现冻结→审核(通过扣除/驳回退回);佣金 commission.rate(%),充值不计佣;不分配链上独立地址
+- 新权限码:article:read/write、member:manage、withdraw:review(DataInitializer 启动播种,管理员需重登生效)
+- 订单超时自动取消:OrderService.expireStaleOrders 每分钟批量关单释放库存;超时分钟数 sys_config order.expire_minutes(1~1440)后台可配,回落 yml 默认 15
+- 限流参数后台可调:sys_config 的 security.rl.*(enabled/global/admin/login/order/pay/ban_threshold/ban_minutes)保存即生效,RateLimitFilter 每请求读缓存配置;/api/admin/** 独立 admin 档;本机回环 IP 不递增封禁;POST /api/admin/config/rate-limit/reset 一键解封
+- 管理端订单:AdminOrderView DTO(勿再返回 Order 实体,防泄漏 queryPasswordHash/buyerIp 到列表);状态筛选/搜索走派生查询;手动关单 casStatus CAS
+- 收银台:公开 GET /api/pay/summary/{orderNo} 供倒计时;PayPage 前端超时即拦截,后端定时关单兜底
+
+## 安全防御(纵深,详见 docs/SECURITY.md)
+- 应用层 CC:RateLimitFilter 令牌桶分档限流 + 递增自动封禁(纯 Caffeine);IP 解析受 trust-forward-header 约束防 XFF 伪造
+- 安全头:CSP default-src none / Referrer-Policy / Permissions-Policy / HSTS / nosniff / frame DENY
+- 慢速攻击:Tomcat connection-timeout 5s + max-swallow/form/param 限制;Nginx client_*_timeout + limit_req/limit_conn
+- 注入/XSS/越权/爆破/超卖/重放/超发:见 SECURITY.md §4 表;JPA 参数化、React 默认转义、@PreAuthorize、bcrypt+TOTP、DB 唯一约束幂等
+- 真正的容量型 DDoS 必须靠第 0 层(Cloudflare/高防),应用代码挡不住——已在 SECURITY.md §1 写明方案
+- 限流参数全在 application-prod.yml 的 ka.security.rate-limit;勿把 trust-forward-header 在无反代时设 true
+
+## 待办(按优先级)
+1. 邮件发货通知(需加 spring-boot-starter-mail,订阅 OrderPaidEvent)
+2. 风控模块(黑名单、异常订单标记,架构文档 §8)
+3. 汇率来源冗余(当前 open.er-api.com 单源)
+
+## 敏感操作双因子(2026-07-27)
+- 财务级操作(人工补单/关单、提现通过/驳回、支付渠道保存/启停)必须 管理员密码 + TOTP:AuthService.verifySensitive,未启用 2FA 抛 TOTP_NOT_ENABLED(1007),前端 SensitiveConfirm 弹层引导去「安全设置」开启;密码错误计入登录锁定;全程审计
+- 2FA 自助管理(setup/enable/disable)也必须先验管理员密码(AuthService.requirePassword):防未锁屏会话被旁人绑定/解绑认证器
+- 支付渠道防篡改三层:双因子门槛 + 查询不回显密钥([已配置] 占位)+ 变更即时 TelegramNotifier.notifyAdmin 告警(密钥被换第一时间发现)
+- 前端统一用 components/SensitiveConfirm.tsx(禁止 window.confirm);children 可塞额外表单(如审核备注)
+- 反库存挤占:下单前校验同邮箱/同 IP 未支付订单数(order.max_pending_per_contact 默认 3、order.max_pending_per_ip 默认 5,sys_config 可调),超限抛 ORDER_PENDING_LIMIT(3004)
+
+## 加密支付要点(2026-07-27 修复)
+- ChainRpcClient 的 getLogs topics 必须用 Arrays.asList(TRANSFER_TOPIC, null, …):List.of 遇 null 抛无消息 NPE,曾致扫链每轮崩溃、转账永不入账(日志表现 err=null)
+- 迟到支付兜底:意向过期后仍按 (chain, contract, amountMinor) 匹配最近未支付意向复活确认;订单也超时的,后台「人工补单」支持 EXPIRED 单回占库存补发(库存不足抛错回滚)
+- 公共 RPC:polygon-rpc.com 已 401(publicnode 放首位);max-block-range=800 兼容公共节点 getLogs 区间限制
+
+## 重要教训
+- 不要让多个 AI 工具同时改这个仓库:曾发生 55 文件互相覆盖导致不可编译,恢复以本会话版本为准
+- zip 交付有覆盖回旧版的风险(2026-07-26 用户解压了 Downloads 里更早的旧 zip,整个项目回退):优先用桌面端直连 device_commit_files 逐文件写回;确需 zip 时文件名带精确时间戳,解压后核对关键文件大小
