@@ -2,6 +2,7 @@ package com.hqyj.ka.catalog.controller;
 
 import com.hqyj.ka.audit.service.AuditService;
 import com.hqyj.ka.catalog.dto.CatalogDtos.SaveCategoryRequest;
+import com.hqyj.ka.catalog.dto.CatalogDtos.ReorderCategoriesRequest;
 import com.hqyj.ka.catalog.dto.CatalogDtos.SaveProductRequest;
 import com.hqyj.ka.catalog.entity.Category;
 import com.hqyj.ka.catalog.entity.Product;
@@ -39,6 +40,25 @@ public class AdminCatalogController {
                 req.id() == null ? "CATEGORY_CREATE" : "CATEGORY_UPDATE",
                 "category:" + category.getId(), RateLimitFilter.clientIp(http), category.getName());
         return ApiResponse.ok(category);
+    }
+
+    @PutMapping("/categories/reorder")
+    @PreAuthorize("hasAuthority('product:write')")
+    public ApiResponse<Void> reorderCategories(@Valid @RequestBody ReorderCategoriesRequest req,
+                                               HttpServletRequest http) {
+        catalogService.reorderCategories(req.categoryIds());
+        auditService.record(String.valueOf(http.getAttribute("uname")), "CATEGORY_REORDER",
+                "category:all", RateLimitFilter.clientIp(http), req.categoryIds().toString());
+        return ApiResponse.ok(null);
+    }
+
+    @DeleteMapping("/categories/{id}")
+    @PreAuthorize("hasAuthority('product:write')")
+    public ApiResponse<Void> deleteCategory(@PathVariable Long id, HttpServletRequest http) {
+        Category category = catalogService.deleteCategory(id);
+        auditService.record(String.valueOf(http.getAttribute("uname")), "CATEGORY_DELETE",
+                "category:" + id, RateLimitFilter.clientIp(http), category.getName());
+        return ApiResponse.ok(null);
     }
 
     @GetMapping("/products")

@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -46,18 +48,19 @@ public class ChainScanJob {
     }
 
     private void scanChain(AppProperties.Chain chain) {
-        String merchant = props.getCrypto().getMerchantAddress();
-        if (merchant == null || merchant.isBlank()) return;
-
         long latest = rpc.latestBlock(chain);
 
-        // 有等待中/确认中的意向才扫描日志,空闲期只留一次 blockNumber 轮询
-        boolean hasWaiting = !intentRepository.findByChainCodeAndStatus(chain.getCode(),
-                CryptoPaymentIntent.Status.WAITING).isEmpty();
+        // 等待中意向与 24h 内过期意向都要扫描:后者用于捞回超时后才上链的迟到付款。
+        List<CryptoPaymentIntent> waiting = intentRepository.findByChainCodeAndStatus(chain.getCode(),
+                CryptoPaymentIntent.Status.WAITING);
+        List<CryptoPaymentIntent> scanTargets = new ArrayList<>(waiting);
+        scanTargets.addAll(intentRepository
+                .findTop200ByChainCodeAndStatusAndExpireAtAfterAndTxHashIsNullOrderByIdDesc(
+                        chain.getCode(), CryptoPaymentIntent.Status.EXPIRED, LocalDateTime.now().minusHours(24)));
         List<CryptoPaymentIntent> confirming = intentRepository.findByChainCodeAndStatus(chain.getCode(),
                 CryptoPaymentIntent.Status.CONFIRMING);
 
-        if (hasWaiting) {
+        if (!scanTargets.isEmpty()) {
             ChainCursor cursor = cursorRepository.findById(chain.getCode())
                     .orElseGet(() -> new ChainCursor(chain.getCode(), latest - 1));
             long from = cursor.getScannedBlock() + 1;
@@ -65,9 +68,12 @@ public class ChainScanJob {
                 long to = Math.min(latest, from + props.getCrypto().getMaxBlockRange() - 1L);
                 List<String> contracts = chain.getTokens().stream()
                         .map(t -> t.getContract().toLowerCase()).toList();
-                for (ChainRpcClient.TransferLog tl : rpc.transferLogsTo(chain, contracts, merchant, from, to)) {
-                    cryptoPaymentService.onTransferDetected(chain.getCode(), tl.contract(), tl.txHash(),
-                            tl.blockNumber(), tl.value());
+                // 按意向单快照地址扫描:后台换收款地址后,旧订单仍能在原地址正常入账。
+                for (String merchant : scanTargets.stream().map(CryptoPaymentIntent::getMerchantAddress).distinct().toList()) {
+                    for (ChainRpcClient.TransferLog tl : rpc.transferLogsTo(chain, contracts, merchant, from, to)) {
+                        cryptoPaymentService.onTransferDetected(chain.getCode(), tl.contract(), tl.txHash(),
+                                tl.blockNumber(), tl.value());
+                    }
                 }
                 cursor.setScannedBlock(to);
                 cursorRepository.save(cursor);

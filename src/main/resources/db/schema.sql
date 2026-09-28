@@ -69,11 +69,14 @@ CREATE TABLE IF NOT EXISTS product (
   usage_note   TEXT,
   delivery_mode VARCHAR(16)   NOT NULL DEFAULT 'AUTO_CARD' COMMENT 'AUTO_CARD=自动卡密 MANUAL=人工发货 PRESALE_VOUCHER=预售提货码',
   manual_prompt TEXT COMMENT '人工发货信息收集提示',
-  presale_start_at DATETIME(6) COMMENT '预售开放提货时间',
-  presale_end_at DATETIME(6) COMMENT '预售最晚提货截止时间',
+  manual_form_schema TEXT COMMENT '人工交付结构化信息字段 JSON',
+  presale_sale_end_at DATETIME(6) COMMENT '预售停止销售时间',
+  presale_start_at DATETIME(6) COMMENT '预售预计开始交付时间',
+  presale_end_at DATETIME(6) COMMENT '预售最晚交付保障时间',
   presale_settlement_mode VARCHAR(16) DEFAULT 'BALANCE' COMMENT 'SINK=沉淀 REFUND=原路退回 BALANCE=转余额',
   cover_image  VARCHAR(255),
   price        DECIMAL(20,2) NOT NULL,
+  min_order_amount DECIMAL(20,2) NOT NULL DEFAULT 0 COMMENT '优惠前商品标价小计的最低订购金额;0=不限制',
   stock_cached INT           NOT NULL DEFAULT 0,
   min_buy      INT           NOT NULL DEFAULT 1,
   max_buy      INT           NOT NULL DEFAULT 10,
@@ -225,6 +228,7 @@ CREATE TABLE IF NOT EXISTS payment_transaction (
   order_no         VARCHAR(32)   NOT NULL,
   channel_code     VARCHAR(32)   NOT NULL,
   amount           DECIMAL(20,2) NOT NULL,
+  fee_amount       DECIMAL(20,2) DEFAULT 0 COMMENT '站点计价币种渠道手续费',
   channel_trade_no VARCHAR(128),
   status           VARCHAR(16)   NOT NULL DEFAULT 'CREATED',
   created_at       DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -380,6 +384,7 @@ CREATE TABLE IF NOT EXISTS gift_card (
   batch_no    VARCHAR(32) NOT NULL,
   name        VARCHAR(64) NOT NULL,
   code        VARCHAR(64) NOT NULL,
+  code_enc    VARCHAR(256) COMMENT 'AES-256-GCM 礼品卡明文密文',
   amount      DECIMAL(20,2) NOT NULL,
   status      VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
   expire_at   DATETIME(6),
@@ -394,8 +399,12 @@ CREATE TABLE IF NOT EXISTS withdraw_request (
   id          BIGINT AUTO_INCREMENT PRIMARY KEY,
   member_id   BIGINT        NOT NULL,
   amount      DECIMAL(20,2) NOT NULL,
-  channel     VARCHAR(32)   NOT NULL COMMENT 'ALIPAY/USDT/BANK',
+  fee_amount  DECIMAL(20,2) NOT NULL DEFAULT 0 COMMENT '提现手续费,从申请金额中扣除',
+  net_amount  DECIMAL(20,2) NOT NULL COMMENT '实际打款金额',
+  channel     VARCHAR(32)   NOT NULL COMMENT 'ALIPAY/BANK/USDT_TRC20/USDT_BEP20',
   account     VARCHAR(128)  NOT NULL,
+  account_name VARCHAR(50) COMMENT '支付宝实名/银行卡持卡人',
+  bank_name   VARCHAR(80) COMMENT '银行卡开户银行',
   status      VARCHAR(16)   NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/APPROVED/REJECTED',
   reviewed_by VARCHAR(64),
   review_note VARCHAR(255),
@@ -444,6 +453,24 @@ CREATE TABLE IF NOT EXISTS article_purchase (
 --   ADD COLUMN member_id  BIGINT      NULL COMMENT '下单会员;游客单为空',
 --   ADD COLUMN query_token_hash VARCHAR(100) NULL COMMENT '当前浏览器取卡令牌 bcrypt',
 --   ADD KEY idx_order_member (member_id);
+--
+-- 预售停售时间(生产已有 product 表时执行;旧数据为空时应用会暂以保障时间作为停售时间):
+-- ALTER TABLE product ADD COLUMN presale_sale_end_at DATETIME(6) NULL AFTER manual_prompt;
+-- 商品最低订购金额(生产已有 product 表时执行):
+-- ALTER TABLE product ADD COLUMN min_order_amount DECIMAL(20,2) NOT NULL DEFAULT 0 AFTER price;
+--
+-- 人工交付结构化表单与提现收款人字段(生产已有表时执行):
+-- ALTER TABLE product ADD COLUMN manual_form_schema TEXT NULL AFTER manual_prompt;
+-- ALTER TABLE withdraw_request
+--   ADD COLUMN account_name VARCHAR(50) NULL AFTER account,
+--   ADD COLUMN bank_name VARCHAR(80) NULL AFTER account_name;
+--
+-- 支付/提现手续费账务字段(生产已有表时执行):
+-- ALTER TABLE payment_transaction ADD COLUMN fee_amount DECIMAL(20,2) NULL DEFAULT 0 AFTER amount;
+-- ALTER TABLE withdraw_request
+--   ADD COLUMN fee_amount DECIMAL(20,2) NULL DEFAULT 0 AFTER amount,
+--   ADD COLUMN net_amount DECIMAL(20,2) NULL AFTER fee_amount;
+-- UPDATE withdraw_request SET fee_amount = 0, net_amount = amount WHERE net_amount IS NULL;
 --
 -- 预售提货码一次性展示时间(生产已有 presale_voucher 表时执行):
 -- ALTER TABLE presale_voucher ADD COLUMN token_claimed_at DATETIME(6) NULL AFTER token_hint;

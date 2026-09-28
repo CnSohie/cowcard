@@ -5,6 +5,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
@@ -25,7 +26,11 @@ public interface PresaleVoucherRepository extends JpaRepository<PresaleVoucher, 
 
     List<PresaleVoucher> findTop200ByStatusInAndPresaleEndAtBefore(List<PresaleVoucher.Status> statuses, LocalDateTime now);
 
-    List<PresaleVoucher> findTop100ByStatusAndPresaleStartAtBeforeOrderByIdAsc(PresaleVoucher.Status status, LocalDateTime now);
+    @Query("select v from PresaleVoucher v where v.status = :status "
+            + "and (v.presaleStartAt is null or v.presaleStartAt <= :now) order by v.id asc")
+    List<PresaleVoucher> findRedeemQueueReady(@Param("status") PresaleVoucher.Status status,
+                                               @Param("now") LocalDateTime now,
+                                               Pageable pageable);
 
     List<PresaleVoucher> findByRedeemMemberIdOrderByIdDesc(Long memberId);
 }

@@ -30,6 +30,7 @@ public class WalletService {
     private final WalletTxnRepository txnRepository;
     private final WithdrawRequestRepository withdrawRepository;
     private final ConfigService configService;
+    private final WithdrawMethodService withdrawMethodService;
 
     /**
      * 确保钱包存在。正常路径:注册事务内已建(无并发);此处兜底存量会员。
@@ -107,7 +108,8 @@ public class WalletService {
 
     /** 提现申请:门槛校验 → 单笔待审限制 → 冻结余额 → 建申请单 + 冻结流水。 */
     @Transactional
-    public WithdrawRequest requestWithdraw(Long memberId, BigDecimal amount, String channel, String account) {
+    public WithdrawRequest requestWithdraw(Long memberId, BigDecimal amount, String channel, String account,
+                                           String accountName, String bankName) {
         if (amount == null || amount.scale() > 2 || amount.signum() <= 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "提现金额无效");
         }
@@ -117,6 +119,8 @@ public class WalletService {
         if (withdrawRepository.existsByMemberIdAndStatus(memberId, WithdrawRequest.Status.PENDING)) {
             throw new BusinessException(ErrorCode.WITHDRAW_PENDING_EXISTS);
         }
+        WithdrawMethodService.Normalized recipient = withdrawMethodService.validate(channel, account, accountName, bankName);
+        WithdrawMethodService.FeeQuote fee = withdrawMethodService.feeQuote(recipient.code(), amount);
         ensureAccount(memberId);
         if (accountRepository.freeze(memberId, amount) == 0) {
             throw new BusinessException(ErrorCode.BALANCE_NOT_ENOUGH);
@@ -124,8 +128,12 @@ public class WalletService {
         WithdrawRequest request = new WithdrawRequest();
         request.setMemberId(memberId);
         request.setAmount(amount);
-        request.setChannel(channel.trim());
-        request.setAccount(account.trim());
+        request.setFeeAmount(fee.feeAmount());
+        request.setNetAmount(fee.netAmount());
+        request.setChannel(recipient.code());
+        request.setAccount(recipient.account());
+        request.setAccountName(recipient.accountName());
+        request.setBankName(recipient.bankName());
         request = withdrawRepository.save(request);
         writeTxn(memberId, WalletTxn.Type.WITHDRAW_FREEZE, amount.negate(),
                 "WITHDRAW", request.getId(), "提现申请冻结");

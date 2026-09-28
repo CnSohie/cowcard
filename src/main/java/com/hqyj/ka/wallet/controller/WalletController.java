@@ -16,6 +16,7 @@ import com.hqyj.ka.wallet.repo.WithdrawRequestRepository;
 import com.hqyj.ka.wallet.service.CommissionService;
 import com.hqyj.ka.wallet.service.GiftCardService;
 import com.hqyj.ka.wallet.service.WalletService;
+import com.hqyj.ka.wallet.service.WithdrawMethodService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,7 @@ public class WalletController {
     private final MemberRepository memberRepository;
     private final OrderService orderService;
     private final GiftCardService giftCardService;
+    private final WithdrawMethodService withdrawMethodService;
 
     @GetMapping
     public ApiResponse<WalletSummary> summary(HttpServletRequest http) {
@@ -55,7 +57,8 @@ public class WalletController {
                 : null;
         return ApiResponse.ok(new WalletSummary(balance, frozen,
                 txnRepository.sumByType(mid, WalletTxn.Type.COMMISSION),
-                walletService.minWithdraw(), commissionService.rate(), freezeReason));
+                walletService.minWithdraw(), commissionService.rate(), freezeReason,
+                withdrawMethodService.enabledMethods()));
     }
 
     @GetMapping("/txns")
@@ -83,14 +86,16 @@ public class WalletController {
     public ApiResponse<WithdrawView> withdraw(@Valid @RequestBody CreateWithdrawRequest req,
                                               HttpServletRequest http) {
         return ApiResponse.ok(WithdrawView.of(
-                walletService.requestWithdraw(mid(http), req.amount(), req.channel(), req.account())));
+                walletService.requestWithdraw(mid(http), req.amount(), req.channel(), req.account(),
+                        req.accountName(), req.bankName())));
     }
 
     @PostMapping("/gift-cards/redeem")
     public ApiResponse<Map<String, Object>> redeemGiftCard(@Valid @RequestBody RedeemGiftCardRequest req,
                                                            HttpServletRequest http) {
         var card = giftCardService.redeem(mid(http), req.code());
-        return ApiResponse.ok(Map.of("amount", card.getAmount(), "code", card.getCode()));
+        return ApiResponse.ok(Map.of("amount", card.getAmount(), "code",
+                card.getRedeemedCode() == null ? "" : card.getRedeemedCode()));
     }
 
     @GetMapping("/withdrawals")

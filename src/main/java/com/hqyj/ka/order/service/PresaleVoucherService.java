@@ -14,6 +14,7 @@ import com.hqyj.ka.wallet.entity.WalletTxn;
 import com.hqyj.ka.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -85,7 +86,7 @@ public class PresaleVoucherService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "商品不存在"));
         LocalDateTime now = LocalDateTime.now();
         if (product.getPresaleEndAt() != null && now.isAfter(product.getPresaleEndAt())) {
-            throw new BusinessException(ErrorCode.ORDER_EXPIRED, "已超过最晚提货截止时间,请联系售后处理");
+            throw new BusinessException(ErrorCode.ORDER_EXPIRED, "已超过最晚交付保障时间,请联系售后处理");
         }
         String token = newToken();
         PresaleVoucher v = new PresaleVoucher();
@@ -141,7 +142,7 @@ public class PresaleVoucherService {
         }
         if (v.getPresaleEndAt() != null && now.isAfter(v.getPresaleEndAt())) {
             v.setStatus(PresaleVoucher.Status.EXPIRED);
-            throw new BusinessException(ErrorCode.ORDER_EXPIRED, "提货码已超过最晚提货截止时间");
+            throw new BusinessException(ErrorCode.ORDER_EXPIRED, "提货码已超过最晚交付保障时间");
         }
         if (v.getStatus() != PresaleVoucher.Status.ACTIVE) {
             throw new BusinessException(ErrorCode.ORDER_STATE_INVALID, "提货码已核销或已失效");
@@ -151,7 +152,7 @@ public class PresaleVoucherService {
         v.setRedeemContact(contact == null ? null : contact.trim());
         v.setRedeemedAt(now);
         if (v.getPresaleStartAt() != null && now.isBefore(v.getPresaleStartAt())) {
-            v.setFulfillmentNote("已提前核销并绑定会员,等待开放提货时间后自动尝试交付");
+            v.setFulfillmentNote("已提前核销并绑定会员,等待预计交付时间后自动尝试交付");
             return new RedeemResult("REDEEMED", "提货码已提前核销并绑定当前会员,请在会员中心查看发货状态。", List.of(), workNo(v));
         }
         return tryFulfill(v, "提货码已锁定并销毁,当前等待补货交付。");
@@ -175,26 +176,25 @@ public class PresaleVoucherService {
     }
 
     private RedeemResult tryFulfill(PresaleVoucher v, String pendingMessage) {
-        try {
-            cardService.allocate(v.getProductId(), v.getQuantity(), v.getOrderId());
-            List<String> cards = cardService.decryptForOrder(v.getOrderId());
-            v.setStatus(PresaleVoucher.Status.FULFILLED);
-            v.setFulfilledAt(LocalDateTime.now());
-            v.setFulfillmentNote("核销即刻交付");
-            syncProductStock(v.getProductId());
-            return new RedeemResult("FULFILLED", "提货成功,凭证已销毁。", cards, workNo(v));
-        } catch (BusinessException e) {
+        var allocated = cardService.tryAllocate(v.getProductId(), v.getQuantity(), v.getOrderId());
+        if (allocated.size() < v.getQuantity()) {
             v.setFulfillmentNote("已核销,等待商家补货后定向交付");
             return new RedeemResult("REDEEMED", pendingMessage, List.of(), workNo(v));
         }
+        List<String> cards = cardService.decryptForOrder(v.getOrderId());
+        v.setStatus(PresaleVoucher.Status.FULFILLED);
+        v.setFulfilledAt(LocalDateTime.now());
+        v.setFulfillmentNote("核销即刻交付");
+        syncProductStock(v.getProductId());
+        return new RedeemResult("FULFILLED", "提货成功,凭证已销毁。", cards, workNo(v));
     }
 
     @Scheduled(fixedDelay = 60_000)
     @Transactional
     public void expireUnredeemed() {
         LocalDateTime now = LocalDateTime.now();
-        for (PresaleVoucher v : voucherRepository.findTop100ByStatusAndPresaleStartAtBeforeOrderByIdAsc(
-                PresaleVoucher.Status.REDEEMED, now)) {
+        for (PresaleVoucher v : voucherRepository.findRedeemQueueReady(
+                PresaleVoucher.Status.REDEEMED, now, PageRequest.of(0, 100))) {
             tryFulfill(v, "已核销,等待商家补货后定向交付。");
         }
         for (PresaleVoucher v : voucherRepository.findTop200ByStatusInAndPresaleEndAtBefore(
@@ -210,11 +210,11 @@ public class PresaleVoucherService {
         v.setStatus(PresaleVoucher.Status.EXPIRED);
 
         if (order == null) {
-            v.setFulfillmentNote("超过最晚提货截止时间,订单不存在,请人工核对");
+            v.setFulfillmentNote("超过最晚交付保障时间,订单不存在,请人工核对");
             return;
         }
         if (order.getStatus() == Order.Status.REFUNDED) {
-            v.setFulfillmentNote("超过最晚提货截止时间,订单已退款");
+            v.setFulfillmentNote("超过最晚交付保障时间,订单已退款");
             return;
         }
 
@@ -226,20 +226,20 @@ public class PresaleVoucherService {
                         "ORDER", order.getId(), (redeemedButNotFulfilled ? "预售履约超时退回余额 " : "预售过期清算转余额 ") + order.getOrderNo());
                 order.setStatus(Order.Status.REFUNDED);
                 v.setFulfillmentNote(redeemedButNotFulfilled
-                        ? "已核销但超过最晚提货截止时间仍未交付,已按履约违约退回会员余额"
-                        : "超过最晚提货截止时间未核销,已按清算规则转入会员余额");
+                        ? "已核销但超过最晚交付保障时间仍未交付,已按履约违约退回会员余额"
+                        : "超过最晚交付保障时间未核销,已按清算规则转入会员余额");
             } else {
                 v.setFulfillmentNote(redeemedButNotFulfilled
-                        ? "已核销但超过最晚提货截止时间仍未交付,游客订单需管理员人工退款/补偿"
-                        : "超过最晚提货截止时间未核销,游客订单无法自动转余额,需管理员人工清算");
+                        ? "已核销但超过最晚交付保障时间仍未交付,游客订单需管理员人工退款/补偿"
+                        : "超过最晚交付保障时间未核销,游客订单无法自动转余额,需管理员人工清算");
             }
             return;
         }
 
         if ("REFUND".equals(mode)) {
-            v.setFulfillmentNote("超过最晚提货截止时间未核销,已进入原路退款待处理队列");
+            v.setFulfillmentNote("超过最晚交付保障时间未核销,已标记为待人工原路退款");
         } else {
-            v.setFulfillmentNote("超过最晚提货截止时间未核销,按沉淀清算规则关闭凭证");
+            v.setFulfillmentNote("超过最晚交付保障时间未核销,按沉淀清算规则关闭凭证");
         }
     }
 

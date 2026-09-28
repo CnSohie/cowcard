@@ -8,6 +8,8 @@ import com.hqyj.ka.payment.crypto.entity.CryptoPaymentIntent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+
 /**
  * 模式 B:钱包直付(Stripe 式体验)—— 前端连接钱包发起 ERC-20 transfer 签名,
  * 提交 txHash 后端链上回查;链扫描兜底(用户中途关页也不丢单)。
@@ -26,8 +28,9 @@ public class CryptoWalletStrategy implements PaymentStrategy {
 
     @Override
     public PayCreationResult create(Order order, java.util.Map<String, String> config, PayContext ctx) {
-        CryptoPaymentIntent intent = cryptoPaymentService.createIntent(order,
+        BigDecimal sitePayAmount = new BigDecimal(config.getOrDefault("_sitePayAmount", order.getAmount().toPlainString()));
+        CryptoPaymentIntent intent = cryptoPaymentService.createIntent(order, sitePayAmount,
                 ctx.extra("chain"), ctx.extra("token"), CryptoPaymentIntent.Mode.WALLET);
-        return PayCreationResult.crypto(cryptoPaymentService.intentView(intent.getOrderNo()));
+        return PayCreationResult.crypto(cryptoPaymentService.intentView(intent));
     }
 }

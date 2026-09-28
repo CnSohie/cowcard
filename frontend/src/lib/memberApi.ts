@@ -194,6 +194,12 @@ export interface WalletSummary {
   minWithdraw: string;
   commissionRate: string;
   freezeReason: string | null;
+  withdrawMethods: WithdrawMethod[];
+}
+
+export interface WithdrawMethod {
+  code: string; label: string; accountLabel: string; accountPlaceholder: string;
+  accountNameRequired: boolean; bankNameRequired: boolean; warning: string; feeRate: string; feeFixed: string;
 }
 
 export interface TxnView {
@@ -210,8 +216,12 @@ export interface TxnView {
 export interface WithdrawView {
   id: number;
   amount: string;
+  feeAmount: string;
+  netAmount: string;
   channel: string;
   account: string;
+  accountName: string | null;
+  bankName: string | null;
   status: "PENDING" | "APPROVED" | "REJECTED";
   reviewNote: string | null;
   createdAt: string;

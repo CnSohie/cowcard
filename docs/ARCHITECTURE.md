@@ -255,3 +255,9 @@ Ka/
 | 支付扩展 | 新渠道/新链 | 新增策略类 / yml 里加链加币 | 策略注册表 + 配置驱动链矩阵 |
 | 功能扩展 | 优惠券/分站/邮件/TG 通知/风控 | 独立模块 + 订阅 OrderPaidEvent | 事件总线、`sys_config` 开关位 |
 | 钱包支付升级 | 需要"签名即扣"体验 | USDC EIP-2612 permit + relayer | intent 表已含 `mode` 字段 |
+
+---
+
+## 9. 独立社区系统
+
+社区定位为 Discuz/NodeSeek 风格的中心化论坛，使用独立 Spring Boot、MySQL、Redis、Elasticsearch 和 React 应用部署，不属于本 Spring Boot 单体，也不受本章 2C2G 资源预算约束。Ka 与社区不共享数据库、JWT、Cookie、缓存或业务事务，只允许通过导航、OIDC 和签名事件集成；完整设计见 [COMMUNITY_ARCHITECTURE.md](COMMUNITY_ARCHITECTURE.md)。

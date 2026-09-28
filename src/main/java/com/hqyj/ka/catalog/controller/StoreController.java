@@ -9,8 +9,10 @@ import com.hqyj.ka.coupon.service.CouponService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import com.hqyj.ka.common.ApiResponse;
 import com.hqyj.ka.security.CaptchaService;
+import com.hqyj.ka.security.RateLimitFilter;
 import com.hqyj.ka.sysconfig.service.ConfigService;
 import com.hqyj.ka.member.service.MemberLevelService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -57,6 +59,9 @@ public class StoreController {
 
     public record CouponCheckRequest(@NotBlank String code, @NotNull Long productId,
                                      @jakarta.validation.constraints.Min(1) int quantity) {}
+    public record CaptchaAnswerRequest(@NotBlank @Size(max = 128) String challengeId,
+                                       @NotBlank @Size(max = 12) String answer,
+                                       @NotBlank @Size(max = 40) String action) {}
 
     /** 优惠码预览:返回折扣与到手价(不核销) */
     @PostMapping("/coupon-check")
@@ -65,6 +70,23 @@ public class StoreController {
         var base = product.price().multiply(java.math.BigDecimal.valueOf(req.quantity()));
         var discount = couponService.preview(req.code(), base);
         return ApiResponse.ok(Map.of("discount", discount, "finalAmount", base.subtract(discount)));
+    }
+
+    /** 站内图形验证码：生成图片 challenge，答案只保存在限时内存缓存。 */
+    @GetMapping("/captcha/challenge")
+    public ApiResponse<CaptchaService.BuiltinChallengeView> captchaChallenge(
+            @RequestParam @Size(max = 40) String action, HttpServletRequest http) {
+        return ApiResponse.ok(captchaService.createBuiltinChallenge(action, RateLimitFilter.clientIp(http)));
+    }
+
+    /** challenge 答对后换取短时一次性 proof；真正业务请求仍由 CaptchaFilter 消费 proof。 */
+    @PostMapping("/captcha/verify")
+    public ApiResponse<Map<String, String>> verifyCaptcha(@Valid @RequestBody CaptchaAnswerRequest req,
+                                                           HttpServletRequest http) {
+        String token = captchaService.solveBuiltinChallenge(req.challengeId(), req.answer(), req.action(),
+                RateLimitFilter.clientIp(http));
+        if (token == null) throw new BusinessException(ErrorCode.CAPTCHA_INVALID, "验证码错误或已过期，请换一张重试");
+        return ApiResponse.ok(Map.of("token", token));
     }
 
     /** 站点公开配置(站名/公告等,过滤敏感键) */
@@ -79,13 +101,16 @@ public class StoreController {
                 Map.entry("currency", all.getOrDefault("site.currency", "CNY")),
                 Map.entry("theme", all.getOrDefault("site.theme", "mint")),
                 Map.entry("mode", all.getOrDefault("site.mode", "auto")),
+                Map.entry("heroSlides", all.getOrDefault("site.hero_slides", "")),
                 Map.entry("seoTitle", all.getOrDefault("seo.title", all.getOrDefault("site.name", "Ka 发卡"))),
                 Map.entry("seoDescription", all.getOrDefault("seo.description", "自动发卡 · 数字商品秒级到账")),
                 Map.entry("seoKeywords", all.getOrDefault("seo.keywords", "")),
                 Map.entry("seoOgImage", all.getOrDefault("seo.og_image", "")),
                 Map.entry("seoIndex", all.getOrDefault("seo.index", "1")),
                 Map.entry("captchaEnabled", captcha.enabled() ? "1" : "0"),
+                Map.entry("captchaConfigured", captcha.configured() ? "1" : "0"),
                 Map.entry("captchaProvider", captcha.provider()),
-                Map.entry("captchaSiteKey", captcha.siteKey())));
+                Map.entry("captchaSiteKey", captcha.siteKey()),
+                Map.entry("captchaScopes", captcha.scopes())));
     }
 }

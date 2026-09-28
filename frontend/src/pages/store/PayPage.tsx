@@ -16,7 +16,7 @@ import {
 } from "../../lib/wallet";
 import { money } from "../../lib/currency";
 import { findLocalOrder } from "../../lib/orderHistory";
-import { isMemberLoggedIn, mPost } from "../../lib/memberApi";
+import { isMemberLoggedIn, mGet, mPost } from "../../lib/memberApi";
 import { useI18n } from "../../lib/i18n";
 import { CaptchaBox, captchaHeaders } from "../../lib/captcha";
 
@@ -64,7 +64,12 @@ export default function PayPage() {
 
   // 订单摘要(金额 / 截止时间),倒计时数据源
   useEffect(() => {
-    get<PaySummary>(`/pay/summary/${orderNo}`)
+    const local = findLocalOrder(orderNo);
+    const read = isMemberLoggedIn() ? mGet : get;
+    read<PaySummary>(`/pay/summary/${orderNo}`, {
+      contact: local?.contact,
+      queryToken: local?.queryToken,
+    })
       .then((s) => {
         setSummary(s);
         setOrderStatus(s.status);
@@ -115,18 +120,25 @@ export default function PayPage() {
   useEffect(() => {
     pollRef.current = window.setInterval(async () => {
       try {
-        const st = await get<string>(`/pay/status/${orderNo}`);
+        const local = findLocalOrder(orderNo);
+        const read = isMemberLoggedIn() ? mGet : get;
+        const st = await read<string>(`/pay/status/${orderNo}`, {
+          contact: local?.contact,
+          queryToken: local?.queryToken,
+        });
         setOrderStatus(st);
         if (st === "DELIVERED" || st === "EXPIRED" || st === "CLOSED") {
           if (pollRef.current) window.clearInterval(pollRef.current);
         }
         if (creation?.kind === "CRYPTO") {
-          setIntent(await get<CryptoIntent>(`/pay/crypto/intent/${orderNo}`));
+          const mode = channel === "CRYPTO_WALLET" ? "WALLET" : "TRANSFER";
+          const query = new URLSearchParams({ mode, chain, token });
+          setIntent(await get<CryptoIntent>(`/pay/crypto/intent/${orderNo}?${query.toString()}`));
         }
       } catch { /* 轮询失败静默重试 */ }
     }, 3000);
     return () => { if (pollRef.current) window.clearInterval(pollRef.current); };
-  }, [orderNo, creation?.kind]);
+  }, [orderNo, creation?.kind, channel, chain, token]);
 
   useEffect(() => {
     if (orderStatus !== "DELIVERED" || summary?.orderType !== "GOODS") return;
@@ -172,12 +184,22 @@ export default function PayPage() {
     }
     try {
       const extras = { returnBase: window.location.origin, ...(isCrypto ? { chain, token } : {}) };
-      const r = await mPost<PayCreation>("/pay/create", { orderNo, channelCode: channel, extras },
+      const local = findLocalOrder(orderNo);
+      const r = await mPost<PayCreation>("/pay/create", {
+        orderNo, channelCode: channel, extras,
+        contact: local?.contact,
+        queryToken: local?.queryToken,
+      },
         { headers: captchaHeaders(captchaToken) });
       setCreation(r);
       if (r.kind === "CRYPTO") setIntent(r.data as unknown as CryptoIntent);
       if (r.kind === "BALANCE") {
-        const st = await get<string>(`/pay/status/${orderNo}`);
+        const local = findLocalOrder(orderNo);
+        const read = isMemberLoggedIn() ? mGet : get;
+        const st = await read<string>(`/pay/status/${orderNo}`, {
+          contact: local?.contact,
+          queryToken: local?.queryToken,
+        });
         setOrderStatus(st);
       }
       if (r.kind === "REDIRECT") window.location.href = String(r.data.url);
@@ -392,6 +414,12 @@ export default function PayPage() {
   };
 
   const selectedChain = chainOptions.find((c) => c.chainCode === chain);
+  const selectedChannel = channels.find((c) => c.code === channel);
+  const orderAmount = Number(summary?.amount ?? 0);
+  const channelFee = selectedChannel
+    ? Math.round((orderAmount * Number(selectedChannel.feeRate || 0) / 100 + Number(selectedChannel.feeFixed || 0) + Number.EPSILON) * 100) / 100
+    : 0;
+  const actualPay = orderAmount + channelFee;
 
   return (
     <div className="mx-auto max-w-2xl animate-fade-up">
@@ -409,7 +437,13 @@ export default function PayPage() {
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-accent-soft/60 px-5 py-4">
             <div className="min-w-0">
               <p className="truncate text-xs text-ink/50">{summary.productName}</p>
-              <p className="text-2xl font-extrabold tracking-tight">{money(summary.amount)}</p>
+              <p className="text-2xl font-extrabold tracking-tight">{money(actualPay.toFixed(2))}</p>
+              {selectedChannel && channelFee > 0 && (
+                <div className="mt-1 space-y-0.5 text-[11px] text-ink/45">
+                  <p>{t.orderAmount} {money(summary.amount)} · {t.channelFee} {money(channelFee.toFixed(2))}</p>
+                  <p>{t.feeNonRefundable}</p>
+                </div>
+              )}
               {Number(summary.walletPaidAmount) > 0 && (
                 <p className="mt-1 text-[11px] leading-relaxed text-ink/45">
                   {t.walletDeducted.replace("{paid}", money(summary.walletPaidAmount)).replace("{amount}", money(summary.amount))}
@@ -450,16 +484,29 @@ export default function PayPage() {
                       : "border-ink/10 text-ink/60 hover:border-ink/30"
                 }`}
               >
+                <span className="flex flex-col items-center gap-1">
                 {c.code === "BALANCE" ? (
                   <span className="inline-flex items-center justify-center gap-1.5">
                     <Wallet size={14} /> {c.displayName}
                   </span>
                 ) : c.displayName}
+                {(Number(c.feeRate) > 0 || Number(c.feeFixed) > 0) && <span className={`text-[10px] font-normal ${channel === c.code ? "text-primary-contrast/70" : "text-ink/35"}`}>
+                  {Number(c.feeRate) > 0 ? `${c.feeRate}%` : ""}{Number(c.feeRate) > 0 && Number(c.feeFixed) > 0 ? " + " : ""}{Number(c.feeFixed) > 0 ? money(c.feeFixed) : ""}
+                </span>}
+                </span>
               </button>
             );
           })}
           {channels.length === 0 && <p className="col-span-4 text-sm text-ink/40">{t.noChannels}</p>}
         </div>
+
+        {summary && selectedChannel && channelFee > 0 && (
+          <div className="mb-5 grid grid-cols-3 gap-2 rounded-2xl border border-primary/15 bg-accent-soft/45 p-3 text-center">
+            <div><p className="text-[10px] text-ink/40">{t.orderAmount}</p><p className="mt-1 text-sm font-bold">{money(summary.amount)}</p></div>
+            <div><p className="text-[10px] text-ink/40">{t.channelFee}</p><p className="mt-1 text-sm font-bold">+{money(channelFee.toFixed(2))}</p></div>
+            <div><p className="text-[10px] text-ink/40">{t.actualPay}</p><p className="mt-1 text-sm font-extrabold text-primary">{money(actualPay.toFixed(2))}</p></div>
+          </div>
+        )}
 
         {isCrypto && (
           <div className="mb-5 space-y-3.5">

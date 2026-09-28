@@ -54,13 +54,16 @@ public class UserAdminService {
     public UserView update(Long id, UpdateUserRequest req) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+        boolean accessChanged = req.enabled() != null
+                || (req.roleCodes() != null && !req.roleCodes().isEmpty())
+                || (req.newPassword() != null && !req.newPassword().isBlank());
         if (req.nickname() != null) user.setNickname(req.nickname());
         if (req.enabled() != null) user.setEnabled(req.enabled());
         if (req.roleCodes() != null && !req.roleCodes().isEmpty()) user.setRoles(resolveRoles(req.roleCodes()));
         if (req.newPassword() != null && !req.newPassword().isBlank()) {
             user.setPassword(passwordEncoder.encode(req.newPassword()));
-            user.setTokenVersion(UUID.randomUUID().toString());
         }
+        if (accessChanged) user.setTokenVersion(UUID.randomUUID().toString());
         return toView(user);
     }
 
@@ -101,6 +104,8 @@ public class UserAdminService {
         }
         role.setPermissions(perms);
         Role saved = roleRepository.save(role);
+        // 权限变更必须立即撤销所有管理员旧访问令牌,避免被移除的权限在令牌有效期内继续使用。
+        userRepository.findAll().forEach(user -> user.setTokenVersion(UUID.randomUUID().toString()));
         return new RoleView(saved.getId(), saved.getCode(), saved.getName(), saved.getDescription(),
                 saved.isBuiltin(), saved.getPermissions().stream().map(Permission::getCode).sorted().toList());
     }

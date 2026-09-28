@@ -40,8 +40,14 @@ public class SettlementService {
         Order order = orderRepository.findByOrderNo(orderNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
-        BigDecimal amount = paidAmount != null ? paidAmount : order.getAmount();
-        BigDecimal expected = expectedAmount(order, channelCode);
+        PaymentTransaction createdQuote = transactionRepository.findFirstByOrderNoAndChannelCodeAndStatusOrderByIdDesc(
+                order.getOrderNo(), channelCode, PaymentTransaction.Status.CREATED).orElse(null);
+        BigDecimal expected = createdQuote != null
+                ? createdQuote.getAmount()
+                : (("ALIPAY_OFFICIAL".equals(channelCode) || "EPAY".equals(channelCode))
+                    ? fxRateService.siteToCny(order.getAmount()) : order.getAmount());
+        // 扫链等异步渠道只回传“已确认”而不回传站点计价金额时，也应记录含渠道手续费的应付总额。
+        BigDecimal amount = paidAmount != null ? paidAmount : expected;
         if (exactAmount && expected.compareTo(amount) != 0) {
             throw new BusinessException(ErrorCode.AMOUNT_MISMATCH);
         }
@@ -55,6 +61,8 @@ public class SettlementService {
         tx.setOrderNo(orderNo);
         tx.setChannelCode(channelCode);
         tx.setAmount(amount);
+        tx.setFeeAmount(createdQuote == null || createdQuote.getFeeAmount() == null
+                ? BigDecimal.ZERO : createdQuote.getFeeAmount());
         tx.setChannelTradeNo(channelTradeNo);
         tx.setStatus(PaymentTransaction.Status.SUCCESS);
         tx.setPaidAt(LocalDateTime.now());
@@ -73,10 +81,4 @@ public class SettlementService {
         }
     }
 
-    private BigDecimal expectedAmount(Order order, String channelCode) {
-        if ("ALIPAY_OFFICIAL".equals(channelCode) || "EPAY".equals(channelCode)) {
-            return fxRateService.siteToCny(order.getAmount());
-        }
-        return order.getAmount();
-    }
 }

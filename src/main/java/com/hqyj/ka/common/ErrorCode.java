@@ -63,7 +63,7 @@ public enum ErrorCode {
     UPLOAD_TOO_LARGE(7002, "图片大小超出限制"),
 
     // 安全校验 80xx
-    CAPTCHA_INVALID(8001, "请先完成人机验证");
+    CAPTCHA_INVALID(8001, "人机验证无效或已过期，请重新验证");
 
     private final int code;
     private final String message;

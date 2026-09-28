@@ -10,10 +10,10 @@ import static org.junit.jupiter.api.Assertions.*;
 class OrderNoGeneratorTest {
 
     @Test
-    void formatIs22DigitsStartingWithTimestamp() {
+    void formatIsTimestampPlusUrlSafeRandomSuffix() {
         String orderNo = OrderNoGenerator.next();
-        assertEquals(22, orderNo.length());
-        assertTrue(orderNo.matches("^20\\d{20}$"), "应以年份开头且全为数字: " + orderNo);
+        assertEquals(30, orderNo.length());
+        assertTrue(orderNo.matches("^20\\d{12}[A-Za-z0-9_-]{16}$"), "应为时间前缀 + URL-safe 随机后缀: " + orderNo);
     }
 
     @Test

@@ -114,15 +114,16 @@ export async function uploadImage(file: File): Promise<string> {
 // ---------- 类型 ----------
 export interface ProductCard {
   id: number; categoryId: number; name: string; brief: string | null;
-  coverImage: string | null; price: string; stock: number; minBuy: number; maxBuy: number;
+  coverImage: string | null; price: string; minOrderAmount: string; stock: number; minBuy: number; maxBuy: number;
   deliveryMode: "AUTO_CARD" | "MANUAL" | "PRESALE_VOUCHER";
-  presaleStartAt: string | null; presaleEndAt: string | null;
+  presaleSaleEndAt: string | null; presaleStartAt: string | null; presaleEndAt: string | null;
 }
 export interface ProductDetail extends ProductCard {
-  description: string | null; manualPrompt: string | null; presaleSettlementMode: "SINK" | "REFUND" | "BALANCE" | null;
+  description: string | null; manualPrompt: string | null; manualFormSchema: string | null;
+  presaleSettlementMode: "SINK" | "REFUND" | "BALANCE" | null;
 }
 export interface Category { id: number; name: string; sortOrder: number; visible: boolean; }
-export interface Channel { code: string; displayName: string; }
+export interface Channel { code: string; displayName: string; feeRate: string; feeFixed: string; }
 export interface ChainOption {
   chainCode: string; chainId: number; confirmations: number;
   tokens: { symbol: string; contract: string; decimals: number }[];

@@ -56,12 +56,28 @@ public class CardService {
         if (cards.size() < qty) {
             throw new BusinessException(ErrorCode.STOCK_NOT_ENOUGH);
         }
+        markAllocated(cards, orderId);
+        return cards;
+    }
+
+    /**
+     * 预售履约尝试分配:库存不足是“等待补货”的正常状态,不抛异常。
+     * 仍在同一事务内使用 SKIP LOCKED 锁定并分配,避免并发超发。
+     */
+    @Transactional
+    public List<CardSecret> tryAllocate(Long productId, int qty, Long orderId) {
+        List<CardSecret> cards = cardRepository.lockAvailable(productId, qty);
+        if (cards.size() < qty) return List.of();
+        markAllocated(cards, orderId);
+        return cards;
+    }
+
+    private void markAllocated(List<CardSecret> cards, Long orderId) {
         for (CardSecret c : cards) {
             c.setStatus(CardSecret.Status.SOLD);
             c.setOrderId(orderId);
             c.setSoldAt(LocalDateTime.now());
         }
-        return cards;
     }
 
     /** 解密订单卡密(买家提卡 / 管理端查看,均有权限与凭证校验前置)。 */

@@ -20,6 +20,7 @@
         <!-- 覆盖 Boot BOM 的 9.7.0:本机仓库该版本 jar 下载损坏,9.6.0 完整可用 -->
         <mysql.version>9.6.0</mysql.version>
         <alipay.version>4.40.852.ALL</alipay.version>
+        <byte-buddy.version>1.18.10</byte-buddy.version>
     </properties>
 
     <dependencies>
@@ -107,6 +108,12 @@
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy-agent</artifactId>
+            <version>${byte-buddy.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -158,6 +165,13 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>-javaagent:${settings.localRepository}/net/bytebuddy/byte-buddy-agent/${byte-buddy.version}/byte-buddy-agent-${byte-buddy.version}.jar</argLine>
+                </configuration>
             </plugin>
         </plugins>
     </build>

@@ -14,6 +14,9 @@ import java.util.Optional;
 public interface PaymentTransactionRepository extends JpaRepository<PaymentTransaction, Long> {
     Optional<PaymentTransaction> findByChannelTradeNo(String channelTradeNo);
 
+    Optional<PaymentTransaction> findFirstByOrderNoAndChannelCodeAndStatusOrderByIdDesc(
+            String orderNo, String channelCode, PaymentTransaction.Status status);
+
     /** 近 N 天成功流水(量小,Java 侧聚合出日营收) */
     List<PaymentTransaction> findByStatusAndPaidAtAfter(PaymentTransaction.Status status, LocalDateTime after);
 

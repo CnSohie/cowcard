@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
 import {
-  Globe2, HandCoins, Mail, Moon, Palette, Save, Send, ShieldCheck,
-  Sun, SunMoon, Timer, Unlock,
+  ArrowDown, ArrowUp, Eye, EyeOff, Globe2, HandCoins, LayoutTemplate, Mail, Moon, Palette,
+  Plus, Save, Send, ShieldCheck, Sun, SunMoon, Timer, Trash2, Unlock,
 } from "lucide-react";
 import { ApiError, get, post } from "../../lib/api";
 import { applySiteTheme, THEMES, type ThemeName } from "../../lib/theme";
 import { setCurrency } from "../../lib/currency";
 import SensitiveConfirm from "../../components/SensitiveConfirm";
+import ImageUpload from "../../components/ImageUpload";
+import {
+  HERO_LAYOUTS, HERO_TONES, defaultHeroSlides, newHeroSlide, parseHeroSlides, serializeHeroSlides,
+  type HeroSlide,
+} from "../../lib/hero";
+import { CaptchaBox, refreshCaptchaConfig } from "../../lib/captcha";
 
 const MODES = [
   { value: "auto", label: "跟随系统", icon: SunMoon },
@@ -24,6 +30,28 @@ const CURRENCIES = [
   { code: "HKD", label: "港币", symbol: "HK$" },
   { code: "TWD", label: "新台币", symbol: "NT$" },
   { code: "SGD", label: "新币", symbol: "S$" },
+] as const;
+
+const WITHDRAW_METHODS = [
+  { code: "ALIPAY", label: "支付宝", note: "手机号/邮箱 + 实名校验" },
+  { code: "BANK", label: "银行卡", note: "卡号 Luhn 校验 + 持卡人 + 开户行" },
+  { code: "USDT_TRC20", label: "USDT · TRC20", note: "仅接受 T 开头 TRON 地址" },
+  { code: "USDT_BEP20", label: "USDT · BEP20", note: "仅接受 0x 开头 BSC 地址" },
+] as const;
+
+const CAPTCHA_SCOPES = [
+  { code: "admin_login", label: "后台登录" },
+  { code: "member_login", label: "会员登录" },
+  { code: "member_register", label: "会员注册" },
+  { code: "order_create", label: "创建订单" },
+  { code: "order_query", label: "游客查单" },
+  { code: "payment", label: "创建支付 / TXID" },
+  { code: "presale_redeem", label: "预售提货" },
+  { code: "wallet_recharge", label: "余额充值" },
+  { code: "wallet_withdraw", label: "申请提现" },
+  { code: "gift_card_redeem", label: "礼品卡兑换" },
+  { code: "article_purchase", label: "购买文章" },
+  { code: "support_ticket", label: "提交工单" },
 ] as const;
 
 const THEME_NOTES: Record<ThemeName, { tone: string; note: string }> = {
@@ -88,22 +116,70 @@ export default function SettingsAdmin() {
   const [testTo, setTestTo] = useState("");
   const [testing, setTesting] = useState(false);
   const [sensitive, setSensitive] = useState<"save" | "resetRateLimit" | null>(null);
+  const [heroSlides, setHeroSlides] = useState<HeroSlide[]>(defaultHeroSlides);
+  const [captchaTestToken, setCaptchaTestToken] = useState("");
+  const [captchaTestReset, setCaptchaTestReset] = useState(0);
+  const [captchaTesting, setCaptchaTesting] = useState(false);
 
   useEffect(() => {
-    get<Record<string, string>>("/admin/config").then(setCfg).catch(() => void 0);
+    get<Record<string, string>>("/admin/config").then((loaded) => {
+      setCfg(loaded);
+      setHeroSlides(parseHeroSlides(loaded["site.hero_slides"]));
+    }).catch(() => void 0);
   }, []);
 
   function set(key: string, value: string) {
     setCfg((c) => ({ ...c, [key]: value }));
   }
 
+  function toggleWithdrawMethod(code: string) {
+    const current = new Set((cfg["wallet.withdraw_methods"] ?? "ALIPAY,BANK").split(",").filter(Boolean));
+    if (current.has(code)) current.delete(code); else current.add(code);
+    set("wallet.withdraw_methods", WITHDRAW_METHODS.filter((m) => current.has(m.code)).map((m) => m.code).join(","));
+  }
+
+  function toggleCaptchaScope(code: string) {
+    const fallback = CAPTCHA_SCOPES.map((item) => item.code).join(",");
+    const current = new Set((cfg["security.captcha.scopes"] ?? fallback).split(",").filter(Boolean));
+    if (current.has(code)) current.delete(code); else current.add(code);
+    set("security.captcha.scopes", CAPTCHA_SCOPES.filter((item) => current.has(item.code)).map((item) => item.code).join(","));
+  }
+
+  function updateHero(index: number, patch: Partial<HeroSlide>) {
+    setHeroSlides((current) => current.map((slide, i) => i === index ? { ...slide, ...patch } : slide));
+    setMsg("");
+  }
+
+  function moveHero(index: number, direction: -1 | 1) {
+    setHeroSlides((current) => {
+      const target = index + direction;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  function removeHero(index: number) {
+    setHeroSlides((current) => current.length <= 1 ? current : current.filter((_, i) => i !== index));
+  }
+
   async function save(auth: { password: string; totpCode: string }) {
     setBusy(true);
     setMsg("");
     try {
-      await post("/admin/config", { configs: cfg, ...auth });
-      applySiteTheme(cfg["site.theme"], cfg["site.mode"]);
-      setCurrency(cfg["site.currency"]);
+      await post("/admin/config", {
+        configs: { ...cfg, "site.hero_slides": serializeHeroSlides(heroSlides) },
+        ...auth,
+      });
+      refreshCaptchaConfig();
+      const loaded = await get<Record<string, string>>("/admin/config");
+      setCfg(loaded);
+      setHeroSlides(parseHeroSlides(loaded["site.hero_slides"]));
+      applySiteTheme(loaded["site.theme"], loaded["site.mode"]);
+      setCurrency(loaded["site.currency"]);
+      setCaptchaTestToken("");
+      setCaptchaTestReset((x) => x + 1);
       setMsg("已保存,商城前台即刻生效");
       setSensitive(null);
     } catch (e) {
@@ -125,6 +201,22 @@ export default function SettingsAdmin() {
     }
   }
 
+  async function testCaptcha() {
+    if (!captchaTestToken) return;
+    setCaptchaTesting(true);
+    setMsg("");
+    try {
+      await post("/admin/config/captcha/test", { token: captchaTestToken });
+      setMsg("人机验证测试通过：前端组件、服务端密钥和验证链路均可用");
+    } catch (e) {
+      setMsg(e instanceof ApiError ? e.message : "人机验证测试失败");
+    } finally {
+      setCaptchaTesting(false);
+      setCaptchaTestToken("");
+      setCaptchaTestReset((x) => x + 1);
+    }
+  }
+
   async function testMail() {
     setTesting(true);
     setMsg("");
@@ -142,7 +234,7 @@ export default function SettingsAdmin() {
   const mode = cfg["site.mode"] ?? "auto";
 
   return (
-    <div className="max-w-2xl animate-fade-up">
+    <div className="max-w-5xl animate-fade-up">
       <h1 className="mb-6 text-xl font-extrabold tracking-tight">站点设置</h1>
 
       <div className="card mb-5 p-6">
@@ -159,6 +251,143 @@ export default function SettingsAdmin() {
         <label className="label mt-3">站点网址(邮件查单链接使用)</label>
         <input className="input font-mono text-xs" value={cfg["site.url"] ?? ""} placeholder="https://ka.example.com"
           onChange={(e) => set("site.url", e.target.value)} />
+      </div>
+
+      <div className="card mb-5 p-6">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="mb-1 flex items-center gap-2 font-bold"><LayoutTemplate size={16} /> 首页轮播设计</h2>
+            <p className="max-w-2xl text-xs leading-relaxed text-ink/45">
+              每一屏都可以使用不同内容和视觉版式。支持主题插画、支付卡片、购买流程以及自定义图片；拖动顺序由上下按钮控制，最多 6 屏。
+            </p>
+          </div>
+          <button className="btn-ghost !px-4 !py-2.5 text-xs" disabled={heroSlides.length >= 6}
+            onClick={() => setHeroSlides((current) => [...current, newHeroSlide()])}>
+            <Plus size={14} /> 添加一屏
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {heroSlides.map((slide, index) => (
+            <div key={slide.id} className={`overflow-hidden rounded-3xl border ${slide.enabled ? "border-ink/[0.09]" : "border-ink/[0.05] opacity-65"}`}>
+              <div className="flex flex-wrap items-center gap-2 border-b border-ink/[0.06] bg-ink/[0.025] px-4 py-3">
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-primary text-xs font-extrabold text-primary-contrast">{index + 1}</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-bold">{slide.titleZh || slide.titleEn || "未命名轮播"}</span>
+                <button className="icon-btn" title={slide.enabled ? "停用这一屏" : "启用这一屏"}
+                  onClick={() => updateHero(index, { enabled: !slide.enabled })}>
+                  {slide.enabled ? <Eye size={14} /> : <EyeOff size={14} />}
+                </button>
+                <button className="icon-btn" title="上移" disabled={index === 0} onClick={() => moveHero(index, -1)}><ArrowUp size={14} /></button>
+                <button className="icon-btn" title="下移" disabled={index === heroSlides.length - 1} onClick={() => moveHero(index, 1)}><ArrowDown size={14} /></button>
+                <button className="icon-btn text-red-500" title="删除" disabled={heroSlides.length <= 1} onClick={() => removeHero(index)}><Trash2 size={14} /></button>
+              </div>
+
+              <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_15rem]">
+                <div className="min-w-0">
+                  <div className="mb-4 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="label">视觉版式</label>
+                      <select className="input !py-2.5" value={slide.layout}
+                        onChange={(e) => updateHero(index, { layout: e.target.value as HeroSlide["layout"] })}>
+                        {HERO_LAYOUTS.map((item) => <option key={item.value} value={item.value}>{item.label} · {item.note}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">配色氛围</label>
+                      <select className="input !py-2.5" value={slide.tone}
+                        onChange={(e) => updateHero(index, { tone: e.target.value as HeroSlide["tone"] })}>
+                        {HERO_TONES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="label">中文眉题</label>
+                      <input className="input" maxLength={40} value={slide.eyebrowZh}
+                        onChange={(e) => updateHero(index, { eyebrowZh: e.target.value })} placeholder="例如：限时活动" />
+                    </div>
+                    <div>
+                      <label className="label">中文标题</label>
+                      <input className="input" maxLength={60} value={slide.titleZh}
+                        onChange={(e) => updateHero(index, { titleZh: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="label">中文高亮词</label>
+                      <input className="input" maxLength={30} value={slide.highlightZh}
+                        onChange={(e) => updateHero(index, { highlightZh: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="label">中文标签（逗号分隔，最多4个）</label>
+                      <input className="input" value={slide.chipsZh.join(", ")}
+                        onChange={(e) => updateHero(index, { chipsZh: e.target.value.split(/[,，]/).map((v) => v.trim()).filter(Boolean).slice(0, 4) })} />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="label">中文说明</label>
+                      <textarea className="input min-h-20" maxLength={220} value={slide.descriptionZh}
+                        onChange={(e) => updateHero(index, { descriptionZh: e.target.value })} />
+                    </div>
+                  </div>
+
+                  <details className="mt-4 rounded-2xl border border-ink/[0.07] p-4">
+                    <summary className="cursor-pointer text-xs font-bold text-ink/60">英文文案（可选，留空时回落中文）</summary>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <input className="input" maxLength={80} value={slide.eyebrowEn} placeholder="Eyebrow"
+                        onChange={(e) => updateHero(index, { eyebrowEn: e.target.value })} />
+                      <input className="input" maxLength={100} value={slide.titleEn} placeholder="Headline"
+                        onChange={(e) => updateHero(index, { titleEn: e.target.value })} />
+                      <input className="input" maxLength={60} value={slide.highlightEn} placeholder="Highlight"
+                        onChange={(e) => updateHero(index, { highlightEn: e.target.value })} />
+                      <input className="input" value={slide.chipsEn.join(", ")} placeholder="Tags, comma separated"
+                        onChange={(e) => updateHero(index, { chipsEn: e.target.value.split(",").map((v) => v.trim()).filter(Boolean).slice(0, 4) })} />
+                      <textarea className="input min-h-20 sm:col-span-2" maxLength={320} value={slide.descriptionEn} placeholder="Description"
+                        onChange={(e) => updateHero(index, { descriptionEn: e.target.value })} />
+                    </div>
+                  </details>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <div>
+                      <label className="label">按钮文字</label>
+                      <input className="input" maxLength={20} value={slide.ctaLabelZh} placeholder="留空不显示"
+                        onChange={(e) => updateHero(index, { ctaLabelZh: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="label">英文按钮</label>
+                      <input className="input" maxLength={40} value={slide.ctaLabelEn}
+                        onChange={(e) => updateHero(index, { ctaLabelEn: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="label">按钮链接</label>
+                      <input className="input font-mono text-xs" value={slide.ctaUrl} placeholder="/product/1 或 https://…"
+                        onChange={(e) => updateHero(index, { ctaUrl: e.target.value })} />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className={`hero-admin-preview hero-tone-${slide.tone}`}>
+                    {slide.imageUrl && <img src={slide.imageUrl} alt="" />}
+                    <div>
+                      <span>{slide.eyebrowZh || "轮播预览"}</span>
+                      <strong>{slide.titleZh}<em>{slide.highlightZh}</em></strong>
+                      <small>{HERO_LAYOUTS.find((item) => item.value === slide.layout)?.label}</small>
+                    </div>
+                  </div>
+                  {(slide.layout === "image-right" || slide.layout === "image-cover") && (
+                    <div className="mt-3">
+                      <label className="label">轮播图片</label>
+                      <ImageUpload value={slide.imageUrl} onChange={(imageUrl) => updateHero(index, { imageUrl })}
+                        hint="建议 1600×900 WebP / JPG · ≤5MB" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="mt-4 text-[11px] leading-relaxed text-ink/40">
+          保存后前台立即读取新轮播。全部停用时会自动回落到内置默认内容，避免首页出现空白。
+        </p>
       </div>
 
       <div className="card mb-5 p-6">
@@ -340,7 +569,7 @@ export default function SettingsAdmin() {
       <div className="card mb-5 p-6">
         <h2 className="mb-1 flex items-center gap-2 font-bold"><ShieldCheck size={16} /> 人机验证(Captcha)</h2>
         <p className="mb-4 text-xs leading-relaxed text-ink/45">
-          开启后,登录注册、下单、支付创建、TXID 核销、提货兑换、充值提现、礼品卡兑换、工单提交等公开表单都需要验证码。支持 Cloudflare Turnstile、Google reCAPTCHA 与 hCaptcha。
+          可按表单场景启用验证。支持无需第三方账号的站内图形验证，以及 Cloudflare Turnstile、Google reCAPTCHA 与 hCaptcha。
         </p>
         <label className="label">验证开关</label>
         <div className="mb-4 flex flex-wrap gap-2.5">
@@ -352,8 +581,9 @@ export default function SettingsAdmin() {
           ))}
         </div>
         <label className="label">服务商</label>
-        <div className="mb-4 grid gap-2 sm:grid-cols-3">
+        <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {([
+            ["builtin", "站内图形验证"],
             ["turnstile", "Cloudflare Turnstile"],
             ["recaptcha", "Google reCAPTCHA"],
             ["hcaptcha", "hCaptcha"],
@@ -367,14 +597,58 @@ export default function SettingsAdmin() {
             </button>
           ))}
         </div>
-        <label className="label">Site Key(公开)</label>
-        <input className="input mb-3 font-mono text-xs" value={cfg["security.captcha.site_key"] ?? ""}
-          placeholder="0x4AAAA... / 6Lc..." onChange={(e) => set("security.captcha.site_key", e.target.value)} />
-        <label className="label">Secret Key(服务端私钥)</label>
-        <input className="input font-mono text-xs" type="password" value={cfg["security.captcha.secret_key"] ?? ""}
-          placeholder="仅服务端验证使用,不会暴露给前台" onChange={(e) => set("security.captcha.secret_key", e.target.value)} />
+        {(cfg["security.captcha.provider"] ?? "turnstile") === "builtin" ? (
+          <div className="mb-4 rounded-2xl border border-primary/15 bg-accent-soft/50 p-4">
+            <label className="label">验证码字符数</label>
+            <div className="flex gap-2">
+              {["4", "5", "6"].map((length) => (
+                <button type="button" key={length} className={`chip !py-2 ${(cfg["security.captcha.builtin_length"] ?? "5") === length ? "chip-on" : ""}`}
+                  onClick={() => set("security.captcha.builtin_length", length)}>{length} 位</button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-ink/40">无需外部服务；答案、短时凭证均保存在本机内存，绑定 IP 和表单场景且只能使用一次。推荐 5 位。</p>
+          </div>
+        ) : (
+          <>
+            <label className="label">Site Key（公开）</label>
+            <input className="input mb-3 font-mono text-xs" value={cfg["security.captcha.site_key"] ?? ""}
+              placeholder="0x4AAAA... / 6Lc..." onChange={(e) => set("security.captcha.site_key", e.target.value)} />
+            <label className="label">Secret Key（仅写入，不回显）</label>
+            <input className="input mb-3 font-mono text-xs" type="password" value={cfg["security.captcha.secret_key"] ?? ""}
+              autoComplete="new-password"
+              placeholder={cfg["security.captcha.secret_configured"] === "1" ? "已安全配置；留空不会覆盖" : "请输入服务端 Secret Key"}
+              onChange={(e) => set("security.captcha.secret_key", e.target.value)} />
+            <label className="label">允许的验证域名（推荐）</label>
+            <input className="input mb-4 font-mono text-xs" value={cfg["security.captcha.allowed_hostnames"] ?? ""}
+              placeholder="example.com,www.example.com；留空读取站点网址"
+              onChange={(e) => set("security.captcha.allowed_hostnames", e.target.value)} />
+          </>
+        )}
+
+        <label className="label">需要验证的表单</label>
+        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          {CAPTCHA_SCOPES.map((scope) => {
+            const fallback = CAPTCHA_SCOPES.map((item) => item.code).join(",");
+            const selected = (cfg["security.captcha.scopes"] ?? fallback).split(",").includes(scope.code);
+            return <button type="button" key={scope.code} className={`chip justify-center !px-3 !py-2.5 text-xs ${selected ? "chip-on" : ""}`}
+              onClick={() => toggleCaptchaScope(scope.code)}>{scope.label}</button>;
+          })}
+        </div>
+
+        <div className={`rounded-2xl border p-4 ${cfg["security.captcha.configured"] === "1" ? "border-emerald-500/20 bg-emerald-500/[0.06]" : "border-amber-500/20 bg-amber-500/[0.06]"}`}>
+          <p className="text-xs font-bold">{cfg["security.captcha.status"] ?? "保存后检查配置状态"}</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-ink/45">修改配置后请先保存，再在这里完成一次真实验证。第三方模式会同时检查浏览器组件、Secret、action 和域名白名单。</p>
+          {cfg["security.captcha.enabled"] === "1" && cfg["security.captcha.configured"] === "1" && (
+            <div className="mt-3">
+              <CaptchaBox action="admin_captcha_test" force resetKey={captchaTestReset}
+                onToken={setCaptchaTestToken} />
+              <button type="button" className="btn-ghost !py-2.5 text-xs" disabled={!captchaTestToken || captchaTesting}
+                onClick={() => void testCaptcha()}>{captchaTesting ? "测试中…" : "测试服务端验证"}</button>
+            </div>
+          )}
+        </div>
         <p className="mt-3 text-[11px] leading-relaxed text-ink/40">
-          建议优先使用 Cloudflare Turnstile。开启前请确认域名已加入对应服务商白名单,否则所有受保护表单会被拒绝。
+          第三方验证建议优先使用 Cloudflare Turnstile；国内网络不稳定时可使用站内图形验证，避免外部脚本加载失败阻断下单。
         </p>
       </div>
 
@@ -399,9 +673,43 @@ export default function SettingsAdmin() {
           onChange={(e) => set("commission.rate", e.target.value)} />
         <p className="mb-3 text-[11px] text-ink/40">被邀请会员每笔实付消费(商品订单 / 付费文章)按比例计入邀请人余额;充值不计佣。</p>
         <label className="label">最低提现金额(元)</label>
-        <input className="input" type="number" min={0.01} step="0.01"
+        <input className="input mb-4" type="number" min={0.01} step="0.01"
           value={cfg["wallet.min_withdraw"] ?? ""} placeholder="10"
           onChange={(e) => set("wallet.min_withdraw", e.target.value)} />
+        <label className="label">允许会员使用的提现方式</label>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {WITHDRAW_METHODS.map((method) => {
+            const enabled = (cfg["wallet.withdraw_methods"] ?? "ALIPAY,BANK").split(",").includes(method.code);
+            return <button type="button" key={method.code} onClick={() => toggleWithdrawMethod(method.code)}
+              className={`rounded-2xl border p-3.5 text-left transition ${enabled ? "border-primary bg-accent-soft/60" : "border-ink/10 bg-surface text-ink/45"}`}>
+              <span className="flex items-center justify-between gap-2 text-sm font-bold">
+                {method.label}<span className={`rounded-full px-2 py-0.5 text-[10px] ${enabled ? "bg-primary text-primary-contrast" : "bg-ink/[0.06]"}`}>{enabled ? "已开放" : "已关闭"}</span>
+              </span>
+              <span className="mt-1 block text-[11px] leading-relaxed text-ink/45">{method.note}</span>
+            </button>;
+          })}
+        </div>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink/40">全部关闭后会员端不能提现；服务端会拒绝已停用渠道，即使有人绕过页面提交也无效。</p>
+        <div className="mt-4 space-y-3">
+          <p className="label !mb-0">各提现方式手续费</p>
+          {WITHDRAW_METHODS.filter((method) => (cfg["wallet.withdraw_methods"] ?? "ALIPAY,BANK").split(",").includes(method.code)).map((method) => (
+            <div key={method.code} className="grid gap-3 rounded-2xl border border-ink/[0.08] p-4 sm:grid-cols-[1fr_140px_140px] sm:items-end">
+              <div><p className="text-sm font-bold">{method.label}</p><p className="mt-1 text-[11px] text-ink/40">手续费从申请金额中扣除，剩余金额为实际到账。</p></div>
+              <div>
+                <label className="label">比例手续费(%)</label>
+                <input className="input !py-2.5" type="number" min={0} max={100} step="0.01" placeholder="0"
+                  value={cfg[`wallet.withdraw_fee_rate.${method.code}`] ?? ""}
+                  onChange={(e) => set(`wallet.withdraw_fee_rate.${method.code}`, e.target.value)} />
+              </div>
+              <div>
+                <label className="label">固定手续费</label>
+                <input className="input !py-2.5" type="number" min={0} step="0.01" placeholder="0"
+                  value={cfg[`wallet.withdraw_fee_fixed.${method.code}`] ?? ""}
+                  onChange={(e) => set(`wallet.withdraw_fee_fixed.${method.code}`, e.target.value)} />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="card mb-5 p-6">

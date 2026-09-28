@@ -121,7 +121,7 @@ public class MemberAuthService {
 
     private MemberTokenResponse tokens(Member member) {
         return new MemberTokenResponse(
-                jwtService.createMemberAccessToken(member.getId(), member.getNickname()),
+                jwtService.createMemberAccessToken(member.getId(), member.getNickname(), member.getTokenVersion()),
                 jwtService.createMemberRefreshToken(member.getId(), member.getTokenVersion()),
                 MemberView.of(member));
     }

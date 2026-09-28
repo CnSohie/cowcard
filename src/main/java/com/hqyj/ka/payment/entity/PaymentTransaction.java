@@ -35,6 +35,10 @@ public class PaymentTransaction {
     @Column(nullable = false, precision = 20, scale = 2)
     private BigDecimal amount;
 
+    /** 站点计价币种下向买家收取的渠道手续费;amount 可能是换算后的渠道币种总额。 */
+    @Column(precision = 20, scale = 2)
+    private BigDecimal feeAmount = BigDecimal.ZERO;
+
     /** 渠道流水号(支付宝 trade_no / 易支付 trade_no / 链上 txHash) */
     @Column(length = 128)
     private String channelTradeNo;

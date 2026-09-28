@@ -1,8 +1,22 @@
 <!doctype html>
-<html lang="zh-CN" class="dark">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <script>
+      (() => {
+        try {
+          const root = document.documentElement;
+          const theme = localStorage.getItem("ka.site.theme") || "mint";
+          const siteMode = localStorage.getItem("ka.site.mode") || "auto";
+          const localMode = localStorage.getItem("ka.mode");
+          const dark = localMode === "dark" || (localMode !== "light" && (siteMode === "dark" || (siteMode === "auto" && matchMedia("(prefers-color-scheme: dark)").matches)));
+          root.dataset.theme = theme;
+          root.dataset.mode = dark ? "dark" : "light";
+          root.style.colorScheme = root.dataset.mode;
+        } catch (_) { /* localStorage may be unavailable in privacy mode */ }
+      })();
+    </script>
     <meta name="description" content="自动发卡 · 极速到账" />
     <title>Ka · 自动发卡</title>
   </head>

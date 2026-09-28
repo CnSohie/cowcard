@@ -37,13 +37,28 @@ public class WithdrawRequest {
     @Column(nullable = false, precision = 20, scale = 2)
     private BigDecimal amount;
 
-    /** 收款渠道(ALIPAY / USDT / BANK…,自由文本) */
+    /** 手续费从申请金额中扣除;实际打款 = amount - feeAmount。 */
+    @Column(precision = 20, scale = 2)
+    private BigDecimal feeAmount = BigDecimal.ZERO;
+
+    @Column(precision = 20, scale = 2)
+    private BigDecimal netAmount;
+
+    /** 管理员允许的固定渠道编码。 */
     @Column(nullable = false, length = 32)
     private String channel;
 
     /** 收款账号 */
     @Column(nullable = false, length = 128)
     private String account;
+
+    /** 支付宝实名 / 银行卡持卡人。 */
+    @Column(length = 50)
+    private String accountName;
+
+    /** 银行卡开户银行。 */
+    @Column(length = 80)
+    private String bankName;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)

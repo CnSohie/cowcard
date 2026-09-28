@@ -14,11 +14,17 @@ public interface CryptoPaymentIntentRepository extends JpaRepository<CryptoPayme
 
     Optional<CryptoPaymentIntent> findFirstByOrderNoOrderByIdDesc(String orderNo);
 
-    List<CryptoPaymentIntent> findByOrderNoAndStatus(String orderNo, CryptoPaymentIntent.Status status);
+    Optional<CryptoPaymentIntent> findFirstByOrderNoAndModeAndChainCodeIgnoreCaseAndTokenSymbolIgnoreCaseOrderByIdDesc(
+            String orderNo, CryptoPaymentIntent.Mode mode, String chainCode, String tokenSymbol);
+
+    List<CryptoPaymentIntent> findByOrderNoAndStatusOrderByIdDesc(String orderNo, CryptoPaymentIntent.Status status);
 
     Optional<CryptoPaymentIntent> findByTxHash(String txHash);
 
     List<CryptoPaymentIntent> findByChainCodeAndStatus(String chainCode, CryptoPaymentIntent.Status status);
+
+    List<CryptoPaymentIntent> findTop200ByChainCodeAndStatusAndExpireAtAfterAndTxHashIsNullOrderByIdDesc(
+            String chainCode, CryptoPaymentIntent.Status status, LocalDateTime time);
 
     List<CryptoPaymentIntent> findTop200ByStatusAndExpireAtBefore(CryptoPaymentIntent.Status status, LocalDateTime time);
 

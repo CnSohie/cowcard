@@ -237,8 +237,8 @@ export default function OrderQueryPage() {
                 </p>
               )}
               <div className="mt-3 grid gap-2 text-xs leading-relaxed text-ink/55 sm:grid-cols-2">
-                <p><span className="font-medium text-ink/70">开放提货:</span> {fmtPresaleTime(order.presaleStartAt)}</p>
-                <p><span className="font-medium text-ink/70">最晚截止:</span> {fmtPresaleTime(order.presaleEndAt)}</p>
+                <p><span className="font-medium text-ink/70">预计开始交付:</span> {fmtPresaleTime(order.presaleStartAt)}</p>
+                <p><span className="font-medium text-ink/70">最晚交付保障:</span> {fmtPresaleTime(order.presaleEndAt)}</p>
               </div>
               {(order.presaleVoucherStatus || order.presaleFulfillmentNote) && (
                 <p className="mt-3 rounded-2xl bg-surface px-4 py-3 text-xs leading-relaxed text-ink/55">

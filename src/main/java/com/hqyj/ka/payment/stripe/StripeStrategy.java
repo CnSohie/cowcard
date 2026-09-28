@@ -59,7 +59,8 @@ public class StripeStrategy implements PaymentStrategy {
     public PayCreationResult create(Order order, Map<String, String> config, PayContext ctx) {
         String secretKey = required(config, "secretKey");
         String currency = normalizeCurrency(config.getOrDefault("currency", fxRateService.siteCurrency()));
-        BigDecimal stripeAmount = fxRateService.siteTo(order.getAmount(), currency);
+        BigDecimal sitePayAmount = new BigDecimal(config.getOrDefault("_sitePayAmount", order.getAmount().toPlainString()));
+        BigDecimal stripeAmount = fxRateService.siteTo(sitePayAmount, currency);
         long unitAmount = minorAmount(stripeAmount, currency);
 
         Map<String, String> form = new HashMap<>();
@@ -74,7 +75,7 @@ public class StripeStrategy implements PaymentStrategy {
         form.put("line_items[0][price_data][unit_amount]", String.valueOf(unitAmount));
         form.put("line_items[0][price_data][product_data][name]", order.getProductName());
         form.put("metadata[orderNo]", order.getOrderNo());
-        form.put("metadata[siteAmount]", order.getAmount().setScale(2, RoundingMode.HALF_UP).toPlainString());
+        form.put("metadata[siteAmount]", sitePayAmount.setScale(2, RoundingMode.HALF_UP).toPlainString());
         form.put("payment_intent_data[metadata][orderNo]", order.getOrderNo());
 
         try {
@@ -204,6 +205,17 @@ public class StripeStrategy implements PaymentStrategy {
             URI uri = URI.create(raw.trim());
             if (!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme())) return null;
             if (uri.getHost() == null) return null;
+            String siteUrl = configService.all().get("site.url");
+            if (siteUrl != null && !siteUrl.isBlank()) {
+                URI allowed = URI.create(siteUrl.trim());
+                if (!uri.getScheme().equalsIgnoreCase(allowed.getScheme())
+                        || !uri.getHost().equalsIgnoreCase(allowed.getHost())
+                        || uri.getPort() != allowed.getPort()) return null;
+            } else if (!("localhost".equalsIgnoreCase(uri.getHost())
+                    || "127.0.0.1".equals(uri.getHost())
+                    || "[::1]".equals(uri.getHost()))) {
+                return null;
+            }
             return uri.getScheme() + "://" + uri.getAuthority();
         } catch (IllegalArgumentException e) {
             return null;

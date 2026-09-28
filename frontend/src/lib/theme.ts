@@ -13,9 +13,21 @@ export const THEMES: { value: ThemeName; label: string; swatch: string }[] = [
 ];
 
 const KEY_MODE = "ka.mode";
+const KEY_THEME = "ka.site.theme";
+const KEY_SITE_MODE = "ka.site.mode";
 
-let currentTheme: ThemeName = "mint";
-let siteMode: ModeName = "auto";
+function storedTheme(): ThemeName {
+  const value = localStorage.getItem(KEY_THEME);
+  return value === "ocean" || value === "violet" || value === "cow" ? value : "mint";
+}
+
+function storedSiteMode(): ModeName {
+  const value = localStorage.getItem(KEY_SITE_MODE);
+  return value === "light" || value === "dark" ? value : "auto";
+}
+
+let currentTheme: ThemeName = storedTheme();
+let siteMode: ModeName = storedSiteMode();
 
 function systemPrefersDark(): boolean {
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
@@ -39,9 +51,31 @@ function paint() {
 
 /** 应用后台下发的站点默认(theme + mode),保留买家本地明暗选择。 */
 export function applySiteTheme(theme?: string, mode?: string) {
-  if (theme === "mint" || theme === "ocean" || theme === "violet" || theme === "cow") currentTheme = theme;
-  if (mode === "light" || mode === "dark" || mode === "auto") siteMode = mode;
+  if (theme === "mint" || theme === "ocean" || theme === "violet" || theme === "cow") {
+    currentTheme = theme;
+    localStorage.setItem(KEY_THEME, theme);
+  }
+  if (mode === "light" || mode === "dark" || mode === "auto") {
+    siteMode = mode;
+    localStorage.setItem(KEY_SITE_MODE, mode);
+  }
   paint();
+}
+
+/** 首次访问也先取得站点主题再挂载 React，避免默认主题内容闪现。 */
+export async function bootstrapSiteTheme(timeoutMs = 1800): Promise<void> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch("/api/store/site", { signal: controller.signal });
+    if (!response.ok) return;
+    const body = await response.json() as { data?: { theme?: string; mode?: string } };
+    applySiteTheme(body.data?.theme, body.data?.mode);
+  } catch {
+    // 离线或后端启动中时继续使用上次成功缓存的主题。
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 export function isDark(): boolean {

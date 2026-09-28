@@ -9,6 +9,7 @@ import com.hqyj.ka.common.util.OrderNoGenerator;
 import com.hqyj.ka.coupon.service.CouponService;
 import com.hqyj.ka.config.AppProperties;
 import com.hqyj.ka.catalog.service.InventoryService;
+import com.hqyj.ka.catalog.service.ManualDeliveryFormService;
 import com.hqyj.ka.order.dto.OrderDtos.CreateOrderRequest;
 import com.hqyj.ka.order.dto.OrderDtos.OrderView;
 import com.hqyj.ka.order.dto.OrderDtos.PresaleVoucherClaimResponse;
@@ -64,6 +65,7 @@ public class OrderService {
     private final PresaleVoucherService presaleVoucherService;
     private final ConfigService configService;
     private final CacheManager cacheManager;
+    private final ManualDeliveryFormService manualDeliveryFormService;
 
     /** sys_config 整型参数(带合法区间校验),非法/缺省回落默认值。 */
     private int cfgInt(String key, int def, int min, int max) {
@@ -93,18 +95,27 @@ public class OrderService {
         boolean presale = product.getDeliveryMode() == Product.DeliveryMode.PRESALE_VOUCHER;
         if (presale) {
             if (product.getPresaleEndAt() == null) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "预售商品必须配置最晚提货截止时间");
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "预售商品必须配置最晚交付保障时间");
             }
-            if (LocalDateTime.now().isAfter(product.getPresaleEndAt())) {
-                throw new BusinessException(ErrorCode.ORDER_EXPIRED, "该商品预售期已结束,不可继续下单");
+            // 兼容升级前的预售商品:未配置独立停售时间时仍以保障时间停止销售。
+            LocalDateTime saleEndAt = product.getPresaleSaleEndAt() == null
+                    ? product.getPresaleEndAt() : product.getPresaleSaleEndAt();
+            if (LocalDateTime.now().isAfter(saleEndAt)) {
+                throw new BusinessException(ErrorCode.ORDER_EXPIRED, "该预售已停止销售,不可继续下单");
             }
         }
         if (req.quantity() < product.getMinBuy() || req.quantity() > product.getMaxBuy()
                 || req.quantity() > props.getOrder().getMaxQuantityPerOrder()) {
             throw new BusinessException(ErrorCode.QUANTITY_LIMIT);
         }
-        if (!autoCard && !presale && (req.buyerNote() == null || req.buyerNote().isBlank())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "请填写人工发货所需信息");
+        if (!meetsMinimumOrderAmount(product, req.quantity())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "该商品单笔最低订购金额为 " + product.getMinOrderAmount().setScale(2) + " 元，请增加购买数量");
+        }
+        String manualSubmission = null;
+        if (!autoCard && !presale) {
+            manualSubmission = manualDeliveryFormService.validateSubmission(
+                    product.getManualFormSchema(), req.buyerNote());
         }
 
         // 反库存挤占:同邮箱 / 同 IP 未支付订单数上限(后台可调;未付订单超时自动释放,配合短超时效果最佳)
@@ -153,7 +164,7 @@ public class OrderService {
         if (req.queryPassword() != null && !req.queryPassword().isBlank()) {
             order.setQueryPasswordHash(passwordEncoder.encode(req.queryPassword()));
         }
-        if (!autoCard && !presale) order.setBuyerNote(req.buyerNote().trim());
+        if (!autoCard && !presale) order.setBuyerNote(manualSubmission);
         String queryToken = newQueryToken();
         order.setQueryTokenHash(passwordEncoder.encode(queryToken));
         order.setExpireAt(LocalDateTime.now().plusMinutes(expireMinutes()));
@@ -173,6 +184,12 @@ public class OrderService {
             }
         }
         return new CreatedOrder(order, queryToken, null);
+    }
+
+    static boolean meetsMinimumOrderAmount(Product product, int quantity) {
+        BigDecimal minimum = product.getMinOrderAmount() == null ? BigDecimal.ZERO : product.getMinOrderAmount();
+        return minimum.signum() <= 0
+                || product.getPrice().multiply(BigDecimal.valueOf(quantity)).compareTo(minimum) >= 0;
     }
 
     /**
@@ -406,6 +423,14 @@ public class OrderService {
         Order order = authorizeOrder(orderRepository.findByOrderNo(orderNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND)), contact, queryPassword, queryToken);
         return toView(order, order.getStatus() == Order.Status.DELIVERED);
+    }
+
+    /** 游客创建支付前必须证明自己持有订单凭证,避免仅凭订单号占用或操作他人支付流程。 */
+    @Transactional(readOnly = true)
+    public void authorizePayment(String orderNo, String contact, String queryPassword, String queryToken) {
+        authorizeOrder(orderRepository.findByOrderNo(orderNo)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND)),
+                contact, queryPassword, queryToken);
     }
 
     @Transactional

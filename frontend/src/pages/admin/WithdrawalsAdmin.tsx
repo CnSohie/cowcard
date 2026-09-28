@@ -12,7 +12,7 @@ import { money } from "../../lib/currency";
 
 interface WithdrawRow {
   id: number; memberId: number; memberEmail: string;
-  amount: string; channel: string; account: string;
+  amount: string; feeAmount: string; netAmount: string; channel: string; account: string; accountName: string | null; bankName: string | null;
   status: "PENDING" | "APPROVED" | "REJECTED";
   reviewedBy: string | null; reviewNote: string | null;
   createdAt: string; reviewedAt: string | null;
@@ -33,7 +33,7 @@ const STATUS_PILL: Record<WithdrawRow["status"], { label: string; cls: string }>
   APPROVED: { label: "已打款", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
   REJECTED: { label: "已驳回", cls: "bg-red-500/10 text-red-500" },
 };
-const CHANNEL_LABEL: Record<string, string> = { ALIPAY: "支付宝", USDT: "USDT", BANK: "银行卡" };
+const CHANNEL_LABEL: Record<string, string> = { ALIPAY: "支付宝", BANK: "银行卡", USDT_TRC20: "USDT · TRC20", USDT_BEP20: "USDT · BEP20" };
 const REJECT_REASONS = [
   "收款账户信息有误,请核对后重新提交",
   "收款姓名与账户信息不一致",
@@ -150,12 +150,15 @@ export default function WithdrawalsAdmin() {
                     <div className="text-xs text-ink/40">会员 #{r.memberId} · 申请 #{r.id}</div>
                   </td>
                   <td className="td">
-                    <span className="rounded-2xl bg-accent-soft px-3 py-2 text-sm font-extrabold text-primary">{money(r.amount)}</span>
+                    <span className="rounded-2xl bg-accent-soft px-3 py-2 text-sm font-extrabold text-primary">到账 {money(r.netAmount)}</span>
+                    <div className="mt-2 text-[10px] leading-relaxed text-ink/40">冻结 {money(r.amount)}<br />手续费 {money(r.feeAmount)}</div>
                   </td>
                   <td className="td">
                     <div className="inline-flex rounded-full border border-ink/10 px-2.5 py-1 text-[11px] font-semibold">
                       {CHANNEL_LABEL[r.channel] ?? r.channel}
                     </div>
+                    {r.accountName && <div className="mt-2 text-xs font-semibold text-ink">收款人：{r.accountName}</div>}
+                    {r.bankName && <div className="mt-1 text-xs text-ink/55">开户行：{r.bankName}</div>}
                     <div className="mt-2 max-w-[260px] break-all rounded-2xl bg-ink/[0.04] px-3 py-2 font-mono text-[11px] text-ink/60">{r.account}</div>
                   </td>
                   <td className="td text-xs">{fmt(r.createdAt)}</td>

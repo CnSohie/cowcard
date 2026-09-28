@@ -4,14 +4,19 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { I18nProvider } from "./lib/i18n";
 import "./index.css";
-import "./lib/theme";
+import { bootstrapSiteTheme } from "./lib/theme";
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <I18nProvider>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </I18nProvider>
-  </React.StrictMode>,
-);
+async function start() {
+  await bootstrapSiteTheme();
+  ReactDOM.createRoot(document.getElementById("root")!).render(
+    <React.StrictMode>
+      <I18nProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </I18nProvider>
+    </React.StrictMode>,
+  );
+}
+
+void start();

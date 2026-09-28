@@ -40,23 +40,23 @@ public class JwtService {
         this.key = Keys.hmacShaKeyFor(Base64.getDecoder().decode(props.getSecurity().getJwtSecret()));
     }
 
-    public String createAccessToken(Long userId, String username, List<String> authorities) {
-        return buildAccessToken(userId, username, authorities, KIND_ADMIN);
+    public String createAccessToken(Long userId, String username, List<String> authorities, String tokenVersion) {
+        return buildAccessToken(userId, username, authorities, KIND_ADMIN, tokenVersion);
     }
 
     public String createRefreshToken(Long userId, String tokenVersion) {
         return buildRefreshToken(userId, tokenVersion, KIND_ADMIN);
     }
 
-    public String createMemberAccessToken(Long memberId, String nickname) {
-        return buildAccessToken(memberId, nickname, List.of(), KIND_MEMBER);
+    public String createMemberAccessToken(Long memberId, String nickname, String tokenVersion) {
+        return buildAccessToken(memberId, nickname, List.of(), KIND_MEMBER, tokenVersion);
     }
 
     public String createMemberRefreshToken(Long memberId, String tokenVersion) {
         return buildRefreshToken(memberId, tokenVersion, KIND_MEMBER);
     }
 
-    private String buildAccessToken(Long id, String name, List<String> authorities, String kind) {
+    private String buildAccessToken(Long id, String name, List<String> authorities, String kind, String tokenVersion) {
         long ttl = props.getSecurity().getAccessTokenTtlMinutes() * 60_000;
         return Jwts.builder()
                 .subject(String.valueOf(id))
@@ -64,6 +64,7 @@ public class JwtService {
                 .claim("auth", authorities)
                 .claim("typ", TYPE_ACCESS)
                 .claim(CLAIM_KIND, kind)
+                .claim("ver", tokenVersion)
                 .id(UUID.randomUUID().toString())
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + ttl))

@@ -157,6 +157,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             case "order" -> cfgInt(db, "security.rl.order_per_minute", c.getOrderPerMinute());
             case "notify" -> 120;      // 支付回调:留足重发余量,不误伤网关
             case "pay" -> cfgInt(db, "security.rl.pay_per_minute", c.getPayPerMinute());
+            case "captcha" -> 30;    // 图形验证码生成/校验，限制枚举与图片生成开销
             case "admin" -> cfgInt(db, "security.rl.admin_per_minute", c.getAdminPerMinute());
             default -> cfgInt(db, "security.rl.global_per_minute", c.getGlobalPerMinute());
         };
@@ -167,6 +168,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (uri.startsWith("/api/member/auth") && "POST".equals(method)) return "mauth";
         if (uri.startsWith("/api/orders") && "POST".equals(method)) return "order";
         if (uri.startsWith("/api/pay/notify")) return "notify";
+        if (uri.startsWith("/api/store/captcha/")) return "captcha";
         if (uri.startsWith("/api/pay")) return "pay";
         if (uri.startsWith("/api/admin/")) return "admin"; // 后台操作独立档位:密集操作不挤占买家全局档
         return "g";

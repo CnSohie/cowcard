@@ -53,10 +53,17 @@ public class Product {
     @Column(columnDefinition = "TEXT")
     private String manualPrompt;
 
-    /** 预售提货开放时间;仅 PRESALE_VOUCHER 生效。 */
+    /** 人工交付结构化信息字段(JSON),由服务端按定义验证买家提交。 */
+    @Column(columnDefinition = "TEXT")
+    private String manualFormSchema;
+
+    /** 预售停止销售时间;到点后不再接受新订单。 */
+    private LocalDateTime presaleSaleEndAt;
+
+    /** 预计开始交付时间;买家仍可提前核销并进入履约队列。 */
     private LocalDateTime presaleStartAt;
 
-    /** 最晚提货截止时间;逾期后凭证按清算规则处理。 */
+    /** 最晚交付保障时间;逾期后未履约凭证按清算规则处理。 */
     private LocalDateTime presaleEndAt;
 
     /** 逾期清算:SINK=沉淀清算;REFUND=原路退回预留;BALANCE=转余额。 */
@@ -69,6 +76,10 @@ public class Product {
     /** 定价:CNY,DECIMAL 杜绝浮点误差 */
     @Column(nullable = false, precision = 20, scale = 2)
     private BigDecimal price;
+
+    /** 单笔最低订购金额；按商品标价小计、优惠前判断，0 表示不额外限制。 */
+    @Column(nullable = false, precision = 20, scale = 2)
+    private BigDecimal minOrderAmount = BigDecimal.ZERO;
 
     /** 冗余库存计数(与 card_secret AVAILABLE 数一致,发卡时同步扣减) */
     @Column(nullable = false)

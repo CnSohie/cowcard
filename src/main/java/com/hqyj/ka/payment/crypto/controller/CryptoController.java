@@ -2,6 +2,7 @@ package com.hqyj.ka.payment.crypto.controller;
 
 import com.hqyj.ka.common.ApiResponse;
 import com.hqyj.ka.payment.crypto.CryptoPaymentService;
+import com.hqyj.ka.payment.crypto.entity.CryptoPaymentIntent;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +29,13 @@ public class CryptoController {
 
     /** 意向单状态轮询(等待转账/确认进度) */
     @GetMapping("/intent/{orderNo}")
-    public ApiResponse<Map<String, Object>> intent(@PathVariable String orderNo) {
+    public ApiResponse<Map<String, Object>> intent(@PathVariable String orderNo,
+                                                   @RequestParam(required = false) CryptoPaymentIntent.Mode mode,
+                                                   @RequestParam(required = false) String chain,
+                                                   @RequestParam(required = false) String token) {
+        if (mode != null && chain != null && !chain.isBlank() && token != null && !token.isBlank()) {
+            return ApiResponse.ok(cryptoPaymentService.intentView(orderNo, mode, chain, token));
+        }
         return ApiResponse.ok(cryptoPaymentService.intentView(orderNo));
     }
 
@@ -36,7 +43,7 @@ public class CryptoController {
     @PostMapping("/intent/{orderNo}/tx")
     public ApiResponse<Map<String, Object>> submitTx(@PathVariable String orderNo,
                                                      @Valid @RequestBody SubmitTxRequest req) {
-        cryptoPaymentService.verifyWalletTx(orderNo, req.txHash());
-        return ApiResponse.ok(cryptoPaymentService.intentView(orderNo));
+        var intent = cryptoPaymentService.verifyWalletTx(orderNo, req.txHash());
+        return ApiResponse.ok(cryptoPaymentService.intentView(intent));
     }
 }

@@ -20,6 +20,7 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.core.env.Environment;
 
 import java.security.SecureRandom;
 import java.util.HashSet;
@@ -30,7 +31,7 @@ import java.util.stream.Collectors;
 
 /**
  * 幂等种子数据:权限点 / 内置角色 / 初始管理员 / 支付渠道占位。
- * 初始管理员密码:环境变量 KA_ADMIN_INIT_PASSWORD,未设置则随机生成并打印一次(强制改密)。
+ * 初始管理员密码:生产环境必须通过 KA_ADMIN_INIT_PASSWORD 注入;开发环境未设置时随机生成并打印一次。
  */
 @Slf4j
 @Component
@@ -42,6 +43,7 @@ public class DataInitializer implements CommandLineRunner {
     private final UserRepository userRepository;
     private final PaymentChannelRepository channelRepository;
     private final PasswordEncoder passwordEncoder;
+    private final Environment environment;
 
     private static final List<String[]> PERMISSIONS = List.of(
             new String[]{"dashboard:read", "查看概览", "概览"},
@@ -173,6 +175,9 @@ public class DataInitializer implements CommandLineRunner {
         // 初始管理员
         if (userRepository.count() == 0) {
             String initPassword = System.getenv("KA_ADMIN_INIT_PASSWORD");
+            if (isProduction() && (initPassword == null || initPassword.isBlank())) {
+                throw new IllegalStateException("生产环境必须设置 KA_ADMIN_INIT_PASSWORD,拒绝生成并记录随机管理员密码");
+            }
             boolean generated = initPassword == null || initPassword.isBlank();
             if (generated) initPassword = randomPassword();
             User admin = new User();
@@ -197,6 +202,13 @@ public class DataInitializer implements CommandLineRunner {
         seedChannel(CryptoWalletStrategy.CODE, "连接钱包支付", 4);
         seedChannel(StripeStrategy.CODE, "信用卡支付", 5);
         seedChannel(BalancePaymentStrategy.CODE, "余额支付", 6, true);
+    }
+
+    private boolean isProduction() {
+        for (String profile : environment.getActiveProfiles()) {
+            if ("prod".equalsIgnoreCase(profile)) return true;
+        }
+        return false;
     }
 
     private void seedChannel(String code, String name, int sort) {

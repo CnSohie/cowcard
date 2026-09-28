@@ -36,12 +36,14 @@ public class AdminGiftCardController {
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('gift-card:read','gift-card:manage','member:manage')")
     public ApiResponse<PageResult<GiftCardView>> list(@RequestParam(required = false) String q,
                                                       @RequestParam(defaultValue = "0") int page,
-                                                      @RequestParam(defaultValue = "20") int size) {
+                                                      @RequestParam(defaultValue = "20") int size,
+                                                      HttpServletRequest http) {
+        requireUnlocked(http);
         PageRequest pr = PageRequest.of(page, Math.min(size, 100), Sort.by(Sort.Direction.DESC, "id"));
         var result = (q == null || q.isBlank())
                 ? giftCardRepository.findAll(pr)
                 : giftCardRepository.findByBatchNoContainingIgnoreCaseOrNameContainingIgnoreCaseOrCodeContainingIgnoreCase(q, q, q, pr);
-        return ApiResponse.ok(PageResult.of(result, AdminGiftCardController::view));
+        return ApiResponse.ok(PageResult.of(result, this::view));
     }
 
     @PostMapping("/generate")
@@ -54,7 +56,7 @@ public class AdminGiftCardController {
         auditService.record(String.valueOf(http.getAttribute("uname")), "GIFT_CARD_GENERATE",
                 "gift-card", RateLimitFilter.clientIp(http),
                 "{\"quantity\":" + req.quantity() + ",\"amount\":\"" + req.amount() + "\"}");
-        return ApiResponse.ok(cards.stream().map(AdminGiftCardController::view).toList());
+        return ApiResponse.ok(cards.stream().map(this::view).toList());
     }
 
     @PostMapping("/{id}/toggle")
@@ -81,8 +83,15 @@ public class AdminGiftCardController {
         return ApiResponse.ok();
     }
 
-    private static GiftCardView view(GiftCard c) {
-        return new GiftCardView(c.getId(), c.getBatchNo(), c.getName(), c.getCode(), c.getAmount(),
+    private GiftCardView view(GiftCard c) {
+        return new GiftCardView(c.getId(), c.getBatchNo(), c.getName(), giftCardService.revealCode(c), c.getAmount(),
                 c.getStatus().name(), c.getRedeemedBy(), c.getRedeemedAt(), c.getExpireAt(), c.getCreatedAt());
+    }
+
+    private void requireUnlocked(HttpServletRequest http) {
+        if (!authService.sensitiveTrusted((Long) http.getAttribute("uid"))) {
+            throw new com.hqyj.ka.common.BusinessException(
+                    com.hqyj.ka.common.ErrorCode.TOTP_REQUIRED, "请先完成 2FA 验证后查看礼品卡");
+        }
     }
 }

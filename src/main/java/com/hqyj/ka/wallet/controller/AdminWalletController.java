@@ -56,7 +56,9 @@ public class AdminWalletController {
                 .collect(Collectors.toMap(Member::getId, Member::getEmail));
         PageResult<AdminWithdrawView> data = PageResult.of(result, r -> new AdminWithdrawView(
                 r.getId(), r.getMemberId(), emails.getOrDefault(r.getMemberId(), "?"),
-                r.getAmount(), r.getChannel(), r.getAccount(), r.getStatus().name(),
+                r.getAmount(), r.getFeeAmount() == null ? java.math.BigDecimal.ZERO : r.getFeeAmount(),
+                r.getNetAmount() == null ? r.getAmount() : r.getNetAmount(),
+                r.getChannel(), r.getAccount(), r.getAccountName(), r.getBankName(), r.getStatus().name(),
                 r.getReviewedBy(), r.getReviewNote(), r.getCreatedAt(), r.getReviewedAt()));
         return ApiResponse.ok(Map.of(
                 "page", data,

@@ -17,6 +17,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     Optional<Product> findByIdAndVisibleTrue(Long id);
 
+    boolean existsByCategoryId(Long categoryId);
+
     /** 下单预占:原子扣减冗余库存,防超卖第一道闸(第二道在卡密 SKIP LOCKED 分配) */
     @Modifying
     @Query("update Product p set p.stockCached = p.stockCached - :qty where p.id = :id and p.stockCached >= :qty")

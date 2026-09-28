@@ -40,6 +40,7 @@ public class CryptoPaymentService {
 
     private final CryptoPaymentIntentRepository intentRepository;
     private final AppProperties props;
+    private final MerchantAddressProvider merchantAddressProvider;
     private final ChainRpcClient rpc;
     private final FxRateService fxRateService;
     private final SettlementService settlementService;
@@ -59,30 +60,57 @@ public class CryptoPaymentService {
 
     /**
      * 创建收款意向:CNY → USD(向上取整 2 位) + 唯一尾数;唯一约束冲突则换尾数重试。
-     * 同订单旧的 WAITING 意向先释放(买家切换链/币)。
+     * 同订单、同模式、同链、同币在有效期内始终复用；切换链/币时保留各自意向，切回来金额不变。
      */
     @Transactional
-    public CryptoPaymentIntent createIntent(Order order, String chainCode, String tokenSymbol,
+    public CryptoPaymentIntent createIntent(Order order, BigDecimal sitePayAmount, String chainCode, String tokenSymbol,
                                             CryptoPaymentIntent.Mode mode) {
         AppProperties.Chain chain = findChain(chainCode);
         AppProperties.Token token = chain.getTokens().stream()
                 .filter(t -> t.getSymbol().equalsIgnoreCase(tokenSymbol)).findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHANNEL_DISABLED));
-        String merchant = props.getCrypto().getMerchantAddress();
+        String merchant = merchantAddressProvider.current();
         if (merchant == null || merchant.isBlank()) {
             throw new BusinessException(ErrorCode.CHANNEL_DISABLED);
         }
 
-        // 释放同订单未支付的旧意向
-        for (CryptoPaymentIntent old : intentRepository.findByOrderNoAndStatus(order.getOrderNo(),
-                CryptoPaymentIntent.Status.WAITING)) {
-            old.setStatus(CryptoPaymentIntent.Status.EXPIRED);
-            old.setUniqueKey(null);
+        // 一旦链上交易已被发现或确认，禁止任何渠道/链币重新生成支付金额。
+        var inFlight = intentRepository.findFirstByOrderNoAndStatusInOrderByIdDesc(order.getOrderNo(),
+                List.of(CryptoPaymentIntent.Status.CONFIRMING, CryptoPaymentIntent.Status.CONFIRMED));
+        if (inFlight.isPresent()) return inFlight.get();
+
+        LocalDateTime now = LocalDateTime.now();
+        CryptoPaymentIntent reusable = null;
+        boolean changed = false;
+        for (CryptoPaymentIntent old : intentRepository.findByOrderNoAndStatusOrderByIdDesc(
+                order.getOrderNo(), CryptoPaymentIntent.Status.WAITING)) {
+            boolean expired = old.getExpireAt() == null || !old.getExpireAt().isAfter(now);
+            boolean sameSelection = old.getMode() == mode
+                    && old.getChainCode().equalsIgnoreCase(chain.getCode())
+                    && old.getTokenSymbol().equalsIgnoreCase(token.getSymbol());
+            boolean sameInfrastructure = sameSelection
+                    && old.getChainId() == chain.getChainId()
+                    && old.getDecimals() == token.getDecimals()
+                    && old.getTokenContract().equalsIgnoreCase(token.getContract())
+                    && old.getMerchantAddress().equalsIgnoreCase(merchant);
+
+            if (!expired && sameInfrastructure && reusable == null) {
+                reusable = old;
+                continue;
+            }
+            // 到期意向释放金额；同一链币因合约/地址配置变化时旧意向也立即失效。
+            // 其他链或币的有效意向保留，买家切回时仍显示原来的唯一金额。
+            if (expired || sameSelection) {
+                old.setStatus(CryptoPaymentIntent.Status.EXPIRED);
+                old.setUniqueKey(null);
+                changed = true;
+            }
         }
-        intentRepository.flush();
+        if (changed) intentRepository.flush();
+        if (reusable != null) return reusable;
 
         // 汇率:站点计价币种 → USD 稳定币金额(失败降级为上次成功汇率/配置初始值)
-        BigDecimal baseUsd = fxRateService.siteToUsd(order.getAmount());
+        BigDecimal baseUsd = fxRateService.siteToUsd(sitePayAmount);
         BigInteger baseMinor = baseUsd.movePointRight(token.getDecimals()).toBigIntegerExact();
 
         // 尾数以 1e-6 代币为步长(18 位小数代币如 BSC-USDT 则放大 10^12),
@@ -245,13 +273,34 @@ public class CryptoPaymentService {
                 .findFirst().orElseThrow(() -> new BusinessException(ErrorCode.CHANNEL_DISABLED));
     }
 
-    /** 意向单查询视图(前台轮询):优先展示确认中/已确认的那笔(自助补单可能复活旧意向)。 */
+    /** 意向单查询视图(兼容旧调用):优先展示确认中/已确认，否则展示最新一笔。 */
     @Transactional(readOnly = true)
     public Map<String, Object> intentView(String orderNo) {
         CryptoPaymentIntent i = intentRepository.findFirstByOrderNoAndStatusInOrderByIdDesc(orderNo,
                         List.of(CryptoPaymentIntent.Status.CONFIRMING, CryptoPaymentIntent.Status.CONFIRMED))
                 .or(() -> intentRepository.findFirstByOrderNoOrderByIdDesc(orderNo))
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+        return intentView(i);
+    }
+
+    /**
+     * 按当前支付模式/链/币精确轮询。切换到其他链币再切回来时，继续展示该组合原来的意向，
+     * 不会因为另一组合 ID 更新而在下一轮轮询时跳走。确认中/已确认的链上交易始终拥有最高优先级。
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> intentView(String orderNo, CryptoPaymentIntent.Mode mode,
+                                          String chainCode, String tokenSymbol) {
+        CryptoPaymentIntent i = intentRepository.findFirstByOrderNoAndStatusInOrderByIdDesc(orderNo,
+                        List.of(CryptoPaymentIntent.Status.CONFIRMING, CryptoPaymentIntent.Status.CONFIRMED))
+                .or(() -> intentRepository
+                        .findFirstByOrderNoAndModeAndChainCodeIgnoreCaseAndTokenSymbolIgnoreCaseOrderByIdDesc(
+                                orderNo, mode, chainCode, tokenSymbol))
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+        return intentView(i);
+    }
+
+    /** 将已确定的意向转换为前台视图，支付创建响应使用该方法避免再次按“最新记录”选错链币。 */
+    public Map<String, Object> intentView(CryptoPaymentIntent i) {
         Map<String, Object> m = new HashMap<>();
         m.put("status", i.getStatus().name());
         m.put("chainCode", i.getChainCode());

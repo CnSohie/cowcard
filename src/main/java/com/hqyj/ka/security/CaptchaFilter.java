@@ -11,8 +11,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Set;
-import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
@@ -21,33 +21,31 @@ public class CaptchaFilter extends OncePerRequestFilter {
 
     private final CaptchaService captchaService;
 
-    private static final Set<String> PROTECTED_EXACT = Set.of(
-            "/api/orders",
-            "/api/member/support-tickets"
-    );
+    private static final Map<String, String> PROTECTED_EXACT = exactActions();
 
-    private static final List<String> PROTECTED_PREFIXES = List.of(
-            "/api/auth/login",
-            "/api/member/auth/login",
-            "/api/member/auth/register",
-            "/api/pay/create",
-            "/api/pay/crypto/intent/",
-            "/api/member/presale/redeem",
-            "/api/member/wallet/recharge",
-            "/api/member/wallet/withdraw",
-            "/api/member/wallet/gift-cards/redeem",
-            "/api/member/articles/"
-    );
+    private static Map<String, String> exactActions() {
+        Map<String, String> actions = new LinkedHashMap<>();
+        actions.put("/api/auth/login", "admin_login");
+        actions.put("/api/member/auth/login", "member_login");
+        actions.put("/api/member/auth/register", "member_register");
+        actions.put("/api/orders", "order_create");
+        actions.put("/api/orders/query", "order_query");
+        actions.put("/api/orders/presale-token", "order_query");
+        actions.put("/api/pay/create", "payment");
+        actions.put("/api/member/presale/redeem", "presale_redeem");
+        actions.put("/api/member/wallet/recharge", "wallet_recharge");
+        actions.put("/api/member/wallet/withdraw", "wallet_withdraw");
+        actions.put("/api/member/wallet/gift-cards/redeem", "gift_card_redeem");
+        actions.put("/api/member/support-tickets", "support_ticket");
+        return Map.copyOf(actions);
+    }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        if (!captchaService.enabled()) return true;
         if (!"POST".equalsIgnoreCase(request.getMethod())) return true;
         String path = request.getRequestURI();
-        if (path.contains("/refresh") || path.startsWith("/api/pay/notify/") || path.startsWith("/api/admin/")) {
-            return true;
-        }
-        return !PROTECTED_EXACT.contains(path) && PROTECTED_PREFIXES.stream().noneMatch(path::startsWith);
+        String action = actionFor(path);
+        return action == null || !captchaService.requiredFor(action);
     }
 
     @Override
@@ -55,7 +53,8 @@ public class CaptchaFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String token = request.getHeader(HEADER);
         String ip = RateLimitFilter.clientIp(request);
-        if (!captchaService.verify(token, ip)) {
+        String action = actionFor(request.getRequestURI());
+        if (action == null || !captchaService.verify(token, ip, action)) {
             response.setStatus(HttpServletResponse.SC_OK);
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
             response.setContentType("application/json;charset=UTF-8");
@@ -64,5 +63,14 @@ public class CaptchaFilter extends OncePerRequestFilter {
             return;
         }
         filterChain.doFilter(request, response);
+    }
+
+    static String actionFor(String path) {
+        String exact = PROTECTED_EXACT.get(path);
+        if (exact != null) return exact;
+        if (path.startsWith("/api/pay/crypto/intent/") && path.endsWith("/tx")) return "payment";
+        if (path.startsWith("/api/member/articles/") && path.endsWith("/purchase")) return "article_purchase";
+        if (path.startsWith("/api/member/support-tickets/")) return "support_ticket";
+        return null;
     }
 }

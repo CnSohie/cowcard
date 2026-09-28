@@ -83,7 +83,7 @@ public class AuthService {
 
         List<String> authorities = user.allAuthorityCodes();
         return new TokenResponse(
-                jwtService.createAccessToken(user.getId(), user.getUsername(), authorities),
+                jwtService.createAccessToken(user.getId(), user.getUsername(), authorities, user.getTokenVersion()),
                 jwtService.createRefreshToken(user.getId(), user.getTokenVersion()),
                 user.getUsername(), user.getNickname(), authorities);
     }
@@ -106,7 +106,7 @@ public class AuthService {
         }
         List<String> authorities = user.allAuthorityCodes();
         return new TokenResponse(
-                jwtService.createAccessToken(user.getId(), user.getUsername(), authorities),
+                jwtService.createAccessToken(user.getId(), user.getUsername(), authorities, user.getTokenVersion()),
                 jwtService.createRefreshToken(user.getId(), user.getTokenVersion()),
                 user.getUsername(), user.getNickname(), authorities);
     }

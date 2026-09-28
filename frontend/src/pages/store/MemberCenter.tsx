@@ -54,12 +54,20 @@ const PRESALE_STATUS: Record<string, { label: string; cls: string }> = {
 };
 const DEFAULT_REJECT_NOTE = "提现申请未通过审核,请核对收款信息后重新提交";
 const PENDING_PRESALE_HINT = "付款后签发";
+const MAX_RECHARGE = 50_000;
 
-const WD_CHANNELS = [
-  { code: "ALIPAY", label: "支付宝", placeholder: "支付宝账号(手机号 / 邮箱)+ 姓名" },
-  { code: "USDT", label: "USDT", placeholder: "USDT 收款地址(注明 TRC20 / BEP20)" },
-  { code: "BANK", label: "银行卡", placeholder: "开户行 + 卡号 + 姓名" },
-];
+function normalizeMoneyInput(raw: string, max: number) {
+  if (raw === "") return { value: "", error: "" };
+  const value = raw.replace(/，/g, ".").replace(/,/g, "");
+  if (!/^\d*(?:\.\d{0,2})?$/.test(value)) {
+    return { value: null, error: "金额只能输入数字，且最多保留两位小数" };
+  }
+  const normalized = value.startsWith(".") ? `0${value}` : value;
+  const numeric = Number(normalized);
+  if (!Number.isFinite(numeric)) return { value: max.toFixed(2), error: "输入金额过大" };
+  if (numeric > max) return { value: max.toFixed(2), error: `输入金额不能超过 ${money(max.toFixed(2))}` };
+  return { value: normalized, error: "" };
+}
 
 function fmtTime(s: string | null) {
   if (!s) return "-";
@@ -136,6 +144,8 @@ export default function MemberCenter() {
   const [giftCode, setGiftCode] = useState("");
   const [wdChannel, setWdChannel] = useState("ALIPAY");
   const [wdAccount, setWdAccount] = useState("");
+  const [wdAccountName, setWdAccountName] = useState("");
+  const [wdBankName, setWdBankName] = useState("");
   const [busy, setBusy] = useState(false);
   const [modalErr, setModalErr] = useState("");
   const [copied, setCopied] = useState(false);
@@ -155,7 +165,13 @@ export default function MemberCenter() {
 
   const loadBase = useCallback(() => {
     mGet<MemberMe>("/member/me").then(setMe).catch(() => void 0);
-    mGet<WalletSummary>("/member/wallet").then(setWallet).catch(() => void 0);
+    mGet<WalletSummary>("/member/wallet").then((summary) => {
+      // 兼容后端滚动升级期间尚未返回 withdrawMethods 的旧响应，避免用户中心整页白屏。
+      const methods = summary.withdrawMethods ?? [];
+      setWallet({ ...summary, withdrawMethods: methods });
+      setWdChannel((current) => methods.length > 0 && !methods.some((m) => m.code === current)
+        ? methods[0].code : current);
+    }).catch(() => void 0);
   }, []);
 
   useEffect(() => { if (loggedIn) loadBase(); }, [loggedIn, loadBase]);
@@ -183,6 +199,13 @@ export default function MemberCenter() {
 
   const nickname = me?.member.nickname || me?.member.email.split("@")[0] || "会员";
   const inviteLink = me ? `${window.location.origin}/register?ref=${me.member.inviteCode}` : "";
+  const withdrawMethods = wallet?.withdrawMethods ?? [];
+  const selectedWithdrawMethod = withdrawMethods.find((m) => m.code === wdChannel);
+  const requestedWithdraw = Number(amount || 0);
+  const withdrawFee = selectedWithdrawMethod
+    ? Math.round((requestedWithdraw * Number(selectedWithdrawMethod.feeRate || 0) / 100 + Number(selectedWithdrawMethod.feeFixed || 0) + Number.EPSILON) * 100) / 100
+    : 0;
+  const withdrawNet = Math.max(0, requestedWithdraw - withdrawFee);
 
   function switchTab(t: Tab) {
     setTab(t);
@@ -190,9 +213,18 @@ export default function MemberCenter() {
     setSearchParams(t === "txns" ? {} : { tab: t });
   }
 
+  function changeAmount(raw: string, max: number, maxMessage?: string) {
+    const normalized = normalizeMoneyInput(raw, max);
+    if (normalized.value !== null) setAmount(normalized.value);
+    setModalErr(normalized.error && maxMessage && normalized.error.startsWith("输入金额不能超过")
+      ? maxMessage : normalized.error);
+  }
+
   async function doRecharge() {
     const v = Number(amount);
-    if (!v || v <= 0) { setModalErr("请输入正确的充值金额"); return; }
+    if (!Number.isFinite(v) || v < 1 || v > MAX_RECHARGE) {
+      setModalErr(`单笔充值金额必须在 ${money("1.00")}～${money(MAX_RECHARGE.toFixed(2))} 之间`); return;
+    }
     if (captchaEnabled && !captchaToken) { setModalErr("请先完成人机验证"); return; }
     setModalErr(""); setBusy(true);
     try {
@@ -210,14 +242,29 @@ export default function MemberCenter() {
 
   async function doWithdraw() {
     const v = Number(amount);
-    if (!v || v <= 0) { setModalErr("请输入正确的提现金额"); return; }
+    const available = Number(me?.balance ?? 0);
+    if (!Number.isFinite(v) || v <= 0 || v > available) {
+      setModalErr(`提现金额不能超过当前可用余额 ${money(me?.balance ?? "0.00")}`); return;
+    }
+    if (wallet && v < Number(wallet.minWithdraw)) {
+      setModalErr(`最低提现金额为 ${money(wallet.minWithdraw)}`); return;
+    }
+    const method = withdrawMethods.find((m) => m.code === wdChannel);
+    if (!method) { setModalErr("当前没有可用的提现方式"); return; }
+    const fee = Math.round((v * Number(method.feeRate || 0) / 100 + Number(method.feeFixed || 0) + Number.EPSILON) * 100) / 100;
+    if (fee >= v) { setModalErr("提现金额必须大于手续费"); return; }
     if (!wdAccount.trim()) { setModalErr("请填写收款账号"); return; }
+    if (method.accountNameRequired && !wdAccountName.trim()) { setModalErr("请填写与收款账户一致的真实姓名"); return; }
+    if (method.bankNameRequired && !wdBankName.trim()) { setModalErr("请填写开户银行名称"); return; }
     if (captchaEnabled && !captchaToken) { setModalErr("请先完成人机验证"); return; }
     setModalErr(""); setBusy(true);
     try {
-      await mPost("/member/wallet/withdraw", { amount, channel: wdChannel, account: wdAccount.trim() },
+      await mPost("/member/wallet/withdraw", {
+        amount, channel: wdChannel, account: wdAccount.trim(),
+        accountName: wdAccountName.trim() || undefined, bankName: wdBankName.trim() || undefined,
+      },
         { headers: captchaHeaders(captchaToken) });
-      setModal(""); setAmount(""); setWdAccount("");
+      setModal(""); setAmount(""); setWdAccount(""); setWdAccountName(""); setWdBankName("");
       loadBase();
       switchTab("withdrawals");
       mGet<PageResult<WithdrawView>>("/member/wallet/withdrawals", { page: 0, size: 20 }).then(setWithdrawals).catch(() => void 0);
@@ -701,12 +748,12 @@ export default function MemberCenter() {
               <thead><tr><th className="th">金额</th><th className="th">渠道</th><th className="th">收款账号</th><th className="th">状态</th><th className="th">审核说明</th><th className="th">申请时间</th></tr></thead>
               <tbody>
                 {(withdrawals?.items ?? []).map((w) => {
-                  const st = WD_STATUS[w.status];
+                  const st = WD_STATUS[w.status] ?? { label: w.status, cls: "bg-ink/[0.06] text-ink/45" };
                   const reviewNote = w.reviewNote || (w.status === "REJECTED" ? DEFAULT_REJECT_NOTE : "");
                   return (
                     <tr key={w.id} className="hover:bg-ink/[0.02]">
-                      <td className="td font-bold">{money(w.amount)}</td>
-                      <td className="td text-xs">{WD_CHANNELS.find((c) => c.code === w.channel)?.label ?? w.channel}</td>
+                      <td className="td"><p className="font-bold">{money(w.netAmount ?? w.amount)}</p>{Number(w.feeAmount ?? 0) > 0 && <p className="mt-0.5 text-[10px] text-ink/40">申请 {money(w.amount)} · 手续费 {money(w.feeAmount)}</p>}</td>
+                      <td className="td text-xs">{withdrawMethods.find((c) => c.code === w.channel)?.label ?? w.channel}</td>
                       <td className="td max-w-[180px] truncate text-xs text-ink/45">{w.account}</td>
                       <td className="td"><span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${st.cls}`}>{st.label}</span></td>
                       <td className="td max-w-[260px] text-xs">
@@ -763,15 +810,18 @@ export default function MemberCenter() {
                 className={`rounded-2xl border px-3 py-3 text-sm font-extrabold transition ${
                   amount === v ? "border-primary/45 bg-accent-soft text-primary" : "border-ink/10 bg-surface text-ink/55 hover:border-primary/30 hover:text-ink"
                 }`}
-                onClick={() => setAmount(v)}>{money(v)}</button>
+                onClick={() => { setAmount(v); setModalErr(""); }}>{money(v)}</button>
             ))}
           </div>
           <label className="label">充值金额({currencyCode()})</label>
           <div className="relative">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-ink/35">{currencySymbol()}</span>
-            <input className="input !rounded-3xl !py-4 !pl-10 text-lg font-bold" placeholder="0.00" inputMode="decimal" value={amount}
-              onChange={(e) => setAmount(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doRecharge()} />
+            <input className="input !rounded-3xl !py-4 !pl-10 text-lg font-bold" placeholder="0.00" inputMode="decimal"
+              maxLength={12} value={amount} aria-label="充值金额" aria-describedby="recharge-limit"
+              onChange={(e) => changeAmount(e.target.value, MAX_RECHARGE, `单笔充值最高 ${money(MAX_RECHARGE.toFixed(2))}`)}
+              onKeyDown={(e) => e.key === "Enter" && doRecharge()} />
           </div>
+          <p id="recharge-limit" className="mt-2 text-[11px] text-ink/40">单笔充值范围：{money("1.00")}～{money(MAX_RECHARGE.toFixed(2))}，最多两位小数。</p>
           {modalErr && <p className="mt-3 text-xs text-red-500">{modalErr}</p>}
           <CaptchaBox
             action="wallet_recharge"
@@ -818,26 +868,61 @@ export default function MemberCenter() {
           <label className="label">提现金额({currencyCode()})</label>
           <div className="relative mb-4">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-ink/35">{currencySymbol()}</span>
-            <input className="input !rounded-3xl !py-4 !pl-10 !pr-24 text-lg font-bold" placeholder="0.00" inputMode="decimal" value={amount}
-              onChange={(e) => setAmount(e.target.value)} />
+            <input className="input !rounded-3xl !py-4 !pl-10 !pr-24 text-lg font-bold" placeholder="0.00" inputMode="decimal"
+              maxLength={21} value={amount} aria-label="提现金额" aria-describedby="withdraw-limit"
+              onChange={(e) => changeAmount(e.target.value, Math.max(0, Number(me?.balance ?? 0)),
+                `提现金额不能超过当前可用余额 ${money(me?.balance ?? "0.00")}`)} />
             <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-ink/[0.05] px-3 py-1.5 text-[11px] font-bold text-ink/55 hover:bg-ink/[0.08]"
-              onClick={() => setAmount(me?.balance ?? "0.00")}>
+              onClick={() => { setAmount(me?.balance ?? "0.00"); setModalErr(""); }}>
               全部可提
             </button>
           </div>
+          <p id="withdraw-limit" className="-mt-2 mb-4 text-[11px] text-ink/40">最多可提 {money(me?.balance ?? "0.00")}，最多两位小数。</p>
+          {selectedWithdrawMethod && requestedWithdraw > 0 && (
+            <div className="mb-4 grid grid-cols-3 gap-2 rounded-2xl border border-primary/15 bg-accent-soft/45 p-3 text-center">
+              <div><p className="text-[10px] text-ink/40">余额扣除</p><p className="mt-1 text-sm font-bold">{money(amount)}</p></div>
+              <div><p className="text-[10px] text-ink/40">提现手续费</p><p className="mt-1 text-sm font-bold">-{money(withdrawFee.toFixed(2))}</p></div>
+              <div><p className="text-[10px] text-ink/40">预计到账</p><p className="mt-1 text-sm font-extrabold text-primary">{money(withdrawNet.toFixed(2))}</p></div>
+            </div>
+          )}
           <label className="label">收款方式</label>
-          <div className="mb-4 grid grid-cols-3 gap-2">
-            {WD_CHANNELS.map((c) => (
+          {withdrawMethods.length === 0 ? (
+            <div className="mb-4 rounded-2xl bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+              商家暂未开放提现方式，当前无法提交申请。
+            </div>
+          ) : (
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            {withdrawMethods.map((c) => (
               <button key={c.code}
                 className={`rounded-2xl border px-3 py-3 text-sm font-extrabold transition ${
                   wdChannel === c.code ? "border-primary/45 bg-accent-soft text-primary" : "border-ink/10 bg-surface text-ink/55 hover:border-primary/30 hover:text-ink"
                 }`}
-                onClick={() => setWdChannel(c.code)}>{c.label}</button>
+                onClick={() => { setWdChannel(c.code); setWdAccount(""); setWdAccountName(""); setWdBankName(""); setModalErr(""); }}>{c.label}</button>
             ))}
           </div>
-          <label className="label">收款账号</label>
-          <textarea className="input min-h-24 !rounded-3xl text-sm leading-relaxed" placeholder={WD_CHANNELS.find((c) => c.code === wdChannel)?.placeholder}
-            value={wdAccount} onChange={(e) => setWdAccount(e.target.value)} />
+          )}
+          {selectedWithdrawMethod && (() => {
+            const method = selectedWithdrawMethod;
+            return <div className="space-y-3">
+              {method.accountNameRequired && <div>
+                <label className="label">收款人真实姓名</label>
+                <input className="input !rounded-3xl" placeholder="必须与收款账户实名一致" value={wdAccountName}
+                  onChange={(e) => setWdAccountName(e.target.value)} />
+              </div>}
+              {method.bankNameRequired && <div>
+                <label className="label">开户银行</label>
+                <input className="input !rounded-3xl" placeholder="例：中国工商银行" value={wdBankName}
+                  onChange={(e) => setWdBankName(e.target.value)} />
+              </div>}
+              <div>
+                <label className="label">{method.accountLabel}</label>
+                <input className="input !rounded-3xl font-mono" placeholder={method.accountPlaceholder}
+                  value={wdAccount} onChange={(e) => setWdAccount(e.target.value)} />
+              </div>
+              <p className="rounded-2xl bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-700 dark:text-amber-300">{method.warning}</p>
+              {(Number(method.feeRate) > 0 || Number(method.feeFixed) > 0) && <p className="text-[11px] text-ink/40">手续费规则：{Number(method.feeRate) > 0 ? `${method.feeRate}%` : ""}{Number(method.feeRate) > 0 && Number(method.feeFixed) > 0 ? " + " : ""}{Number(method.feeFixed) > 0 ? money(method.feeFixed) : ""}</p>}
+            </div>;
+          })()}
           {modalErr && <p className="mt-3 text-xs text-red-500">{modalErr}</p>}
           <CaptchaBox
             action="wallet_withdraw"
@@ -845,7 +930,7 @@ export default function MemberCenter() {
             onEnabledChange={handleCaptchaEnabled}
             resetKey={captchaResetKey}
           />
-          <button className="btn-primary mt-5 w-full !py-4 !text-base" disabled={busy} onClick={doWithdraw}>
+          <button className="btn-primary mt-5 w-full !py-4 !text-base" disabled={busy || withdrawMethods.length === 0} onClick={doWithdraw}>
             {busy ? <><Loader2 size={14} className="animate-spin" /> 提交中…</> : "提交审核"}
           </button>
         </Modal>

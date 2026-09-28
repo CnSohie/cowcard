@@ -9,6 +9,24 @@ import { useSeo } from "../../lib/seo";
 import { useI18n } from "../../lib/i18n";
 import { CaptchaBox, captchaHeaders } from "../../lib/captcha";
 
+interface ManualField { key: string; label: string; type: "TEXT" | "EMAIL" | "NUMBER" | "SELECT" | "TEXTAREA"; required: boolean; placeholder?: string; options?: string[]; }
+const LEGACY_MANUAL_FIELDS: ManualField[] = [{ key: "delivery_details", label: "交付所需信息", type: "TEXTAREA", required: true, placeholder: "请填写账号、区服、角色 ID 或其他交付资料" }];
+function parseManualFields(schema: string | null): ManualField[] {
+  try { const parsed = JSON.parse(schema ?? ""); return Array.isArray(parsed) && parsed.length ? parsed : LEGACY_MANUAL_FIELDS; }
+  catch { return LEGACY_MANUAL_FIELDS; }
+}
+
+function cents(value: string | number | null | undefined) {
+  return Math.round(Number(value ?? 0) * 100);
+}
+
+function effectiveMinimumQuantity(product: ProductDetail) {
+  const amountMinimum = cents(product.minOrderAmount);
+  const listPrice = cents(product.price);
+  const amountQuantity = amountMinimum > 0 && listPrice > 0 ? Math.ceil(amountMinimum / listPrice) : 1;
+  return Math.max(product.minBuy, amountQuantity);
+}
+
 export default function ProductPage() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -18,7 +36,7 @@ export default function ProductPage() {
   const [qty, setQty] = useState(1);
   const [contact, setContact] = useState("");
   const [queryPassword, setQueryPassword] = useState("");
-  const [buyerNote, setBuyerNote] = useState("");
+  const [manualValues, setManualValues] = useState<Record<string, string>>({});
   const [memberPrice, setMemberPrice] = useState<{ unitPrice: string; discountPerUnit: string; levelName: string | null; source: string } | null>(null);
   const [couponCode, setCouponCode] = useState("");
   const [discount, setDiscount] = useState<string | null>(null);
@@ -35,7 +53,7 @@ export default function ProductPage() {
     get<ProductDetail>(`/store/products/${id}`)
       .then((d) => {
         setP(d);
-        setQty(d.minBuy);
+        setQty(effectiveMinimumQuantity(d));
       })
       .catch((e) => setError(e.message));
     // 已登录会员自动带入邮箱,下单同时计入账号(供推广返佣与订单归属)
@@ -64,11 +82,16 @@ export default function ProductPage() {
   }
 
   const shownUnitPrice = memberPrice?.unitPrice ?? p.price;
+  const effectiveMinBuy = effectiveMinimumQuantity(p);
+  const minimumOrderAmount = cents(p.minOrderAmount);
+  const meetsMinimumOrderAmount = cents(p.price) * qty >= minimumOrderAmount;
   const base = Number(shownUnitPrice) * qty;
   const total = (discount ? base - Number(discount) : base).toFixed(2);
   const isManual = p.deliveryMode === "MANUAL";
+  const manualFormFields = isManual ? parseManualFields(p.manualFormSchema) : [];
   const isPresale = p.deliveryMode === "PRESALE_VOUCHER";
-  const presaleEnded = isPresale && p.presaleEndAt != null && new Date(p.presaleEndAt).getTime() <= Date.now();
+  const presaleSaleEndAt = p.presaleSaleEndAt ?? p.presaleEndAt;
+  const presaleEnded = isPresale && presaleSaleEndAt != null && new Date(presaleSaleEndAt).getTime() <= Date.now();
   const memberLocked = isMemberLoggedIn();
   const fmtTime = (s: string | null) => s ? new Date(s).toLocaleString() : t.tba;
 
@@ -90,13 +113,17 @@ export default function ProductPage() {
 
   async function submit() {
     setError("");
+    if (!meetsMinimumOrderAmount) {
+      setError(`该商品最低订购金额为 ${money(p!.minOrderAmount)}，请增加购买数量`);
+      return;
+    }
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contact)) {
       setError(t.emailError);
       return;
     }
-    if (isManual && !buyerNote.trim()) {
-      setError(t.manualError);
-      return;
+    if (isManual) {
+      const missing = manualFormFields.find((field) => field.required && !(manualValues[field.key] ?? "").trim());
+      if (missing) { setError(`请填写${missing.label}`); return; }
     }
     if (presaleEnded) {
       setError(t.presaleEndedError);
@@ -117,7 +144,7 @@ export default function ProductPage() {
         queryPassword: queryPassword || undefined,
         couponCode: couponCode.trim() || undefined,
         useWallet: false,
-        buyerNote: isManual ? buyerNote.trim() : undefined,
+        buyerNote: isManual ? JSON.stringify(manualValues) : undefined,
       }, { headers: captchaHeaders(captchaToken) });
       // 本机留存订单凭证:查单页可一键带出,免翻邮箱
       rememberOrder({
@@ -166,19 +193,24 @@ export default function ProductPage() {
 
         <div className="card h-fit p-6 md:p-7">
           <h2 className="mb-5 font-bold">{t.orderInfo}</h2>
-          <label className="label">{t.qty}({p.minBuy} ~ {p.maxBuy})</label>
+          <label className="label">{t.qty}({effectiveMinBuy} ~ {p.maxBuy})</label>
           <div className="mb-4 flex items-center gap-2">
-            <button className="btn-ghost !px-3.5 !py-2.5" onClick={() => setQty(Math.max(p.minBuy, qty - 1))}><Minus size={14} /></button>
+            <button className="btn-ghost !px-3.5 !py-2.5" onClick={() => setQty(Math.max(effectiveMinBuy, qty - 1))}><Minus size={14} /></button>
             <input
               className="input !w-20 text-center"
               value={qty}
               onChange={(e) => {
                 const v = parseInt(e.target.value || "0", 10);
-                if (!Number.isNaN(v)) setQty(Math.min(p.maxBuy, Math.max(p.minBuy, v)));
+                if (!Number.isNaN(v)) setQty(Math.min(p.maxBuy, Math.max(effectiveMinBuy, v)));
               }}
             />
             <button className="btn-ghost !px-3.5 !py-2.5" onClick={() => setQty(Math.min(p.maxBuy, qty + 1))}><Plus size={14} /></button>
           </div>
+          {minimumOrderAmount > 0 && (
+            <p className="-mt-2 mb-4 rounded-2xl bg-accent-soft/60 px-3.5 py-2.5 text-xs leading-relaxed text-ink/55">
+              起购要求：至少 {p.minBuy} 件，且商品标价小计满 <span className="font-bold text-primary">{money(p.minOrderAmount)}</span>。会员价与优惠券不影响起购资格。
+            </p>
+          )}
           <label className="label">{t.contact}</label>
           <div className="relative mb-4">
             <Mail size={15} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink/30" />
@@ -196,15 +228,27 @@ export default function ProductPage() {
           <label className="label">{t.queryPassword}</label>
           <input className="input mb-4" type="password" placeholder={t.optional} value={queryPassword} onChange={(e) => setQueryPassword(e.target.value)} />
           {isManual && (
-            <div className="mb-4 rounded-2xl border border-ink/[0.07] bg-accent-soft/55 p-4">
-              <label className="label flex items-center gap-1.5"><Wrench size={13} /> {t.manualInfo}</label>
-              {p.manualPrompt && <p className="mb-3 whitespace-pre-wrap text-xs leading-relaxed text-ink/55">{p.manualPrompt}</p>}
-              <textarea
-                className="input min-h-[112px] resize-none text-sm leading-relaxed"
-                placeholder={t.manualPh}
-                value={buyerNote}
-                onChange={(e) => setBuyerNote(e.target.value)}
-              />
+            <div className="mb-4 rounded-2xl border border-sky-500/15 bg-sky-500/[0.06] p-4">
+              <label className="label flex items-center gap-1.5"><Wrench size={13} /> 人工交付资料</label>
+              {p.manualPrompt && <p className="mb-4 whitespace-pre-wrap rounded-xl bg-surface/70 px-3 py-2.5 text-xs leading-relaxed text-ink/55">{p.manualPrompt}</p>}
+              <div className="space-y-3">
+                {manualFormFields.map((field) => <div key={field.key}>
+                  <label className="label">{field.label}{field.required ? <span className="ml-1 text-red-500">*</span> : <span className="ml-1 font-normal text-ink/30">选填</span>}</label>
+                  {field.type === "SELECT" ? (
+                    <select className="input" value={manualValues[field.key] ?? ""}
+                      onChange={(e) => setManualValues({ ...manualValues, [field.key]: e.target.value })}>
+                      <option value="">请选择</option>{(field.options ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  ) : field.type === "TEXTAREA" ? (
+                    <textarea className="input min-h-[96px] resize-none" placeholder={field.placeholder}
+                      value={manualValues[field.key] ?? ""} onChange={(e) => setManualValues({ ...manualValues, [field.key]: e.target.value })} />
+                  ) : (
+                    <input className="input" type={field.type === "EMAIL" ? "email" : "text"} placeholder={field.placeholder}
+                      value={manualValues[field.key] ?? ""} onChange={(e) => setManualValues({ ...manualValues, [field.key]: e.target.value })} />
+                  )}
+                </div>)}
+              </div>
+              <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-ink/40"><ShieldCheck size={12} className="mt-0.5 shrink-0" /> 资料会随订单交给后台处理，请勿填写支付密码、验证码或私钥。</p>
             </div>
           )}
           {isPresale && (
@@ -213,6 +257,7 @@ export default function ProductPage() {
               <div className="space-y-2 text-xs leading-relaxed text-ink/58">
                 <p>{t.presaleText1}</p>
                 <p>{t.presaleText2}</p>
+                <p className="flex items-center gap-1.5 font-medium text-ink/70"><Clock3 size={13} /> {t.presaleSaleEnd}: {fmtTime(presaleSaleEndAt)}</p>
                 <p className="flex items-center gap-1.5 font-medium text-ink/70"><Clock3 size={13} /> {t.presaleStart}: {fmtTime(p.presaleStartAt)}</p>
                 <p className="flex items-center gap-1.5 font-medium text-ink/70"><Clock3 size={13} /> {t.presaleEnd}: {fmtTime(p.presaleEndAt)}</p>
               </div>
@@ -252,7 +297,7 @@ export default function ProductPage() {
             onEnabledChange={handleCaptchaEnabled}
             resetKey={captchaResetKey}
           />
-          <button className="btn-primary w-full !py-3.5" disabled={submitting || presaleEnded || (!isManual && !isPresale && p.stock <= 0)} onClick={submit}>
+          <button className="btn-primary w-full !py-3.5" disabled={submitting || presaleEnded || !meetsMinimumOrderAmount || (!isManual && !isPresale && p.stock <= 0)} onClick={submit}>
             {submitting ? t.creating : presaleEnded ? copy.common.presaleEnded : t.buyNow}
           </button>
           <p className="mt-3 flex items-center justify-center gap-1 text-[11px] text-ink/35">

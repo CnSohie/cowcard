@@ -49,6 +49,15 @@ function fmt(s: string | null) {
   return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+function manualSubmission(value: string | null): [string, string][] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return Object.entries(parsed).map(([k, v]) => [k, String(v)]);
+  } catch { /* 兼容旧订单的纯文本资料 */ }
+  return [["交付资料", value]];
+}
+
 function StatusPill({ status }: { status: string }) {
   const m = STATUS_META[status] ?? { label: status, pill: "bg-ink/[0.06] text-ink/45", dot: "bg-ink/30" };
   return (
@@ -438,9 +447,13 @@ export default function OrdersAdmin() {
                   <div className="space-y-3">
                     <div className="rounded-2xl border border-ink/[0.06] p-4">
                       <p className="mb-2 text-xs font-bold text-ink/55">买家提交信息</p>
-                      <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink/70">
-                        {detail.buyerNote || "—"}
-                      </p>
+                      <dl className="grid gap-2">
+                        {manualSubmission(detail.buyerNote).map(([key, value]) => <div key={key} className="grid gap-1 sm:grid-cols-[120px_1fr]">
+                          <dt className="text-xs font-semibold text-ink/40">{key.replace(/_/g, " ")}</dt>
+                          <dd className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink/75">{value}</dd>
+                        </div>)}
+                        {!detail.buyerNote && <span className="text-sm text-ink/40">—</span>}
+                      </dl>
                     </div>
                     {detail.deliveryContent && (
                       <div className="rounded-2xl bg-accent-soft/70 p-4">

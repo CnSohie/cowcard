@@ -3,8 +3,8 @@ package com.hqyj.ka.payment.controller;
 import com.hqyj.ka.audit.service.AuditService;
 import com.hqyj.ka.common.ApiResponse;
 import com.hqyj.ka.order.service.TelegramNotifier;
-import com.hqyj.ka.payment.entity.PaymentChannel;
 import com.hqyj.ka.payment.service.PaymentService;
+import com.hqyj.ka.payment.service.PaymentService.AdminChannelView;
 import com.hqyj.ka.security.RateLimitFilter;
 import com.hqyj.ka.user.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,12 +15,13 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 支付渠道配置(payment:config)。
  * 收款配置 = 资金流向,是被篡改后果最重的入口:
  *  ① 保存/启停一律「管理员密码 + TOTP」双因子复核(未启用 2FA 直接拒绝);
- *  ② 查询接口绝不回显密钥(仅返回「已配置」占位);
+ *  ② 查询接口只返回非敏感配置与“密钥是否已配置”,绝不回显密钥或密文;
  *  ③ 任何变更即时 Telegram 告警 + 审计留痕 —— 被盗号/漏洞篡改也能第一时间发现。
  */
 @RestController
@@ -37,15 +38,15 @@ public class AdminChannelController {
                                      Integer sortOrder,
                                      /** 明文 JSON,服务端加密落库;查询接口绝不回显 */
                                      String configJson,
+                                     /** 字段化配置;密钥字段传空字符串表示保留原值 */
+                                     Map<String, String> config,
                                      /** 双因子凭证 */
                                      String password, String totpCode) {}
 
     @GetMapping
     @PreAuthorize("hasAuthority('payment:config')")
-    public ApiResponse<List<PaymentChannel>> list() {
-        List<PaymentChannel> channels = paymentService.allChannelsEnsured();
-        channels.forEach(c -> c.setConfigEnc(c.getConfigEnc() == null ? null : "[已配置]")); // 不回显密文
-        return ApiResponse.ok(channels);
+    public ApiResponse<List<AdminChannelView>> list() {
+        return ApiResponse.ok(paymentService.adminChannelViewsEnsured());
     }
 
     @PostMapping
@@ -55,8 +56,10 @@ public class AdminChannelController {
         authService.verifySensitive((Long) http.getAttribute("uid"), req.password(), req.totpCode(),
                 "channel-config:" + req.id(), ip);
 
-        boolean configChanged = req.configJson() != null && !req.configJson().isBlank();
-        paymentService.saveChannelConfig(req.id(), req.displayName(), req.enabled(), req.sortOrder(), req.configJson());
+        boolean configChanged = (req.configJson() != null && !req.configJson().isBlank())
+                || (req.config() != null && !req.config().isEmpty());
+        paymentService.saveChannelConfig(req.id(), req.displayName(), req.enabled(), req.sortOrder(),
+                req.configJson(), req.config());
 
         String operator = (String) http.getAttribute("uname");
         auditService.record(operator, "CHANNEL_UPDATE", "channel:" + req.id(), ip,
