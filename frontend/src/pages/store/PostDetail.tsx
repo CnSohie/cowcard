@@ -122,7 +122,7 @@ export default function PostDetail() {
       {/* 解锁成功提示 */}
       {justUnlocked && (
         <div className="mb-6 flex items-center gap-2.5 rounded-2xl bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-600 dark:text-emerald-400">
-          <Sparkles size={15} /> 已解锁全文,感谢支持!
+          <Sparkles size={15} /> 已解锁全文
         </div>
       )}
 

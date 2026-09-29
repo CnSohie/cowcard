@@ -1,22 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, ArrowUpRight, Check, Clock3, ImageIcon, KeyRound, Package, Wrench } from "lucide-react";
+import { ArrowRight, Check, Sparkles, Heart, ChevronLeft, ChevronRight } from "lucide-react";
 import { get, type Category, type ProductCard } from "../../lib/api";
-import { currencySymbol } from "../../lib/currency";
+import { loadSite } from "../../lib/site";
+import ProductCatalog from "../../components/ProductCatalog";
 import { useSeo } from "../../lib/seo";
 import { useI18n } from "../../lib/i18n";
 import { defaultHeroSlides, localizeHeroSlide, parseHeroSlides, type HeroSlide } from "../../lib/hero";
 
 export default function Home() {
   useSeo();
-  const { copy, lang } = useI18n();
+  const { lang } = useI18n();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<ProductCard[]>([]);
-  const [active, setActive] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [heroIndex, setHeroIndex] = useState(0);
-  const [heroPaused, setHeroPaused] = useState(false);
+  const [error, setError] = useState("");
+  const [reload, setReload] = useState(0);
   const [heroSlides, setHeroSlides] = useState<HeroSlide[]>(defaultHeroSlides);
 
   const visibleHeroSlides = useMemo(() => {
@@ -24,196 +25,87 @@ export default function Home() {
     return enabled.length > 0 ? enabled : defaultHeroSlides();
   }, [heroSlides]);
   const activeHero = visibleHeroSlides[Math.min(heroIndex, visibleHeroSlides.length - 1)];
-  const heroCopy = localizeHeroSlide(activeHero, lang);
+
 
   useEffect(() => {
     setHeroIndex(0);
   }, [heroSlides, lang]);
 
   useEffect(() => {
-    if (heroPaused || visibleHeroSlides.length < 2 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const timer = window.setInterval(() => {
-      setHeroIndex((current) => (current + 1) % visibleHeroSlides.length);
-    }, 5200);
-    return () => window.clearInterval(timer);
-  }, [heroPaused, visibleHeroSlides.length]);
-
-  useEffect(() => {
+    setLoading(true);
+    setError("");
     Promise.all([get<Category[]>("/store/categories"), get<ProductCard[]>("/store/products")])
       .then(([c, p]) => {
         setCategories(c);
         setProducts(p);
       })
-      .catch(() => void 0)
+      .catch(() => setError(lang === "zh" ? "商品加载失败，请重试。" : "Could not load products. Please retry."))
       .finally(() => setLoading(false));
-  }, []);
+  }, [reload]);
 
   useEffect(() => {
-    get<{ heroSlides?: string }>("/store/site")
+    loadSite()
       .then((site) => setHeroSlides(parseHeroSlides(site.heroSlides)))
       .catch(() => void 0);
   }, []);
-
-  const filtered = useMemo(
-    () => (active === null ? products : products.filter((p) => p.categoryId === active)),
-    [products, active],
-  );
 
   return (
     <div className="animate-fade-up">
       {/* Hero:大字排版 + 柠檬绿高亮 */}
       <section
-        className={`cow-hero hero-shell hero-layout-${activeHero.layout} hero-tone-${activeHero.tone} relative mb-8 overflow-hidden sm:mb-14`}
+        className={`store-hero ${activeHero.layout === "illustration" ? "cow-hero" : ""} hero-shell hero-layout-${activeHero.layout} hero-tone-${activeHero.tone} relative mb-8 overflow-hidden`}
         aria-roledescription="carousel"
-        onMouseEnter={() => setHeroPaused(true)}
-        onMouseLeave={() => setHeroPaused(false)}
-        onFocusCapture={() => setHeroPaused(true)}
-        onBlurCapture={() => setHeroPaused(false)}
       >
         {activeHero.layout === "image-cover" && activeHero.imageUrl && (
           <img className="hero-cover-image" src={activeHero.imageUrl} alt="" />
         )}
-        <div key={heroIndex} className="cow-hero-copy hero-slide relative z-10">
+        <div className="hero-copy-stack">
+        {visibleHeroSlides.map((slide, index) => {
+          const heroCopy = localizeHeroSlide(slide, lang);
+          return <div key={slide.id} aria-hidden={index !== heroIndex} style={{ visibility: index === heroIndex ? "visible" : "hidden" }} className="cow-hero-copy hero-slide relative z-10">
           {heroCopy.eyebrow && <p className="hero-eyebrow">{heroCopy.eyebrow}</p>}
-          <h1 className="max-w-4xl text-[1.75rem] font-extrabold leading-[1.1] sm:text-4xl sm:leading-[1.16] md:text-6xl">
+          <h1 className="max-w-4xl text-2xl font-bold leading-tight sm:text-4xl">
             {heroCopy.title}
-            {heroCopy.highlight && <span className="cow-highlight mx-1 inline rounded-[0.28em] bg-accent px-[0.08em] leading-[1.18] box-decoration-clone">{heroCopy.highlight}</span>}
+            {heroCopy.highlight && <span className="cow-highlight ml-1 rounded-lg bg-accent px-1 text-ink dark:bg-primary dark:text-primary-contrast">{heroCopy.highlight}</span>}
           </h1>
-          <p className="mt-3 line-clamp-2 max-w-xl text-sm leading-relaxed text-ink/55 sm:mt-5 sm:line-clamp-none sm:text-base">
+          <p className="mt-3 line-clamp-2 max-w-xl text-sm leading-relaxed text-ink/55 sm:mt-5 sm:line-clamp-none sm:text-[1rem]">
             {heroCopy.description}
           </p>
           {heroCopy.chips.length > 0 && (
-            <div className="hero-chips mt-4 flex gap-2 overflow-x-auto pb-1 sm:mt-6 sm:flex-wrap sm:overflow-visible sm:pb-0">
+            <div className="hero-chips mt-4 hidden gap-2 sm:flex overflow-x-auto pb-1 sm:mt-6 sm:flex-wrap sm:overflow-visible sm:pb-0">
               {heroCopy.chips.map((chip) => (
                 <span key={chip} className="chip shrink-0 whitespace-nowrap"><Check size={12} className="text-primary" /> {chip}</span>
               ))}
             </div>
           )}
           <div className="mt-4 flex flex-wrap items-center gap-3 sm:mt-6">
-            {heroCopy.ctaLabel && activeHero.ctaUrl && <HeroLink url={activeHero.ctaUrl} label={heroCopy.ctaLabel} />}
-            <div className="flex items-center gap-2" aria-label={`${heroIndex + 1} / ${visibleHeroSlides.length}`}>
+            {heroCopy.ctaLabel && slide.ctaUrl && <HeroLink url={slide.ctaUrl} label={heroCopy.ctaLabel} />}
+          </div>
+        </div>;
+        })}
+        </div>
+            <div className="hero-controls" aria-label={`${heroIndex + 1} / ${visibleHeroSlides.length}`}>
+            {visibleHeroSlides.length > 1 && <button type="button" aria-label={lang === "zh" ? "上一张" : "Previous slide"}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink/60 transition hover:bg-ink/5 focus-visible:outline-primary"
+              onClick={() => setHeroIndex((i) => (i - 1 + visibleHeroSlides.length) % visibleHeroSlides.length)}><ChevronLeft size={16} /></button>}
             {visibleHeroSlides.map((_, index) => (
               <button
                 key={index}
                 type="button"
                 aria-label={`${index + 1} / ${visibleHeroSlides.length}`}
                 aria-current={index === heroIndex ? "true" : undefined}
-                className={`h-2 rounded-full transition-all ${index === heroIndex ? "w-7 bg-primary" : "w-2 bg-ink/20 hover:bg-ink/35"}`}
+                className={`grid h-9 w-9 place-items-center rounded-full text-xs tabular-nums ${index === heroIndex ? "bg-primary text-primary-contrast" : "text-ink/50 hover:bg-ink/5"}`}
                 onClick={() => setHeroIndex(index)}
-              />
+              >{index + 1}</button>
             ))}
+            {visibleHeroSlides.length > 1 && <button type="button" aria-label={lang === "zh" ? "下一张" : "Next slide"}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink/60 transition hover:bg-ink/5 focus-visible:outline-primary"
+              onClick={() => setHeroIndex((i) => (i + 1) % visibleHeroSlides.length)}><ChevronRight size={16} /></button>}
             </div>
-          </div>
-        </div>
         <HeroVisual slide={activeHero} lang={lang} />
       </section>
 
-      {/* 分类(带在售件数,参考大型发卡站的透明化设计) */}
-      <div id="products" className="mb-7 flex scroll-mt-24 flex-wrap items-center gap-2">
-        <button onClick={() => setActive(null)} className={`chip !py-2 ${active === null ? "chip-on" : ""}`}>
-          {copy.common.all}{products.length > 0 && <span className="ml-1 text-[10px] opacity-60">{products.length}</span>}
-        </button>
-        {categories.map((c) => {
-          const n = products.filter((p) => p.categoryId === c.id).length;
-          return (
-            <button key={c.id} onClick={() => setActive(c.id)} className={`chip !py-2 ${active === c.id ? "chip-on" : ""}`}>
-              {c.name}{n > 0 && <span className="ml-1 text-[10px] opacity-60">{n}</span>}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* 商品 */}
-      {loading ? (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="card h-48 animate-pulse bg-ink/[0.03]" />
-          ))}
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="card grid place-items-center py-24 text-ink/40">
-          <Package className="mb-3 opacity-40" size={40} />
-          {copy.common.emptyProducts}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((p) => {
-            const saleEndAt = p.presaleSaleEndAt ?? p.presaleEndAt;
-            const presaleEnded = p.deliveryMode === "PRESALE_VOUCHER" && saleEndAt != null
-              && new Date(saleEndAt).getTime() <= Date.now();
-            const DeliveryIcon = p.deliveryMode === "PRESALE_VOUCHER" ? Clock3 : p.deliveryMode === "MANUAL" ? Wrench : KeyRound;
-            const deliveryLabel = p.deliveryMode === "PRESALE_VOUCHER"
-              ? copy.common.presale
-              : p.deliveryMode === "MANUAL"
-                ? copy.common.manualDelivery
-                : copy.common.autoDelivery;
-            const stockLabel = presaleEnded
-              ? copy.common.presaleEnded
-              : p.deliveryMode === "PRESALE_VOUCHER"
-                ? copy.common.presale
-                : p.deliveryMode === "MANUAL"
-                  ? copy.common.manualDelivery
-                  : p.stock > 0 ? `${copy.common.stock} ${p.stock}` : copy.common.soldOut;
-            return (
-            <Link
-              key={p.id}
-              to={`/product/${p.id}`}
-              className="card cow-product-card group flex min-h-[22rem] flex-col overflow-hidden p-0 transition hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(16,30,23,0.08)]"
-              aria-label={`${p.name} ${stockLabel}`}
-            >
-              <div className="relative aspect-[16/9] overflow-hidden bg-accent-soft/65">
-                {p.coverImage ? (
-                  <img
-                    src={p.coverImage}
-                    alt={p.name}
-                    loading="lazy"
-                    className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.035]"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center bg-accent-soft/80">
-                    <div className="grid h-16 w-16 place-items-center rounded-[1.5rem] border border-ink/10 bg-surface/80 text-primary shadow-sm">
-                      <ImageIcon size={26} />
-                    </div>
-                  </div>
-                )}
-                <span className="absolute left-4 top-4 inline-flex max-w-[calc(100%-2rem)] items-center gap-1.5 rounded-full border border-surface/70 bg-surface/90 px-3 py-1 text-[11px] font-bold text-ink shadow-sm backdrop-blur">
-                  <DeliveryIcon size={12} className="text-primary" />
-                  <span className="truncate">{deliveryLabel}</span>
-                </span>
-                <span className={`absolute bottom-4 right-4 rounded-full px-3 py-1 text-[11px] font-bold shadow-sm backdrop-blur ${
-                  presaleEnded
-                    ? "bg-ink/10 text-ink/45"
-                    : p.deliveryMode === "MANUAL" || p.deliveryMode === "PRESALE_VOUCHER" || p.stock > 0
-                      ? "bg-primary text-primary-contrast"
-                      : "bg-red-50 text-red-500 dark:bg-red-500/10"
-                }`}>
-                  {stockLabel}
-                </span>
-              </div>
-
-              <div className="flex flex-1 flex-col p-5 sm:p-6">
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="line-clamp-2 text-lg font-bold leading-snug tracking-tight">{p.name}</h3>
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent-soft text-primary transition group-hover:bg-accent group-hover:text-ink">
-                    <ArrowUpRight size={15} />
-                  </span>
-                </div>
-                {p.brief && <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-ink/50">{p.brief}</p>}
-                <div className="mt-auto flex items-end justify-between gap-4 pt-6">
-                <div>
-                  <span className="text-xs text-ink/40">{currencySymbol()}</span>
-                  <span className="ml-0.5 text-3xl font-extrabold tracking-tight">{p.price}</span>
-                </div>
-                <span className="inline-flex items-center gap-1 rounded-full bg-ink/[0.04] px-3 py-1.5 text-xs font-bold text-ink/60 transition group-hover:bg-accent-soft group-hover:text-primary">
-                  {copy.common.viewDetails}
-                  <ArrowRight size={12} />
-                </span>
-                </div>
-              </div>
-            </Link>
-          );})}
-        </div>
-      )}
+      <ProductCatalog products={products} categories={categories} loading={loading} error={error} onRetry={() => setReload((v) => v + 1)} />
     </div>
   );
 }
@@ -249,7 +141,14 @@ function HeroVisual({ slide, lang }: { slide: HeroSlide; lang: "zh" | "en" }) {
     );
   }
   return (
-    <div className="cow-hero-friends" aria-hidden="true">
+    <div aria-hidden="true">
+      <div className="store-mascot">
+        <span className="mascot-spark"><Sparkles size={28} /></span>
+        <span className="mascot-ticket"><Heart size={20} /><i /><i /></span>
+        <span className="mascot-parcel"><span className="mascot-ribbon" /><span className="mascot-eyes" /><span className="mascot-smile" /></span>
+        <span className="mascot-shadow" />
+      </div>
+      <div className="cow-hero-friends">
       <span className="cow-friend cow-friend-main"><i /><b /></span>
       <span className="cow-friend cow-friend-calf"><i /><b /></span>
       <span className="cow-friend cow-friend-bird"><i /><b /></span>
@@ -259,6 +158,7 @@ function HeroVisual({ slide, lang }: { slide: HeroSlide; lang: "zh" | "en" }) {
       <span className="cow-friend cow-friend-grass cow-friend-grass-b" />
       <span className="cow-friend cow-friend-flower cow-friend-flower-a" />
       <span className="cow-friend cow-friend-flower cow-friend-flower-b" />
+      </div>
     </div>
   );
 }

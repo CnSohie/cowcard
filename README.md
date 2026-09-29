@@ -66,7 +66,7 @@ cowcard 采用前后端分离架构：后端提供纯 REST API，前台承载买
 │   │   ├── user              # 后台用户、角色、权限
 │   │   └── wallet            # 钱包、提现、礼品卡
 │   └── main/resources
-│       └── db/schema.sql     # 数据库结构
+│       └── db/migration/     # Flyway 版本化迁移
 ├── frontend/                 # React 前台 + 后台
 ├── docs/                     # 架构、安全、部署文档
 ├── .env.example              # 生产环境变量示例
@@ -78,7 +78,7 @@ cowcard 采用前后端分离架构：后端提供纯 REST API，前台承载买
 ### 1. 准备数据库
 
 ```bash
-mysql < src/main/resources/db/schema.sql
+mysql -u root -p < db-init.sql  # 仅开发建库/账号;表由 Flyway 创建
 ```
 
 开发环境可参考 `db-init.sql` 创建本地数据库和用户。
@@ -201,3 +201,7 @@ npm run build
 ## License
 
 当前仓库尚未指定开源协议。公开使用、二次分发或商业化前，请先补充明确的许可证文件。
+
+数据库升级及存量库接入见 [数据库迁移手册](docs/DATABASE_MIGRATIONS.md)。
+
+上线前执行 `./mvnw -Pmysql-it verify`，运行 Testcontainers + MySQL 8 集成测试；环境要求和覆盖范围见 [测试手册](docs/TESTING.md)。

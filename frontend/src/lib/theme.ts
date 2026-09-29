@@ -1,3 +1,5 @@
+import { loadSite } from "./site";
+
 /**
  * 主题引擎:主题色系(mint/ocean/violet/cow)× 模式(light/dark/auto)。
  * 优先级:买家本地选择(localStorage) > 后台站点默认 > 系统偏好。
@@ -62,19 +64,13 @@ export function applySiteTheme(theme?: string, mode?: string) {
   paint();
 }
 
-/** 首次访问也先取得站点主题再挂载 React，避免默认主题内容闪现。 */
-export async function bootstrapSiteTheme(timeoutMs = 1800): Promise<void> {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+/** 使用本地主题立即绘制，公开配置与页面共享请求，不阻塞首屏。 */
+export async function bootstrapSiteTheme(): Promise<void> {
   try {
-    const response = await fetch("/api/store/site", { signal: controller.signal });
-    if (!response.ok) return;
-    const body = await response.json() as { data?: { theme?: string; mode?: string } };
-    applySiteTheme(body.data?.theme, body.data?.mode);
+    const site = await loadSite();
+    applySiteTheme(site.theme, site.mode);
   } catch {
-    // 离线或后端启动中时继续使用上次成功缓存的主题。
-  } finally {
-    window.clearTimeout(timeout);
+    // 离线时保留本地主题，商城提供独立的加载失败与重试状态。
   }
 }
 

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { get } from "./api";
+import { loadSite } from "./site";
 
 export interface SiteSeo {
   siteName: string;
@@ -10,13 +10,7 @@ export interface SiteSeo {
   seoIndex: string;
 }
 
-let cachedSite: SiteSeo | null = null;
-
-export async function loadSiteSeo() {
-  if (cachedSite) return cachedSite;
-  cachedSite = await get<SiteSeo>("/store/site");
-  return cachedSite;
-}
+export const loadSiteSeo = loadSite;
 
 export function useSeo(input?: {
   title?: string;

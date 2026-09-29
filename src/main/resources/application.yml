@@ -13,9 +13,20 @@ spring:
       maximum-pool-size: 8
       minimum-idle: 2
       connection-timeout: 5000
+  sql:
+    init:
+      mode: never
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    clean-disabled: true
+    validate-on-migrate: true
+    validate-migration-naming: true
+    out-of-order: false
   jpa:
     hibernate:
-      ddl-auto: update          # 开发便利;生产 = validate + db/schema.sql
+      ddl-auto: validate        # Flyway 负责改表,Hibernate 只校验
     open-in-view: false         # 连接不被视图层长占(2C2G 关键)
     properties:
       hibernate:

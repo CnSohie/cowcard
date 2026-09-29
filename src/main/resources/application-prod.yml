@@ -14,7 +14,7 @@ spring:
       max-lifetime: 1200000
   jpa:
     hibernate:
-      ddl-auto: validate        # 生产禁止自动改表;结构以 db/schema.sql 为准
+      ddl-auto: validate        # 生产禁止自动改表;结构以 db/migration 为准
     open-in-view: false
     properties:
       hibernate:

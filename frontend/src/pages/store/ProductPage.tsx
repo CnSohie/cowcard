@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, BadgePercent, Clock3, KeyRound, Mail, Minus, Plus, ShieldCheck, Wrench } from "lucide-react";
 import { ApiError, get, post, type CreateOrderResponse, type ProductDetail } from "../../lib/api";
 import { isMemberLoggedIn, mGet, mPost, memberInfo } from "../../lib/memberApi";
+import { recalledContact, rememberContact } from "../../lib/contactMemory";
 import { rememberOrder } from "../../lib/orderHistory";
 import { currencySymbol, money } from "../../lib/currency";
 import { useSeo } from "../../lib/seo";
@@ -34,7 +35,7 @@ export default function ProductPage() {
   const t = copy.product;
   const [p, setP] = useState<ProductDetail | null>(null);
   const [qty, setQty] = useState(1);
-  const [contact, setContact] = useState("");
+  const [contact, setContact] = useState(() => (isMemberLoggedIn() ? memberInfo()?.email : "") || recalledContact());
   const [queryPassword, setQueryPassword] = useState("");
   const [manualValues, setManualValues] = useState<Record<string, string>>({});
   const [memberPrice, setMemberPrice] = useState<{ unitPrice: string; discountPerUnit: string; levelName: string | null; source: string } | null>(null);
@@ -59,7 +60,7 @@ export default function ProductPage() {
     // 已登录会员自动带入邮箱,下单同时计入账号(供推广返佣与订单归属)
     if (isMemberLoggedIn()) {
       const m = memberInfo();
-      if (m?.email) setContact((c) => c || m.email);
+      if (m?.email) setContact(m.email);
       mGet<{ unitPrice: string; discountPerUnit: string; levelName: string | null; source: string }>(`/store/products/${id}/member-price`)
         .then(setMemberPrice).catch(() => void 0);
     }
@@ -117,7 +118,7 @@ export default function ProductPage() {
       setError(`该商品最低订购金额为 ${money(p!.minOrderAmount)}，请增加购买数量`);
       return;
     }
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contact)) {
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contact.trim())) {
       setError(t.emailError);
       return;
     }
@@ -140,12 +141,13 @@ export default function ProductPage() {
       const r = await create<CreateOrderResponse>("/orders", {
         productId: p!.id,
         quantity: qty,
-        contact,
+        contact: contact.trim(),
         queryPassword: queryPassword || undefined,
         couponCode: couponCode.trim() || undefined,
         useWallet: false,
         buyerNote: isManual ? JSON.stringify(manualValues) : undefined,
       }, { headers: captchaHeaders(captchaToken) });
+      rememberContact(contact);
       // 本机留存订单凭证:查单页可一键带出,免翻邮箱
       rememberOrder({
         orderNo: r.orderNo, contact: contact.trim(), productName: p!.name,
@@ -172,7 +174,7 @@ export default function ProductPage() {
           {p.brief && <p className="mt-2.5 text-sm leading-relaxed text-ink/55">{p.brief}</p>}
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <span className="text-4xl font-extrabold tracking-tight">
-              <span className="text-base font-semibold text-ink/40">{currencySymbol()}</span>
+              <span className="text-[1rem] font-semibold text-ink/40">{currencySymbol()}</span>
               {shownUnitPrice}
             </span>
             {memberPrice && Number(memberPrice.discountPerUnit) > 0 && (
@@ -191,12 +193,13 @@ export default function ProductPage() {
           )}
         </div>
 
-        <div className="card h-fit p-6 md:p-7">
+        <div className="card h-fit p-6 md:p-7 lg:sticky lg:top-24">
           <h2 className="mb-5 font-bold">{t.orderInfo}</h2>
           <label className="label">{t.qty}({effectiveMinBuy} ~ {p.maxBuy})</label>
           <div className="mb-4 flex items-center gap-2">
-            <button className="btn-ghost !px-3.5 !py-2.5" onClick={() => setQty(Math.max(effectiveMinBuy, qty - 1))}><Minus size={14} /></button>
+            <button aria-label={t.qty + " −"} disabled={qty <= effectiveMinBuy} className="btn-ghost !px-3.5 !py-2.5" onClick={() => setQty(Math.max(effectiveMinBuy, qty - 1))}><Minus size={14} /></button>
             <input
+              inputMode="numeric" aria-label={t.qty}
               className="input !w-20 text-center"
               value={qty}
               onChange={(e) => {
@@ -204,7 +207,7 @@ export default function ProductPage() {
                 if (!Number.isNaN(v)) setQty(Math.min(p.maxBuy, Math.max(effectiveMinBuy, v)));
               }}
             />
-            <button className="btn-ghost !px-3.5 !py-2.5" onClick={() => setQty(Math.min(p.maxBuy, qty + 1))}><Plus size={14} /></button>
+            <button aria-label={t.qty + " +"} disabled={qty >= p.maxBuy} className="btn-ghost !px-3.5 !py-2.5" onClick={() => setQty(Math.min(p.maxBuy, qty + 1))}><Plus size={14} /></button>
           </div>
           {minimumOrderAmount > 0 && (
             <p className="-mt-2 mb-4 rounded-2xl bg-accent-soft/60 px-3.5 py-2.5 text-xs leading-relaxed text-ink/55">
@@ -216,6 +219,7 @@ export default function ProductPage() {
             <Mail size={15} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink/30" />
             <input
               className={`input !pl-11 ${memberLocked ? "cursor-not-allowed bg-ink/[0.04] text-ink/45 focus:ring-0" : ""}`}
+              type="email" autoComplete="email" inputMode="email" aria-label={t.contact}
               placeholder="you@example.com"
               value={contact}
               readOnly={memberLocked}
@@ -226,7 +230,7 @@ export default function ProductPage() {
           </div>
           {memberLocked && <p className="-mt-2 mb-4 text-[11px] text-ink/35">{t.memberEmailLocked}</p>}
           <label className="label">{t.queryPassword}</label>
-          <input className="input mb-4" type="password" placeholder={t.optional} value={queryPassword} onChange={(e) => setQueryPassword(e.target.value)} />
+          <input className="input mb-4" type="password" autoComplete="new-password" aria-label={t.queryPassword} placeholder={t.optional} value={queryPassword} onChange={(e) => setQueryPassword(e.target.value)} />
           {isManual && (
             <div className="mb-4 rounded-2xl border border-sky-500/15 bg-sky-500/[0.06] p-4">
               <label className="label flex items-center gap-1.5"><Wrench size={13} /> 人工交付资料</label>
@@ -248,7 +252,7 @@ export default function ProductPage() {
                   )}
                 </div>)}
               </div>
-              <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-ink/40"><ShieldCheck size={12} className="mt-0.5 shrink-0" /> 资料会随订单交给后台处理，请勿填写支付密码、验证码或私钥。</p>
+              <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-ink/40"><ShieldCheck size={12} className="mt-0.5 shrink-0" /> 请勿填写支付密码、验证码或私钥。</p>
             </div>
           )}
           {isPresale && (
@@ -263,9 +267,10 @@ export default function ProductPage() {
               </div>
             </div>
           )}
-          <label className="label">{t.coupon}</label>
+          <details className="mt-2"><summary className="cursor-pointer text-sm text-ink/60">{t.coupon}</summary>
+          <div className="pt-3">
           <div className="mb-1 flex gap-2">
-            <input className="input flex-1 uppercase" placeholder="COUPON" value={couponCode}
+            <input className="input flex-1 uppercase" aria-label={t.coupon} placeholder="COUPON" value={couponCode}
               onChange={(e) => setCouponCode(e.target.value)} />
             <button className="btn-ghost shrink-0" disabled={!couponCode.trim()} onClick={checkCoupon}>
               <BadgePercent size={14} /> {copy.common.verify}
@@ -274,6 +279,7 @@ export default function ProductPage() {
           {couponMsg && (
             <p className={`mb-2 text-xs ${discount ? "text-primary" : "text-red-500"}`}>{couponMsg}</p>
           )}
+          </div></details>
           <div className="mb-4 mt-4 space-y-1.5 border-t border-ink/[0.06] pt-4">
             {discount && (
               <div className="flex items-center justify-between text-xs text-ink/50">
@@ -290,7 +296,7 @@ export default function ProductPage() {
               <span className="text-3xl font-extrabold tracking-tight">{money(total)}</span>
             </div>
           </div>
-          {error && <p className="mb-3 text-xs text-red-500">{error}</p>}
+          {error && <p role="alert" className="mb-3 text-xs text-red-500">{error}</p>}
           <CaptchaBox
             action="order_create"
             onToken={handleCaptchaToken}

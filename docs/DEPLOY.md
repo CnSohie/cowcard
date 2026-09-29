@@ -13,12 +13,14 @@ echo 'vm.swappiness=10' >> /etc/sysctl.conf && sysctl -p
 ## 2. MySQL
 
 ```bash
-mysql < src/main/resources/db/schema.sql
+mysql -e "CREATE DATABASE ka CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
 mysql -e "CREATE USER 'ka'@'localhost' IDENTIFIED BY '<强密码>';
           GRANT SELECT,INSERT,UPDATE,DELETE ON ka.* TO 'ka'@'localhost';"
 # 应用 2C2G 配置
 cp docs/my.cnf.example /etc/mysql/conf.d/ka.cnf && systemctl restart mysql
 ```
+
+迁移使用独立 DDL 账号，通过 `SPRING_FLYWAY_USER` / `SPRING_FLYWAY_PASSWORD` 注入，运行账号保留上述 DML 权限。建号授权、已有库首次接入及备份恢复见 [数据库迁移手册](DATABASE_MIGRATIONS.md)。
 
 ## 3. 后端
 

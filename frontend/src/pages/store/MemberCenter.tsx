@@ -111,7 +111,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
         <div className="flex items-center justify-between border-b border-ink/[0.06] px-6 py-5">
           <div>
             <h3 className="text-xl font-extrabold tracking-tight">{title}</h3>
-            <p className="mt-1 text-xs text-ink/40">钱包资金操作会写入余额流水</p>
+            <p className="mt-1 text-xs text-ink/40">充值、消费和提现记录</p>
           </div>
           <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-ink/45 hover:bg-ink/[0.06] hover:text-ink">
             <X size={15} />
@@ -524,7 +524,7 @@ export default function MemberCenter() {
 
                     {o.status === "PENDING" && (
                       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-amber-500/[0.08] px-4 py-3">
-                        <p className="text-xs leading-relaxed text-ink/55">订单尚未付款,不会发放卡密、人工交付内容或预售提货码。</p>
+                        <p className="text-xs leading-relaxed text-ink/55">等待付款</p>
                         <Link to={`/pay/${o.orderNo}`} className="btn-primary !px-4 !py-2 text-xs">继续支付</Link>
                       </div>
                     )}
@@ -555,7 +555,7 @@ export default function MemberCenter() {
 
                     {o.deliveryMode === "MANUAL" && o.status === "PAID" && (
                       <p className="mt-4 rounded-2xl bg-sky-500/[0.08] px-4 py-3 text-xs leading-relaxed text-sky-600 dark:text-sky-400">
-                        已收到付款,正在等待后台人工发货。发货完成后这里会显示交付内容。
+                        已付款，等待商家发货。
                       </p>
                     )}
 
@@ -569,8 +569,8 @@ export default function MemberCenter() {
                         </div>
                         <p className="mt-2 text-xs leading-relaxed text-ink/55">
                           {presaleActive
-                            ? "付款已确认。明文提货码只在下单浏览器展示一次;如已保存提货码,可前往提货兑换中心绑定当前会员并查看后续履约。"
-                            : "订单未付款或已关闭,预售凭证不会激活,也不能用于核销。"}
+                            ? "付款已确认。请在下单浏览器领取提货码，保存后可兑换到当前账号。"
+                            : "提货码未激活，无法兑换。"}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {presaleActive && <Link to="/redeem" className="btn-primary !px-4 !py-2 text-xs">去核销提货</Link>}
@@ -642,7 +642,7 @@ export default function MemberCenter() {
             <div className="rounded-2xl border border-ink/[0.06] p-4">
               <div className="mb-4 rounded-2xl bg-accent-soft/70 px-4 py-3">
                 <p className="font-extrabold text-primary">提交工单</p>
-                <p className="mt-1 text-xs leading-relaxed text-ink/50">订单、预售提货、钱包充值/提现、卡密异常都可以在这里提交。</p>
+                <p className="mt-1 text-xs leading-relaxed text-ink/50">请说明遇到的问题，并附上相关订单号。</p>
               </div>
               <label className="label">标题</label>
               <input className="input mb-3" value={ticketSubject} onChange={(e) => setTicketSubject(e.target.value)} placeholder="例如: 预售提货未到账" />
@@ -690,7 +690,7 @@ export default function MemberCenter() {
                       <textarea className="input min-h-20 text-sm" placeholder="继续补充说明或回复客服"
                         value={followUps[t.id] ?? ""} onChange={(e) => setFollowUps((m) => ({ ...m, [t.id]: e.target.value }))} />
                       <button className="btn-primary mt-3 w-full !py-2.5 text-xs" disabled={!followUps[t.id]?.trim()} onClick={() => submitFollowUp(t)}>
-                        发送跟进
+                        发送回复
                       </button>
                     </div>
                   ) : (
@@ -802,7 +802,7 @@ export default function MemberCenter() {
       {modal === "recharge" && (
         <Modal title="余额充值" onClose={() => setModal("")}>
           <p className="mb-4 rounded-2xl bg-accent-soft/70 px-4 py-3 text-xs leading-relaxed text-ink/55">
-            选择或输入充值金额,系统会创建充值订单并跳转收银台。
+            选择充值金额
           </p>
           <div className="mb-4 grid grid-cols-4 gap-2">
             {["20", "50", "100", "200"].map((v) => (
@@ -838,7 +838,7 @@ export default function MemberCenter() {
       {modal === "gift" && (
         <Modal title="兑换礼品卡" onClose={() => setModal("")}>
           <p className="mb-4 rounded-2xl bg-accent-soft/70 px-4 py-3 text-xs leading-relaxed text-ink/55">
-            输入礼品卡码后,面额会自动充入你的钱包余额。卡码不区分大小写。
+            兑换金额将存入余额。卡码不区分大小写。
           </p>
           <label className="label">礼品卡码</label>
           <input className="input !rounded-3xl !py-4 font-mono text-sm uppercase" placeholder="GC..."

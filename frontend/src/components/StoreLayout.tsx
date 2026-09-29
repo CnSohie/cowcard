@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { Languages, Moon, Newspaper, Search, ShoppingBag, Sun, TicketCheck, UserRound, Zap } from "lucide-react";
-import { get } from "../lib/api";
+import { loadSite } from "../lib/site";
 import { isMemberLoggedIn, memberInfo } from "../lib/memberApi";
 import { applySiteTheme, isDark, toggleMode } from "../lib/theme";
 import { setCurrency } from "../lib/currency";
@@ -16,6 +16,10 @@ export default function StoreLayout() {
   const location = useLocation();
   const { lang, setLang, copy } = useI18n();
   const member = isMemberLoggedIn() ? memberInfo() : null;
+
+  useLayoutEffect(() => {
+    if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [location.pathname]);
   const BASE_NAV = [
     { to: "/", label: copy.nav.store, icon: ShoppingBag },
     { to: "/posts", label: copy.nav.posts, icon: Newspaper },
@@ -25,7 +29,7 @@ export default function StoreLayout() {
   const nav = member ? [...BASE_NAV, { to: "/me?tab=support", label: copy.nav.support, icon: UserRound }] : BASE_NAV;
 
   useEffect(() => {
-    get<{ siteName: string; announcement: string; contact?: string; theme?: string; mode?: string; currency?: string }>("/store/site")
+    loadSite()
       .then((r) => {
         setSite(r);
         setCurrency(r.currency);
@@ -42,18 +46,16 @@ export default function StoreLayout() {
   };
 
   return (
-    <div className="cow-theme-stage min-h-screen">
+    <div className="storefront min-h-screen">
       <div className="cow-theme-decor" aria-hidden="true">
-        <span className="cow-cloud cow-cloud-a" />
-        <span className="cow-cloud cow-cloud-b" />
-        <span className="cow-hill cow-hill-a" />
-        <span className="cow-hill cow-hill-b" />
+        <span className="cow-cloud cow-cloud-a" /><span className="cow-cloud cow-cloud-b" />
+        <span className="cow-hill cow-hill-a" /><span className="cow-hill cow-hill-b" />
         <span className="cow-mini cow-mini-cow"><i /><b /></span>
         <span className="cow-mini cow-mini-bird"><i /><b /></span>
         <span className="cow-mini cow-mini-sheep"><i /><b /></span>
         <span className="cow-mini cow-mini-butterfly"><i /><b /></span>
       </div>
-      <header className="sticky top-0 z-40 border-b border-ink/[0.06] bg-base/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 border-b border-ink/[0.06] bg-base/95">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-5">
           <Link to="/" className="flex items-center gap-2.5">
             <span className="brand-mark grid h-9 w-9 place-items-center rounded-full bg-primary">
@@ -66,6 +68,7 @@ export default function StoreLayout() {
               <Link
                 key={n.to}
                 to={n.to}
+                aria-current={active(n.to) ? "page" : undefined}
                 className={`rounded-full px-3 py-2 text-sm font-medium transition sm:px-4 ${
                   active(n.to) ? "bg-ink/[0.06] text-ink" : "text-ink/60 hover:text-ink"
                 }`}
@@ -121,7 +124,7 @@ export default function StoreLayout() {
         )}
       </header>
       <main className="mx-auto max-w-6xl px-4 pb-32 pt-8 sm:px-5 sm:pt-10 md:pb-24">
-        <Outlet />
+        <Suspense fallback={<div className="card min-h-64 animate-pulse p-8" role="status">{copy.common.loading}</div>}><Outlet /></Suspense>
       </main>
       <footer className="border-t border-ink/[0.06] py-10 text-center text-xs text-ink/40">
         <p>{site.siteName} · {copy.footer.promise}</p>

@@ -6,8 +6,8 @@ import { I18nProvider } from "./lib/i18n";
 import "./index.css";
 import { bootstrapSiteTheme } from "./lib/theme";
 
-async function start() {
-  await bootstrapSiteTheme();
+function start() {
+  void bootstrapSiteTheme();
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <I18nProvider>

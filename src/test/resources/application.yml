@@ -5,6 +5,8 @@ spring:
     username: sa
     password: ""
     driver-class-name: org.h2.Driver
+  flyway:
+    enabled: false # 普通 H2 业务测试;迁移另有独立测试
   jpa:
     hibernate:
       ddl-auto: create-drop

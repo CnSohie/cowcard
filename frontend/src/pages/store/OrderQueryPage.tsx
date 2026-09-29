@@ -3,17 +3,11 @@ import { Link, useLocation } from "react-router-dom";
 import { CheckCircle2, Copy, History, KeyRound, Search, ShieldCheck, TicketCheck, X } from "lucide-react";
 import { ApiError, post, type OrderView } from "../../lib/api";
 import { consumePresaleVoucherToken, findLocalOrder, forgetOrder, localOrders, rememberOrder, type LocalOrder } from "../../lib/orderHistory";
+import { recalledContact } from "../../lib/contactMemory";
+import { useI18n } from "../../lib/i18n";
+import { orderCopy } from "../../lib/orderCopy";
 import { money } from "../../lib/currency";
 import { CaptchaBox, captchaHeaders } from "../../lib/captcha";
-
-const STATUS_LABEL: Record<string, [string, string]> = {
-  PENDING: ["待支付", "text-amber-600 dark:text-amber-400"],
-  PAID: ["已支付 · 待处理", "text-sky-600 dark:text-sky-400"],
-  DELIVERED: ["已发货", "text-emerald-600 dark:text-emerald-400"],
-  EXPIRED: ["已超时关闭", "text-ink/40"],
-  CLOSED: ["已关闭", "text-ink/40"],
-  REFUNDED: ["已退款", "text-ink/40"],
-};
 
 interface PresaleVoucherClaim {
   token: string | null;
@@ -21,7 +15,6 @@ interface PresaleVoucherClaim {
   status: string;
 }
 
-const PENDING_PRESALE_HINT = "付款后签发";
 
 function fmtDate(s: string) {
   const d = new Date(s);
@@ -29,21 +22,40 @@ function fmtDate(s: string) {
 }
 
 export default function OrderQueryPage() {
+  const { lang } = useI18n();
+  const t = orderCopy[lang];
+  const STATUS_LABEL: Record<string, [string, string]> = {
+    PENDING: [t.pending, "text-amber-600 dark:text-amber-400"],
+    PAID: [t.paid, "text-sky-600 dark:text-sky-400"],
+    DELIVERED: [t.delivered, "text-emerald-600 dark:text-emerald-400"],
+    EXPIRED: [t.expired, "text-ink/40"],
+    CLOSED: [t.closed, "text-ink/40"],
+    REFUNDED: [t.refunded, "text-ink/40"],
+  };
+  const voucherStatuses: Record<string, string> = { WAITING_PAYMENT: t.pending, ACTIVE: t.voucherActive, REDEEMED: t.redeemed, FULFILLED: t.delivered, EXPIRED: t.expired, VOID: t.closed };
   const location = useLocation() as { state?: { orderNo?: string; contact?: string; queryToken?: string } };
   const [orderNo, setOrderNo] = useState(location.state?.orderNo ?? "");
-  const [contact, setContact] = useState(location.state?.contact ?? "");
+  const [contact, setContact] = useState(() => location.state?.contact ?? recalledContact());
   const [queryPassword, setQueryPassword] = useState("");
   const [queryToken, setQueryToken] = useState(location.state?.queryToken ?? "");
   const [order, setOrder] = useState<OrderView | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<number | "captcha" | "failed" | null>(null);
+  const errorText = error === "captcha" ? t.captcha : error === "failed" ? t.failed : error == null ? "" : (t.errors as Record<string, string>)[error] ?? t.failed;
   const [copied, setCopied] = useState(-1);
+  const [historySearch, setHistorySearch] = useState("");
+  const [manualOpen, setManualOpen] = useState(Boolean(location.state?.orderNo));
+  const queryLock = useRef(false);
   const [history, setHistory] = useState<LocalOrder[]>(() => localOrders());
   const [revealedPresaleToken, setRevealedPresaleToken] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaEnabled, setCaptchaEnabled] = useState(false);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const autoQueryKey = useRef("");
+  const resultRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (order) resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [order]);
   const handleCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
   const handleCaptchaEnabled = useCallback((enabled: boolean) => setCaptchaEnabled(enabled), []);
 
@@ -51,10 +63,12 @@ export default function OrderQueryPage() {
   useEffect(() => {
     const no = location.state?.orderNo;
     if (no) {
+      setOrderNo(no);
+      setManualOpen(true);
       const hit = findLocalOrder(no);
       const token = location.state?.queryToken || hit?.queryToken || "";
       const savedContact = location.state?.contact || hit?.contact || "";
-      if (savedContact) setContact((c) => c || savedContact);
+      if (savedContact) setContact(savedContact);
       if (token) setQueryToken(token);
       if (token && autoQueryKey.current !== `${no}:${token}`) {
         autoQueryKey.current = `${no}:${token}`;
@@ -64,13 +78,17 @@ export default function OrderQueryPage() {
   }, [location.state?.contact, location.state?.orderNo, location.state?.queryToken]);
 
   async function doQuery(no: string, ct: string, token = queryToken) {
+    if (queryLock.current) return;
+    queryLock.current = true;
     setBusy(true);
-    setError("");
+    setError(null);
     setOrder(null);
     setRevealedPresaleToken(null);
     if (captchaEnabled && !captchaToken) {
-      setError("请先完成人机验证");
+      setError("captcha");
       setBusy(false);
+      queryLock.current = false;
+      setManualOpen(true);
       return;
     }
     try {
@@ -104,19 +122,23 @@ export default function OrderQueryPage() {
       }
       setHistory(localOrders());
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "查询失败");
+      setManualOpen(true);
+      setError(e instanceof ApiError ? e.code : "failed");
     } finally {
       setCaptchaToken("");
       setCaptchaResetKey((x) => x + 1);
       setBusy(false);
+      queryLock.current = false;
     }
   }
 
   function quickQuery(h: LocalOrder) {
+    setQueryPassword("");
     setOrderNo(h.orderNo);
     setContact(h.contact);
     setQueryToken(h.queryToken ?? "");
-    void doQuery(h.orderNo, h.contact, h.queryToken ?? "");
+    if (h.queryToken) void doQuery(h.orderNo, h.contact, h.queryToken);
+    else { setManualOpen(true); setOrder(null); setError(null); }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -134,35 +156,70 @@ export default function OrderQueryPage() {
 
   const statusInfo = order ? (
     order.deliveryMode === "PRESALE_VOUCHER" && order.status === "DELIVERED"
-      ? ["已付款 · 提货码已激活", "text-emerald-600 dark:text-emerald-400"]
+      ? [t.voucherActive, "text-emerald-600 dark:text-emerald-400"]
       : STATUS_LABEL[order.status] ?? [order.status, "text-ink/50"]
   ) : null;
-  const localOrder = order ? findLocalOrder(order.orderNo) : null;
-  const fmtPresaleTime = (s: string | null) => s ? new Date(s).toLocaleString() : "商家另行公告";
+  const fmtPresaleTime = (s: string | null) => s ? new Date(s).toLocaleString(lang === "en" ? "en-US" : "zh-CN") : t.tba;
   const presaleReady = order?.deliveryMode === "PRESALE_VOUCHER" && ["PAID", "DELIVERED"].includes(order.status);
 
   return (
     <div className="mx-auto max-w-2xl animate-fade-up">
+      <div className="mb-6">
+        <h1 className="text-2xl font-extrabold tracking-tight">{t.title}</h1>
+      </div>
+      <section className="card mb-5 p-5 sm:p-7" aria-label={t.recent}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 font-bold"><History size={17} />{t.recent}<span className="text-sm font-normal text-ink/40">{history.length}</span></h2>
+          <Link to="/me" className="text-xs font-semibold text-primary">{t.member}</Link>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-ink/45">{t.localNote}</p>
+        {history.length > 0 ? <>
+          <input type="search" className="input my-4" aria-label={t.filter} placeholder={t.search}
+            value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} />
+          <div className="max-h-[420px] space-y-2 overflow-y-auto">
+            {history.filter((h) => `${h.productName} ${h.contact} ${h.orderNo}`.toLowerCase().includes(historySearch.trim().toLowerCase())).map((h) => (
+              <div key={h.orderNo} className={`flex items-center gap-1 rounded-2xl border p-2 transition ${orderNo === h.orderNo ? "border-primary/30 bg-accent-soft" : "border-ink/[0.06] hover:border-primary/30"}`}>
+                <button type="button" disabled={busy} onClick={() => quickQuery(h)} aria-label={`${t.query} ${h.productName} ${h.orderNo}`}
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-xl p-2 text-left disabled:opacity-50">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{h.productName}</p>
+                    <p className="mt-1 text-xs text-ink/50">{money(h.amount)} · {fmtDate(h.createdAt)}</p>
+                    <p className="mt-1 truncate text-[11px] text-ink/40">{h.contact} {t.ending} {h.orderNo.slice(-6)}</p>
+                  </div>
+                  <span className="shrink-0 text-xs font-semibold text-primary">{t.view}</span>
+                </button>
+                <button type="button" disabled={busy} aria-label={`${t.delete} ${h.orderNo}`} title={t.deleteHint}
+                  onClick={() => removeHistory(h.orderNo)} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink/30 hover:bg-ink/5 hover:text-ink"><X size={14} /></button>
+              </div>
+            ))}
+            {!history.some((h) => `${h.productName} ${h.contact} ${h.orderNo}`.toLowerCase().includes(historySearch.trim().toLowerCase())) &&
+              <p className="py-6 text-center text-sm text-ink/50">{t.noMatch}</p>}
+          </div>
+        </> : <div className="my-4 rounded-2xl bg-base p-5 text-sm leading-relaxed text-ink/55">{t.empty}</div>}
+      </section>
       <div className="card p-7 md:p-8">
-        <h1 className="mb-6 flex items-center gap-2 text-xl font-extrabold tracking-tight">
-          <Search size={19} /> 订单查询
-        </h1>
+        <button type="button" className="flex w-full items-center justify-between gap-3 text-left" aria-expanded={manualOpen} aria-controls="manual-order-query" onClick={() => setManualOpen((open) => !open)}>
+          <span className="flex items-center gap-2 font-bold"><Search size={17} />{t.manual}</span>
+          <span className="text-xs text-primary">{manualOpen ? t.collapse : t.credentials}</span>
+        </button>
+        <div id="manual-order-query" hidden={!manualOpen}>
+        <p className="mb-4 mt-3 text-xs leading-relaxed text-ink/50">{t.manualNote}</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label className="label">订单号</label>
-            <input className="input font-mono" placeholder="2026…" value={orderNo}
+            <label className="label">{t.number}</label>
+            <input className="input font-mono" aria-label={t.number} placeholder={t.paste} value={orderNo}
               onChange={(e) => { setOrderNo(e.target.value); setQueryToken(""); }} />
           </div>
           <div>
-            <label className="label">下单邮箱</label>
-            <input className="input" placeholder="you@example.com" value={contact} onChange={(e) => setContact(e.target.value)} />
+            <label className="label">{t.email}</label>
+            <input className="input" type="email" autoComplete="email" aria-label={t.email} placeholder="you@example.com" value={contact} onChange={(e) => setContact(e.target.value)} />
           </div>
         </div>
         <div className="mt-3">
-          <label className="label">查询密码(下单时设置过才需要)</label>
-          <input className="input" type="password" placeholder="选填" value={queryPassword} onChange={(e) => setQueryPassword(e.target.value)} />
+          <label className="label">{t.passwordLabel}</label>
+          <input className="input" type="password" aria-label={t.password} placeholder={t.optional} value={queryPassword} onChange={(e) => setQueryPassword(e.target.value)} />
         </div>
-        {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+        {errorText && <p role="alert" className="mt-3 text-sm text-red-500">{errorText}</p>}
         <CaptchaBox
           action="order_query"
           onToken={handleCaptchaToken}
@@ -171,25 +228,26 @@ export default function OrderQueryPage() {
         />
         <button className="btn-primary mt-5 w-full !py-3.5" disabled={busy || !orderNo || (!contact && !queryToken)}
           onClick={() => doQuery(orderNo, contact)}>
-          {busy ? "查询中…" : "查询订单"}
+          {busy ? t.querying : t.submit}
         </button>
+        </div>
       </div>
+      {busy && <p role="status" className="mt-4 text-center text-sm text-ink/50">{t.loading}</p>}
 
       {order && statusInfo && (
-        <div className="card mt-5 animate-fade-up p-7 md:p-8">
+        <div ref={resultRef} className="card mt-5 scroll-mt-24 animate-fade-up p-7 md:p-8">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-bold">{order.productName} × {order.quantity}</h2>
             <span className={`text-sm font-semibold ${statusInfo[1]}`}>{statusInfo[0]}</span>
           </div>
-          <p className="mt-1 text-xs text-ink/40">
-            订单 {order.orderNo} · {money(order.amount)}
-            {Number(order.discountAmount) > 0 && ` · 已优惠 ${money(order.discountAmount)}`}
-            {" · "}{new Date(order.createdAt).toLocaleString()}
+          <p className="mt-1 text-xs text-ink/40">{t.order} {order.orderNo} · {money(order.amount)}
+            {Number(order.discountAmount) > 0 && ` ${t.discount} ${money(order.discountAmount)}`}
+            {" · "}{new Date(order.createdAt).toLocaleString(lang === "en" ? "en-US" : "zh-CN")}
           </p>
 
           {order.cards.length > 0 && (
             <div className="mt-6">
-              <label className="label flex items-center gap-1.5"><KeyRound size={13} /> 卡密(点击复制)</label>
+              <label className="label flex items-center gap-1.5"><KeyRound size={13} />{t.cards}</label>
               <div className="space-y-2">
                 {order.cards.map((c, i) => (
                   <button key={i} onClick={() => copyCard(c, i)}
@@ -203,7 +261,7 @@ export default function OrderQueryPage() {
           )}
           {order.deliveryContent && (
             <div className="mt-6">
-              <label className="label flex items-center gap-1.5"><KeyRound size={13} /> 交付内容(点击复制)</label>
+              <label className="label flex items-center gap-1.5"><KeyRound size={13} />{t.content}</label>
               <button onClick={() => copyCard(order.deliveryContent ?? "", 9999)}
                 className="group flex w-full items-center justify-between gap-3 rounded-2xl bg-accent-soft px-4 py-3 text-left transition hover:brightness-95">
                 <code className="whitespace-pre-wrap break-all font-mono text-sm font-semibold">{order.deliveryContent}</code>
@@ -212,18 +270,16 @@ export default function OrderQueryPage() {
             </div>
           )}
           {order.deliveryMode === "MANUAL" && order.status === "PAID" && (
-            <p className="mt-5 rounded-2xl bg-sky-500/10 px-4 py-3 text-xs leading-relaxed text-sky-600 dark:text-sky-400">
-              订单已付款,正在等待后台人工发货。处理完成后这里会显示交付内容。
-            </p>
+            <p className="mt-5 rounded-2xl bg-sky-500/10 px-4 py-3 text-xs leading-relaxed text-sky-600 dark:text-sky-400">{t.manualPending}</p>
           )}
           {order.deliveryMode === "PRESALE_VOUCHER" && (
             <div className="mt-6 rounded-2xl border border-primary/15 bg-accent-soft/60 p-4">
-              <label className="label flex items-center gap-1.5"><TicketCheck size={13} /> 电子预售提货码</label>
+              <label className="label flex items-center gap-1.5"><TicketCheck size={13} />{t.voucher}</label>
               {!presaleReady ? (
                 <p className="rounded-2xl bg-surface px-4 py-3 text-xs leading-relaxed text-ink/55">
                   {order.status === "PENDING"
-                    ? "订单尚未完成付款,电子预售提货码不会激活,也不能用于核销提货。付款确认后,本下单浏览器会展示一次性明文提货码。"
-                    : "订单未完成付款或已关闭,电子预售提货码不会激活。如你已经付款,请联系售后并提供订单号核对。"}
+                    ? t.unpaidVoucher
+                    : t.inactiveVoucher}
                 </p>
               ) : revealedPresaleToken ? (
                 <button onClick={() => copyCard(revealedPresaleToken, 8888)}
@@ -232,26 +288,21 @@ export default function OrderQueryPage() {
                   {copied === 8888 ? <CheckCircle2 size={15} className="shrink-0 text-primary" /> : <Copy size={15} className="shrink-0 text-ink/40 group-hover:text-ink" />}
                 </button>
               ) : (
-                <p className="rounded-2xl bg-surface px-4 py-3 text-xs leading-relaxed text-ink/55">
-                  当前订单的提货码提示为 <span className="font-mono font-semibold text-ink/75">{order.presaleVoucherHint ?? "-"}</span>。明文提货码只在下单浏览器展示一次,平台仅保存不可逆哈希,丢失后无法找回。
-                </p>
+                <p className="rounded-2xl bg-surface px-4 py-3 text-xs leading-relaxed text-ink/55">{t.hint}<span className="font-mono font-semibold text-ink/75">{order.presaleVoucherHint ?? "-"}</span>{t.lost}</p>
               )}
               <div className="mt-3 grid gap-2 text-xs leading-relaxed text-ink/55 sm:grid-cols-2">
-                <p><span className="font-medium text-ink/70">预计开始交付:</span> {fmtPresaleTime(order.presaleStartAt)}</p>
-                <p><span className="font-medium text-ink/70">最晚交付保障:</span> {fmtPresaleTime(order.presaleEndAt)}</p>
+                <p><span className="font-medium text-ink/70">{t.start}</span> {fmtPresaleTime(order.presaleStartAt)}</p>
+                <p><span className="font-medium text-ink/70">{t.end}</span> {fmtPresaleTime(order.presaleEndAt)}</p>
               </div>
               {(order.presaleVoucherStatus || order.presaleFulfillmentNote) && (
                 <p className="mt-3 rounded-2xl bg-surface px-4 py-3 text-xs leading-relaxed text-ink/55">
-                  <span className="font-medium text-ink/70">凭证状态:</span> {order.presaleVoucherStatus ?? "-"}
+                  <span className="font-medium text-ink/70">{t.voucherStatus}</span> {voucherStatuses[order.presaleVoucherStatus ?? ""] ?? order.presaleVoucherStatus ?? "-"}
                   {order.presaleFulfillmentNote ? ` · ${order.presaleFulfillmentNote}` : ""}
                 </p>
               )}
               <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-ink/45">
-                <ShieldCheck size={12} className="mt-0.5 shrink-0" /> 谁持有提货码谁拥有兑换权;登录会员后可提前核销绑定账号。核销后凭证立即销毁,后续在会员中心查询履约状态。
-              </p>
-              <Link to="/redeem" className="btn-primary mt-4 w-full !py-3">
-                前往提货兑换中心
-              </Link>
+                <ShieldCheck size={12} className="mt-0.5 shrink-0" />{t.redeemNote}</p>
+              <Link to="/redeem" className="btn-primary mt-4 w-full !py-3">{t.redeem}</Link>
             </div>
           )}
           {order.usageNote && (
@@ -260,42 +311,11 @@ export default function OrderQueryPage() {
             </div>
           )}
           {order.status === "PENDING" && (
-            <Link to={`/pay/${order.orderNo}`} className="btn-primary mt-5 w-full !py-3">
-              前往支付(已转账可提交 TXID 自助核销)
-            </Link>
+            <Link to={`/pay/${order.orderNo}`} className="btn-primary mt-5 w-full !py-3">{t.pay}</Link>
           )}
         </div>
       )}
 
-      {/* 本机购买记录:一键回查,不用翻邮箱 */}
-      {history.length > 0 && (
-        <div className="card mt-5 p-6 md:p-7">
-          <p className="label !mb-3 flex items-center gap-1.5">
-            <History size={13} /> 本机购买记录(仅保存在此浏览器,可随时删除)
-          </p>
-          <div className="space-y-2">
-            {history.map((h) => (
-              <div key={h.orderNo}
-                className="flex items-center gap-3 rounded-2xl border border-ink/[0.06] px-4 py-3 transition hover:border-ink/15">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{h.productName}</p>
-                  <p className="truncate font-mono text-[11px] text-ink/40">
-                    {h.orderNo} · {money(h.amount)} · {fmtDate(h.createdAt)}
-                  </p>
-                </div>
-                <button className="btn-ghost shrink-0 !px-3.5 !py-1.5 text-xs" disabled={busy} onClick={() => quickQuery(h)}>
-                  查询
-                </button>
-                <button title="从本机删除该记录" onClick={() => removeHistory(h.orderNo)}
-                  className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-ink/30 transition hover:bg-ink/[0.05] hover:text-red-500">
-                  <X size={13} />
-                </button>
-              </div>
-            ))}
-          </div>
-          <p className="mt-3 text-[11px] text-ink/35">设置过查询密码的订单,回查时仍需在上方填写密码。</p>
-        </div>
-      )}
     </div>
   );
 }

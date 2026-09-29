@@ -237,7 +237,7 @@ Ka/
 ├─ src/main/java/com/hqyj/ka/…   后端(见 §2 模块图)
 ├─ src/main/resources/
 │   ├─ application.yml / application-prod.yml
-│   └─ db/schema.sql + db/seed.sql(建表 + RBAC 种子数据)
+│   └─ db/migration/V*.sql(Flyway 迁移;RBAC 由 DataInitializer 幂等初始化)
 ├─ frontend/        React 18 + Vite + TS + Tailwind(前台商城 + 管理后台)
 └─ CLAUDE.md        项目约定(供后续 AI 会话延续上下文)
 ```
@@ -261,3 +261,5 @@ Ka/
 ## 9. 独立社区系统
 
 社区定位为 Discuz/NodeSeek 风格的中心化论坛，使用独立 Spring Boot、MySQL、Redis、Elasticsearch 和 React 应用部署，不属于本 Spring Boot 单体，也不受本章 2C2G 资源预算约束。Ka 与社区不共享数据库、JWT、Cookie、缓存或业务事务，只允许通过导航、OIDC 和签名事件集成；完整设计见 [COMMUNITY_ARCHITECTURE.md](COMMUNITY_ARCHITECTURE.md)。
+
+数据库结构统一使用 Flyway 管理，开发和生产均为 Hibernate `validate`。存量接入和恢复流程见 [DATABASE_MIGRATIONS.md](DATABASE_MIGRATIONS.md)。

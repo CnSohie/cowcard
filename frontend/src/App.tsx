@@ -1,38 +1,40 @@
+import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
 import StoreLayout from "./components/StoreLayout";
-import Home from "./pages/store/Home";
-import ProductPage from "./pages/store/ProductPage";
-import PayPage from "./pages/store/PayPage";
-import OrderQueryPage from "./pages/store/OrderQueryPage";
-import PostsPage from "./pages/store/PostsPage";
-import PostDetail from "./pages/store/PostDetail";
-import MemberAuth from "./pages/store/MemberAuth";
-import MemberCenter from "./pages/store/MemberCenter";
-import TermsPage from "./pages/store/TermsPage";
-import AboutPage from "./pages/store/AboutPage";
-import RedeemPage from "./pages/store/RedeemPage";
-import AdminLogin from "./pages/admin/AdminLogin";
-import AdminLayout from "./pages/admin/AdminLayout";
-import Dashboard from "./pages/admin/Dashboard";
-import ProductsAdmin from "./pages/admin/ProductsAdmin";
-import CardsAdmin from "./pages/admin/CardsAdmin";
-import OrdersAdmin from "./pages/admin/OrdersAdmin";
-import ChannelsAdmin from "./pages/admin/ChannelsAdmin";
-import UsersAdmin from "./pages/admin/UsersAdmin";
-import AuditAdmin from "./pages/admin/AuditAdmin";
-import SecurityAdmin from "./pages/admin/SecurityAdmin";
-import CouponsAdmin from "./pages/admin/CouponsAdmin";
-import SettingsAdmin from "./pages/admin/SettingsAdmin";
-import ArticlesAdmin from "./pages/admin/ArticlesAdmin";
-import MembersAdmin from "./pages/admin/MembersAdmin";
-import WithdrawalsAdmin from "./pages/admin/WithdrawalsAdmin";
-import MemberLevelsAdmin from "./pages/admin/MemberLevelsAdmin";
-import GiftCardsAdmin from "./pages/admin/GiftCardsAdmin";
-import RiskReviewsAdmin from "./pages/admin/RiskReviewsAdmin";
-import SupportTicketsAdmin from "./pages/admin/SupportTicketsAdmin";
+const Home = lazy(() => import("./pages/store/Home"));
+const ProductPage = lazy(() => import("./pages/store/ProductPage"));
+const PayPage = lazy(() => import("./pages/store/PayPage"));
+const OrderQueryPage = lazy(() => import("./pages/store/OrderQueryPage"));
+const PostsPage = lazy(() => import("./pages/store/PostsPage"));
+const PostDetail = lazy(() => import("./pages/store/PostDetail"));
+const MemberAuth = lazy(() => import("./pages/store/MemberAuth"));
+const MemberCenter = lazy(() => import("./pages/store/MemberCenter"));
+const TermsPage = lazy(() => import("./pages/store/TermsPage"));
+const AboutPage = lazy(() => import("./pages/store/AboutPage"));
+const RedeemPage = lazy(() => import("./pages/store/RedeemPage"));
+const AdminLogin = lazy(() => import("./pages/admin/AdminLogin"));
+const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
+const Dashboard = lazy(() => import("./pages/admin/Dashboard"));
+const ProductsAdmin = lazy(() => import("./pages/admin/ProductsAdmin"));
+const CardsAdmin = lazy(() => import("./pages/admin/CardsAdmin"));
+const OrdersAdmin = lazy(() => import("./pages/admin/OrdersAdmin"));
+const ChannelsAdmin = lazy(() => import("./pages/admin/ChannelsAdmin"));
+const UsersAdmin = lazy(() => import("./pages/admin/UsersAdmin"));
+const AuditAdmin = lazy(() => import("./pages/admin/AuditAdmin"));
+const SecurityAdmin = lazy(() => import("./pages/admin/SecurityAdmin"));
+const CouponsAdmin = lazy(() => import("./pages/admin/CouponsAdmin"));
+const SettingsAdmin = lazy(() => import("./pages/admin/SettingsAdmin"));
+const ArticlesAdmin = lazy(() => import("./pages/admin/ArticlesAdmin"));
+const MembersAdmin = lazy(() => import("./pages/admin/MembersAdmin"));
+const WithdrawalsAdmin = lazy(() => import("./pages/admin/WithdrawalsAdmin"));
+const MemberLevelsAdmin = lazy(() => import("./pages/admin/MemberLevelsAdmin"));
+const GiftCardsAdmin = lazy(() => import("./pages/admin/GiftCardsAdmin"));
+const RiskReviewsAdmin = lazy(() => import("./pages/admin/RiskReviewsAdmin"));
+const SupportTicketsAdmin = lazy(() => import("./pages/admin/SupportTicketsAdmin"));
 
 export default function App() {
   return (
+    <Suspense fallback={<div className="mx-auto max-w-6xl px-5 py-16" role="status"><div className="h-5 w-32 animate-pulse rounded bg-ink/10" /><div className="mt-5 h-48 animate-pulse rounded-2xl bg-ink/[0.04]" /><span className="sr-only">Loading…</span></div>}>
     <Routes>
       <Route element={<StoreLayout />}>
         <Route path="/" element={<Home />} />
@@ -69,5 +71,6 @@ export default function App() {
         <Route path="security" element={<SecurityAdmin />} />
       </Route>
     </Routes>
+    </Suspense>
   );
 }
