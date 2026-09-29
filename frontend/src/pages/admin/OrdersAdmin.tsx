@@ -163,7 +163,7 @@ export default function OrdersAdmin() {
       setDetail((d) => d && { ...d, status: "PAID" });
     } else if (kind === "close") {
       const ok = await post<boolean>(`/admin/orders/${detail.orderNo}/close`, auth);
-      if (!ok) throw new Error("关闭失败:订单已不是待支付状态(可能刚被支付),请刷新查看");
+      if (!ok) throw new Error("关闭失败:订单状态已变化或已支付，请刷新后核对");
       setDetail((d) => d && { ...d, status: "CLOSED" });
     } else if (kind === "refund") {
       const ok = await post<boolean>(`/admin/orders/${detail.orderNo}/refund-recharge`, auth);
@@ -195,25 +195,16 @@ export default function OrdersAdmin() {
   const isRecharge = detail?.orderType === "RECHARGE";
   const isManualGoods = detail?.orderType === "GOODS" && detail.deliveryMode === "MANUAL";
 
-  function actionPanel(compact = false) {
+  function actionPanel() {
     if (!detail) return null;
     return (
-      <div className={compact ? "rounded-2xl border border-ink/[0.08] bg-surface p-4" : ""}>
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold text-ink">订单操作</p>
-            <p className="mt-0.5 text-[11px] text-ink/40">
-              {detail.orderType === "RECHARGE"
-                ? "充值单可取消、人工入账或撤销充值"
-                : detail.deliveryMode === "PRESALE_VOUCHER"
-                  ? "预售订单付款后签发电子提货码,核销和履约在前台兑换中心完成"
-                  : detail.deliveryMode === "MANUAL"
-                  ? "人工商品可关闭、补单或填写交付内容"
-                  : "商品单可关闭释放库存、人工补单或补发卡密"}
-            </p>
-          </div>
-          <span className="rounded-full bg-ink/[0.05] px-2.5 py-1 text-[10px] font-semibold text-ink/45">
-            2FA
+      <div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-ink/75">
+            {detail.status === "PAID" && isManualGoods ? "待交付 · 核对买家资料后完成发货" : "订单处理"}
+          </p>
+          <span className="inline-flex items-center gap-1 text-[11px] text-ink/60">
+            <KeyRound size={12} /> 敏感操作需双因子验证
           </span>
         </div>
         {detail.status === "PENDING" ? (
@@ -227,21 +218,21 @@ export default function OrdersAdmin() {
           </div>
         ) : detail.status === "EXPIRED" ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            <button className="btn-ghost flex-1" onClick={closeDrawer}>关闭</button>
+            <button className="btn-ghost flex-1" onClick={() => setSensitive("close")}><Ban size={14} />关闭订单</button>
             <button className="btn-primary flex-1" onClick={() => setSensitive("paid")}>
               <HandCoins size={14} /> {detail.orderType === "RECHARGE" ? "补记充值入账" : detail.deliveryMode === "PRESALE_VOUCHER" ? "补单并签发提货码" : detail.deliveryMode === "MANUAL" ? "补单待人工发货" : "补单并回占库存"}
             </button>
           </div>
         ) : detail.orderType === "GOODS" && detail.status === "PAID" && detail.deliveryMode !== "PRESALE_VOUCHER" ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            <button className="btn-ghost flex-1" onClick={closeDrawer}>关闭</button>
+            <button className="btn-ghost flex-1" onClick={closeDrawer}>收起详情</button>
             <button className="btn-primary flex-1" onClick={() => setSensitive(detail.deliveryMode === "MANUAL" ? "manualDeliver" : "deliver")}>
               <PackageCheck size={14} /> {detail.deliveryMode === "MANUAL" ? "完成人工发货" : "补发卡密"}
             </button>
           </div>
         ) : detail.orderType === "RECHARGE" && ["PAID", "DELIVERED"].includes(detail.status) ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            <button className="btn-ghost flex-1" onClick={closeDrawer}>关闭</button>
+            <button className="btn-ghost flex-1" onClick={closeDrawer}>收起详情</button>
             <button className="btn-ghost flex-1 !text-red-500" onClick={() => setSensitive("refund")}>
               <Ban size={14} /> 撤销充值
             </button>
@@ -386,29 +377,30 @@ export default function OrdersAdmin() {
       {detail && createPortal((
         <>
           <div className="drawer-mask" onClick={closeDrawer} />
-          <aside className="drawer-panel">
-            <header className="flex items-center justify-between border-b border-ink/[0.06] px-6 py-4">
+          <aside className="drawer-panel order-detail" role="dialog" aria-modal="true" aria-labelledby="order-detail-title">
+            <header className="flex shrink-0 items-start justify-between gap-3 border-b border-ink/10 px-6 py-5">
               <div className="min-w-0">
-                <div className="flex items-center gap-2.5">
-                  <h2 className="truncate font-mono text-sm font-bold">{detail.orderNo}</h2>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h2 id="order-detail-title" className="text-lg font-bold">订单详情</h2>
                   <StatusPill status={detail.status} />
                 </div>
-                <p className="mt-0.5 text-xs text-ink/40">
+                <p className="mt-2 break-all font-mono text-xs text-ink/75">{detail.orderNo}</p>
+                <p className="mt-1 text-xs text-ink/60">
                   {detail.orderType === "RECHARGE" ? "钱包余额充值" : "商品订单"} · 创建于 {fmt(detail.createdAt)}
                 </p>
               </div>
-              <button onClick={closeDrawer}
+              <button onClick={closeDrawer} aria-label="关闭订单详情"
                 className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink/45 transition hover:bg-ink/[0.06] hover:text-ink">
                 <X size={17} />
               </button>
             </header>
 
-            <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-6 py-5">
               {/* 金额 */}
-              <div className="rounded-2xl bg-accent-soft/70 p-5">
-                <p className="text-xs text-ink/50">{detail.productName}{detail.orderType === "GOODS" && ` × ${detail.quantity}`}</p>
-                <p className="mt-1 text-3xl font-extrabold tracking-tight">{money(detail.amount)}</p>
-                <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-ink/45">
+              <div className="rounded-2xl border border-primary/10 bg-accent-soft/50 p-5">
+                <p className="text-sm font-semibold text-ink">{detail.productName}{detail.orderType === "GOODS" && ` × ${detail.quantity}`}</p>
+                <div className="mt-4 flex items-baseline justify-between gap-3"><span className="text-xs text-ink/70">订单金额</span><p className="text-3xl font-extrabold tabular-nums tracking-tight">{money(detail.amount)}</p></div>
+                <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-ink/10 pt-3 text-xs text-ink/70">
                   <span>单价 {money(detail.unitPrice)}</span>
                   {Number(detail.discountAmount) > 0 && <span>优惠 -{money(detail.discountAmount)}{detail.couponCode && `(${detail.couponCode})`}</span>}
                   {detail.paidChannel && <span>渠道 {CHANNEL_LABEL[detail.paidChannel] ?? detail.paidChannel}</span>}
@@ -417,8 +409,6 @@ export default function OrdersAdmin() {
                   )}
                 </div>
               </div>
-
-              {actionPanel(true)}
 
               {/* 信息 */}
               <section>
@@ -491,7 +481,7 @@ export default function OrdersAdmin() {
             </div>
 
             {/* 操作(财务级:密码 + 2FA 双因子确认) */}
-            <footer className="border-t border-ink/[0.06] bg-surface/95 px-6 py-4 shadow-[0_-12px_30px_rgba(0,0,0,0.04)]">
+            <footer className="shrink-0 border-t border-ink/10 bg-surface px-6 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
               {actErr && <p className="mb-2.5 text-xs text-red-500">{actErr}</p>}
               {actionPanel()}
             </footer>
@@ -514,7 +504,7 @@ export default function OrdersAdmin() {
               : sensitive === "refund" ? "确认撤销充值"
                 : sensitive === "deliver" ? "确认补发卡密"
                   : sensitive === "manualDeliver" ? "确认交付"
-                    : sensitive === "cards" ? "确认查看卡密" : (isRecharge ? "确认取消充值" : "确认关闭并释放库存"),
+                    : sensitive === "cards" ? "确认查看卡密" : (detail.status === "EXPIRED" ? "确认关闭订单" : isRecharge ? "确认取消充值" : "确认关闭并释放库存"),
             danger: sensitive === "close" || sensitive === "refund" || sensitive === "cards",
             summary: (
               <div className="space-y-1">
@@ -532,6 +522,7 @@ export default function OrdersAdmin() {
                     <span className="font-bold">{money(detail.walletPaidAmount)}</span>
                   </div>
                 )}
+                {sensitive === "close" && detail.status === "EXPIRED" && <p className="pt-2 text-xs leading-relaxed text-ink/55">此订单已超时，库存和余额占用已释放。关闭后将标记为已关闭，不能再人工补单，不会重复退还余额或库存。</p>}
                 {sensitive === "paid" && (
                   <p className="pt-1 text-[11px] leading-relaxed text-ink/40">
                     {detail.status === "EXPIRED"

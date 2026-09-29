@@ -37,12 +37,23 @@ public class WithdrawRequest {
     @Column(nullable = false, precision = 20, scale = 2)
     private BigDecimal amount;
 
-    /** 手续费从申请金额中扣除;实际打款 = amount - feeAmount。 */
+    /** 手续费从申请金额中扣除;人民币净额 = amount - feeAmount;USDT 打款另存快照。 */
     @Column(precision = 20, scale = 2)
     private BigDecimal feeAmount = BigDecimal.ZERO;
 
     @Column(precision = 20, scale = 2)
     private BigDecimal netAmount;
+
+    /** 申请时固定的实际打款金额(十进制字符串,避免 JSON 浮点丢失精度)。 */
+    @Column(length = 64)
+    private String payoutAmount;
+
+    @Column(length = 8)
+    private String payoutCurrency;
+
+    /** 1 USDT 对应人民币金额,申请后不随汇率刷新变化。 */
+    @Column(precision = 20, scale = 8)
+    private BigDecimal payoutFxRate;
 
     /** 管理员允许的固定渠道编码。 */
     @Column(nullable = false, length = 32)

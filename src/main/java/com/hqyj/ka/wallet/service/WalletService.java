@@ -31,6 +31,7 @@ public class WalletService {
     private final WithdrawRequestRepository withdrawRepository;
     private final ConfigService configService;
     private final WithdrawMethodService withdrawMethodService;
+    private final WithdrawPayoutService withdrawPayoutService;
 
     /**
      * 确保钱包存在。正常路径:注册事务内已建(无并发);此处兜底存量会员。
@@ -99,6 +100,10 @@ public class WalletService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "解冻金额无效");
         }
         ensureAccount(memberId);
+        accountRepository.lockByMemberId(memberId).orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "钱包不存在"));
+        if (!withdrawRepository.lockByMemberIdAndStatus(memberId, WithdrawRequest.Status.PENDING).isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "该会员有待审核提现，请先在提现审核中处理；退回提现金额请使用驳回，不能手动解冻");
+        }
         if (accountRepository.unfreeze(memberId, amount) == 0) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "冻结余额不足");
         }
@@ -116,12 +121,13 @@ public class WalletService {
         if (amount.compareTo(minWithdraw()) < 0) {
             throw new BusinessException(ErrorCode.WITHDRAW_MIN);
         }
-        if (withdrawRepository.existsByMemberIdAndStatus(memberId, WithdrawRequest.Status.PENDING)) {
+        ensureAccount(memberId);
+        accountRepository.lockByMemberId(memberId).orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "钱包不存在"));
+        if (!withdrawRepository.lockByMemberIdAndStatus(memberId, WithdrawRequest.Status.PENDING).isEmpty()) {
             throw new BusinessException(ErrorCode.WITHDRAW_PENDING_EXISTS);
         }
         WithdrawMethodService.Normalized recipient = withdrawMethodService.validate(channel, account, accountName, bankName);
         WithdrawMethodService.FeeQuote fee = withdrawMethodService.feeQuote(recipient.code(), amount);
-        ensureAccount(memberId);
         if (accountRepository.freeze(memberId, amount) == 0) {
             throw new BusinessException(ErrorCode.BALANCE_NOT_ENOUGH);
         }
@@ -134,6 +140,7 @@ public class WalletService {
         request.setAccount(recipient.account());
         request.setAccountName(recipient.accountName());
         request.setBankName(recipient.bankName());
+        withdrawPayoutService.snapshot(request);
         request = withdrawRepository.save(request);
         writeTxn(memberId, WalletTxn.Type.WITHDRAW_FREEZE, amount.negate(),
                 "WITHDRAW", request.getId(), "提现申请冻结");
@@ -147,6 +154,12 @@ public class WalletService {
      */
     @Transactional
     public WithdrawRequest reviewWithdraw(Long id, boolean approve, String reviewer, String note) {
+        String reviewNote = normalizeReviewNote(approve, note);
+        WithdrawRequest existing = withdrawRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WITHDRAW_STATE));
+        // 与申请、手动解冻保持一致的锁顺序:先钱包,再提现状态 CAS。
+        accountRepository.lockByMemberId(existing.getMemberId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.WITHDRAW_STATE, "钱包不存在"));
         WithdrawRequest.Status target = approve ? WithdrawRequest.Status.APPROVED : WithdrawRequest.Status.REJECTED;
         if (withdrawRepository.casStatus(id, WithdrawRequest.Status.PENDING, target) == 0) {
             throw new BusinessException(ErrorCode.WITHDRAW_STATE);
@@ -154,6 +167,9 @@ public class WalletService {
         WithdrawRequest request = withdrawRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WITHDRAW_STATE));
         if (approve) {
+            if (request.getChannel().startsWith("USDT_") && request.getPayoutAmount() == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "旧申请缺少 USDT 打款汇率快照,请驳回并请会员重新申请");
+            }
             if (accountRepository.consumeFrozen(request.getMemberId(), request.getAmount()) == 0) {
                 // 冻结额被异常动过:回滚整个审核事务(状态连同回退),人工排查
                 throw new BusinessException(ErrorCode.WITHDRAW_STATE, "冻结余额异常,请核对流水后重试");
@@ -166,7 +182,7 @@ public class WalletService {
                     "WITHDRAW", request.getId(), "提现驳回退回");
         }
         request.setReviewedBy(reviewer);
-        request.setReviewNote(normalizeReviewNote(approve, note));
+        request.setReviewNote(reviewNote);
         request.setReviewedAt(LocalDateTime.now());
         return request;
     }
@@ -202,6 +218,7 @@ public class WalletService {
 
     private String normalizeReviewNote(boolean approve, String note) {
         if (note != null && !note.isBlank()) return note.trim();
-        return approve ? null : "提现申请未通过审核,请核对收款信息后重新提交";
+        if (!approve) throw new BusinessException(ErrorCode.BAD_REQUEST, "请填写具体的驳回原因,会员将看到此说明");
+        return null;
     }
 }

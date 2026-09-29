@@ -248,11 +248,16 @@ public class OrderService {
         return true;
     }
 
-    /** 人工关闭待支付订单:CAS 防与支付回调竞态,成功后释放预占库存(充值单无库存)。 */
+    /** 人工关单:待支付单释放占用;超时单已释放,仅 CAS 终止后续补单。 */
     @Transactional
     public boolean closeManually(String orderNo) {
         Order order = orderRepository.findByOrderNo(orderNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+        if (order.getStatus() == Order.Status.EXPIRED) {
+            // 超时处理已退还钱包/优惠券和库存,不得重复释放。
+            return orderRepository.casStatus(order.getId(), Order.Status.EXPIRED, Order.Status.CLOSED) == 1;
+        }
+        if (order.getStatus() != Order.Status.PENDING) return false;
         int updated = orderRepository.casStatus(order.getId(), Order.Status.PENDING, Order.Status.CLOSED);
         if (updated == 1 && order.getOrderType() != Order.OrderType.RECHARGE
                 && order.getDeliveryMode() == Order.DeliveryMode.AUTO_CARD) {

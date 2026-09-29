@@ -5,6 +5,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
+import java.util.List;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -17,6 +20,11 @@ public interface WithdrawRequestRepository extends JpaRepository<WithdrawRequest
     Page<WithdrawRequest> findAllByOrderByIdDesc(Pageable pageable);
 
     boolean existsByMemberIdAndStatus(Long memberId, WithdrawRequest.Status status);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from WithdrawRequest r where r.memberId = :mid and r.status = :status")
+    List<WithdrawRequest> lockByMemberIdAndStatus(@Param("mid") Long memberId,
+                                               @Param("status") WithdrawRequest.Status status);
 
     long countByStatus(WithdrawRequest.Status status);
 

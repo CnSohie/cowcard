@@ -64,6 +64,11 @@ server:
     mime-types: application/json,text/html,text/plain
 
 ka:
+  telegram:
+    enabled: ${KA_TG_ENABLED:false}
+    bot-token: ${KA_TG_BOT_TOKEN:}
+    webhook-secret: ${KA_TG_WEBHOOK_SECRET:}
+    site-url: ${KA_TG_SITE_URL:}
   upload:
     dir: ./data/upload          # 图片存储目录(生产建议放数据盘并纳入备份)
     max-size-mb: 5

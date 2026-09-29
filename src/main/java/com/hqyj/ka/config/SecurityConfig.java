@@ -57,6 +57,7 @@ public class SecurityConfig {
                 // 公开:商城浏览、下单、游客查单、支付创建与回调、链配置、文章浏览、图片静态资源
                 .requestMatchers("/api/auth/login", "/api/auth/refresh").permitAll()
                 .requestMatchers("/api/member/auth/**").permitAll()
+                .requestMatchers("/api/telegram/webhook", "/api/telegram/ticket").permitAll()
                 .requestMatchers("/api/store/**", "/api/orders/**", "/api/pay/**", "/api/posts/**").permitAll()
                 .requestMatchers("/robots.txt", "/sitemap.xml").permitAll()
                 .requestMatchers("/files/**").permitAll()

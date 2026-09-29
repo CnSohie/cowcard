@@ -214,6 +214,9 @@ export interface TxnView {
 }
 
 export interface WithdrawView {
+  payoutAmount: string | null;
+  payoutCurrency: string | null;
+  payoutFxRate: string | null;
   id: number;
   amount: string;
   feeAmount: string;

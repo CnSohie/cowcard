@@ -29,6 +29,7 @@ public class WalletDtos {
     }
 
     public record WithdrawView(Long id, BigDecimal amount, BigDecimal feeAmount, BigDecimal netAmount,
+                               String payoutAmount, String payoutCurrency, BigDecimal payoutFxRate,
                                String channel, String account, String accountName, String bankName,
                                String status, String reviewNote, LocalDateTime createdAt,
                                LocalDateTime reviewedAt) {
@@ -36,6 +37,7 @@ public class WalletDtos {
             BigDecimal fee = r.getFeeAmount() == null ? BigDecimal.ZERO : r.getFeeAmount();
             BigDecimal net = r.getNetAmount() == null ? r.getAmount().subtract(fee) : r.getNetAmount();
             return new WithdrawView(r.getId(), r.getAmount(), fee, net,
+                    r.getPayoutAmount(), r.getPayoutCurrency(), r.getPayoutFxRate(),
                     r.getChannel(), r.getAccount(), r.getAccountName(), r.getBankName(),
                     r.getStatus().name(), r.getReviewNote(), r.getCreatedAt(), r.getReviewedAt());
         }
@@ -43,7 +45,8 @@ public class WalletDtos {
 
     /** 后台审核列表行(带会员邮箱) */
     public record AdminWithdrawView(Long id, Long memberId, String memberEmail, BigDecimal amount,
-                                    BigDecimal feeAmount, BigDecimal netAmount, String channel, String account, String accountName, String bankName,
+                                    BigDecimal feeAmount, BigDecimal netAmount, String payoutAmount, String payoutCurrency, BigDecimal payoutFxRate,
+                               String channel, String account, String accountName, String bankName,
                                     String status, String reviewedBy,
                                     String reviewNote, LocalDateTime createdAt, LocalDateTime reviewedAt) {}
 

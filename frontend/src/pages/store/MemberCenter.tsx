@@ -1,3 +1,4 @@
+import WithdrawAmounts from "../../components/WithdrawAmounts";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
@@ -44,7 +45,7 @@ const DELIVERY_MODE_LABEL: Record<string, string> = {
 const WD_STATUS: Record<WithdrawView["status"], { label: string; cls: string }> = {
   PENDING: { label: "审核中", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
   APPROVED: { label: "已打款", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  REJECTED: { label: "已驳回", cls: "bg-red-500/10 text-red-500" },
+  REJECTED: { label: "已驳回", cls: "text-ink/50" },
 };
 const PRESALE_STATUS: Record<string, { label: string; cls: string }> = {
   REDEEMED: { label: "待发货", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
@@ -730,50 +731,38 @@ export default function MemberCenter() {
 
         {tab === "withdrawals" && (
           <>
-            <div className="mb-4 grid gap-3 p-1 md:grid-cols-3">
-              <div className="rounded-2xl bg-accent-soft/70 p-4">
-                <p className="text-[11px] font-semibold text-primary/70">可提现余额</p>
-                <p className="mt-1 text-xl font-extrabold text-primary">{money(me?.balance ?? "0.00")}</p>
-              </div>
-              <div className="rounded-2xl bg-ink/[0.04] p-4">
-                <p className="text-[11px] font-semibold text-ink/40">冻结中</p>
-                <p className="mt-1 text-xl font-extrabold">{money(me?.frozen ?? "0.00")}</p>
-              </div>
-              <div className="rounded-2xl bg-ink/[0.04] p-4">
-                <p className="text-[11px] font-semibold text-ink/40">最低提现</p>
-                <p className="mt-1 text-xl font-extrabold">{money(wallet?.minWithdraw ?? "0.00")}</p>
-              </div>
+            <div className="mx-5 mt-5 grid grid-cols-3 gap-3 border-b border-ink/[0.06] pb-5 sm:mx-6">
+              <div><p className="text-[11px] text-ink/45">可提现余额</p><p className="mt-2 break-words text-lg font-bold tabular-nums text-primary">{money(me?.balance ?? "0.00", "CNY")}</p></div>
+              <div><p className="text-[11px] text-ink/45">冻结中</p><p className="mt-2 break-words text-lg font-bold tabular-nums text-ink">{money(me?.frozen ?? "0.00", "CNY")}</p></div>
+              <div><p className="text-[11px] text-ink/45">最低提现</p><p className="mt-2 break-words text-lg font-bold tabular-nums text-ink">{money(wallet?.minWithdraw ?? "0.00", "CNY")}</p></div>
             </div>
-            <table className="w-full min-w-[720px]">
-              <thead><tr><th className="th">金额</th><th className="th">渠道</th><th className="th">收款账号</th><th className="th">状态</th><th className="th">审核说明</th><th className="th">申请时间</th></tr></thead>
-              <tbody>
-                {(withdrawals?.items ?? []).map((w) => {
-                  const st = WD_STATUS[w.status] ?? { label: w.status, cls: "bg-ink/[0.06] text-ink/45" };
-                  const reviewNote = w.reviewNote || (w.status === "REJECTED" ? DEFAULT_REJECT_NOTE : "");
-                  return (
-                    <tr key={w.id} className="hover:bg-ink/[0.02]">
-                      <td className="td"><p className="font-bold">{money(w.netAmount ?? w.amount)}</p>{Number(w.feeAmount ?? 0) > 0 && <p className="mt-0.5 text-[10px] text-ink/40">申请 {money(w.amount)} · 手续费 {money(w.feeAmount)}</p>}</td>
-                      <td className="td text-xs">{withdrawMethods.find((c) => c.code === w.channel)?.label ?? w.channel}</td>
-                      <td className="td max-w-[180px] truncate text-xs text-ink/45">{w.account}</td>
-                      <td className="td"><span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${st.cls}`}>{st.label}</span></td>
-                      <td className="td max-w-[260px] text-xs">
-                        {reviewNote ? (
-                          <div className={`inline-flex max-w-[260px] rounded-2xl px-3 py-1.5 leading-relaxed ${
-                            w.status === "REJECTED" ? "bg-red-500/10 text-red-500" : "bg-ink/[0.04] text-ink/55"
-                          }`}>
-                            <span>{reviewNote}</span>
-                          </div>
-                        ) : (
-                          <span className="text-ink/35">-</span>
-                        )}
-                      </td>
-                      <td className="td text-xs text-ink/45">{fmtTime(w.createdAt)}</td>
-                    </tr>
-                  );
-                })}
-                {withdrawals && withdrawals.items.length === 0 && <tr><td className="td text-center text-ink/40" colSpan={6}>暂无提现记录</td></tr>}
-              </tbody>
-            </table>
+            <div className="divide-y divide-ink/[0.06] px-5 py-3 sm:px-6">
+              {(withdrawals?.items ?? []).map((w) => {
+                const st = WD_STATUS[w.status] ?? { label: w.status, cls: "bg-ink/[0.06] text-ink/45" };
+                const channel = withdrawMethods.find((c) => c.code === w.channel)?.label
+                  ?? ({ ALIPAY: "支付宝", BANK: "银行卡", USDT_BEP20: "USDT · BEP20", USDT_TRC20: "USDT · TRC20" }[w.channel] ?? w.channel);
+                return <article key={w.id} className="py-5 first:pt-2">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs text-ink/40">#{w.id} · {fmtTime(w.createdAt)}</span>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${st.cls}`}>{st.label}</span>
+                  </div>
+                  <div className="grid min-w-0 gap-4 md:grid-cols-2 md:gap-8">
+                    <WithdrawAmounts row={w} />
+                    <div className="min-w-0 text-xs">
+                      <p className="font-medium text-ink/70">{channel}</p>
+                      <p className="mt-2 break-all leading-relaxed text-ink/45">{w.account}</p>
+                      {w.accountName && <p className="mt-1 text-ink/45">{w.accountName}{w.bankName ? ` · ${w.bankName}` : ""}</p>}
+                    </div>
+                  </div>
+                  {(w.reviewNote || w.status === "REJECTED") && <div role="note" className="mt-3 space-y-1 text-xs leading-relaxed text-ink/55">
+                    <p className="font-normal text-ink/55">{w.status === "REJECTED" ? "拒绝原因" : "审核备注"}</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-ink/55">{w.reviewNote?.trim() || DEFAULT_REJECT_NOTE}</p>
+                    {w.status === "REJECTED" && <p className="mt-2 text-ink/40">{money(w.amount, "CNY")} 人民币已全部退回余额，未收取手续费。修改收款信息后可重新申请。</p>}
+                  </div>}
+                </article>;
+              })}
+              {withdrawals && withdrawals.items.length === 0 && <p className="py-12 text-center text-sm text-ink/40">暂无提现记录</p>}
+            </div>
             {withdrawals && <Pager page={page} total={withdrawals.total} size={20} onPage={setPage} />}
           </>
         )}
@@ -821,7 +810,7 @@ export default function MemberCenter() {
               onChange={(e) => changeAmount(e.target.value, MAX_RECHARGE, `单笔充值最高 ${money(MAX_RECHARGE.toFixed(2))}`)}
               onKeyDown={(e) => e.key === "Enter" && doRecharge()} />
           </div>
-          <p id="recharge-limit" className="mt-2 text-[11px] text-ink/40">单笔充值范围：{money("1.00")}～{money(MAX_RECHARGE.toFixed(2))}，最多两位小数。</p>
+          <p id="recharge-limit" className="mt-2 text-[11px] text-ink/40">单笔充值范围：{money("1.00")}～{money(MAX_RECHARGE.toFixed(2))}，可自填部分金额，最多两位小数。未提现的余额仍可使用。</p>
           {modalErr && <p className="mt-3 text-xs text-red-500">{modalErr}</p>}
           <CaptchaBox
             action="wallet_recharge"
@@ -861,30 +850,32 @@ export default function MemberCenter() {
       {modal === "withdraw" && (
         <Modal title="申请提现" onClose={() => setModal("")}>
           <p className="mb-4 rounded-2xl bg-accent-soft/70 px-4 py-3 text-xs leading-relaxed text-ink/55">
-            可提余额 <span className="font-bold text-ink">{money(me?.balance ?? "0.00")}</span>
+            可提余额 <span className="font-bold text-ink">{money(me?.balance ?? "0.00", "CNY")}</span>
             {wallet && Number(wallet.minWithdraw) > 0 && <> · 最低提现 {money(wallet.minWithdraw)}</>}
             ,提交后需管理员审核,审核期间金额冻结。
           </p>
-          <label className="label">提现金额({currencyCode()})</label>
+          <label className="label">提现金额（人民币）</label>
           <div className="relative mb-4">
-            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-ink/35">{currencySymbol()}</span>
+            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-ink/35">{currencySymbol("CNY")}</span>
             <input className="input !rounded-3xl !py-4 !pl-10 !pr-24 text-lg font-bold" placeholder="0.00" inputMode="decimal"
               maxLength={21} value={amount} aria-label="提现金额" aria-describedby="withdraw-limit"
               onChange={(e) => changeAmount(e.target.value, Math.max(0, Number(me?.balance ?? 0)),
-                `提现金额不能超过当前可用余额 ${money(me?.balance ?? "0.00")}`)} />
+                `提现金额不能超过当前可用余额 ${money(me?.balance ?? "0.00", "CNY")}`)} />
             <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-ink/[0.05] px-3 py-1.5 text-[11px] font-bold text-ink/55 hover:bg-ink/[0.08]"
               onClick={() => { setAmount(me?.balance ?? "0.00"); setModalErr(""); }}>
               全部可提
             </button>
           </div>
-          <p id="withdraw-limit" className="-mt-2 mb-4 text-[11px] text-ink/40">最多可提 {money(me?.balance ?? "0.00")}，最多两位小数。</p>
+          <p id="withdraw-limit" className="-mt-2 mb-4 text-[11px] text-ink/40">最多可提 {money(me?.balance ?? "0.00", "CNY")}，可自填部分金额，最多两位小数。未提现的余额仍可使用。</p>
+          {Number.isFinite(requestedWithdraw) && requestedWithdraw > 0 && requestedWithdraw <= Number(me?.balance ?? 0) && <p className="mb-4 text-xs text-ink/55">本次申请 {money(amount, "CNY")} 人民币，申请后剩余可用余额 {money((Number(me?.balance ?? 0) - requestedWithdraw).toFixed(2), "CNY")} 人民币。手续费从本次申请金额中扣除。</p>}
           {selectedWithdrawMethod && requestedWithdraw > 0 && (
             <div className="mb-4 grid grid-cols-3 gap-2 rounded-2xl border border-primary/15 bg-accent-soft/45 p-3 text-center">
-              <div><p className="text-[10px] text-ink/40">余额扣除</p><p className="mt-1 text-sm font-bold">{money(amount)}</p></div>
-              <div><p className="text-[10px] text-ink/40">提现手续费</p><p className="mt-1 text-sm font-bold">-{money(withdrawFee.toFixed(2))}</p></div>
-              <div><p className="text-[10px] text-ink/40">预计到账</p><p className="mt-1 text-sm font-extrabold text-primary">{money(withdrawNet.toFixed(2))}</p></div>
+              <div><p className="text-[10px] text-ink/40">余额扣除</p><p className="mt-1 text-sm font-bold">{money(amount, "CNY")}</p></div>
+              <div><p className="text-[10px] text-ink/40">提现手续费</p><p className="mt-1 text-sm font-bold">-{money(withdrawFee.toFixed(2), "CNY")}</p></div>
+              <div><p className="text-[10px] text-ink/40">扣费后人民币</p><p className="mt-1 text-sm font-extrabold text-primary">{money(withdrawNet.toFixed(2), "CNY")}</p></div>
             </div>
           )}
+          {selectedWithdrawMethod?.code.startsWith("USDT_") && <p className="mb-4 text-xs leading-relaxed text-ink/60">USDT 打款金额 = 扣费后人民币 ÷ 申请时汇率，保留 6 位小数（向下取整）。提交后在提现记录查看固定的 USDT 金额。</p>}
           <label className="label">收款方式</label>
           {withdrawMethods.length === 0 ? (
             <div className="mb-4 rounded-2xl bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
@@ -920,7 +911,7 @@ export default function MemberCenter() {
                   value={wdAccount} onChange={(e) => setWdAccount(e.target.value)} />
               </div>
               <p className="rounded-2xl bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-700 dark:text-amber-300">{method.warning}</p>
-              {(Number(method.feeRate) > 0 || Number(method.feeFixed) > 0) && <p className="text-[11px] text-ink/40">手续费规则：{Number(method.feeRate) > 0 ? `${method.feeRate}%` : ""}{Number(method.feeRate) > 0 && Number(method.feeFixed) > 0 ? " + " : ""}{Number(method.feeFixed) > 0 ? money(method.feeFixed) : ""}</p>}
+              {(Number(method.feeRate) > 0 || Number(method.feeFixed) > 0) && <p className="text-[11px] text-ink/40">手续费规则：{Number(method.feeRate) > 0 ? `${method.feeRate}%` : ""}{Number(method.feeRate) > 0 && Number(method.feeFixed) > 0 ? " + " : ""}{Number(method.feeFixed) > 0 ? money(method.feeFixed, "CNY") : ""}</p>}
             </div>;
           })()}
           {modalErr && <p className="mt-3 text-xs text-red-500">{modalErr}</p>}

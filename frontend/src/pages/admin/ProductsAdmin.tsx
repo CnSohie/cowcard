@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, CalendarClock, CircleDollarSign, KeyRound, ListOrdered, Loader2, Package, Pencil, Plus, ShieldCheck, TicketCheck, Trash2, Wrench, X } from "lucide-react";
 import { ApiError, del, get, post, put } from "../../lib/api";
 import ImageUpload from "../../components/ImageUpload";
+import ProductImage from "../../components/ProductImage";
+import { matchProductBrand } from "../../lib/productBrand";
 import { currencySymbol, money } from "../../lib/currency";
 
 /** 商品管理:列表 + 全页编辑器(与文章编辑器同一设计语言:大标题直接写、右侧设置栏)。 */
@@ -212,7 +214,7 @@ export default function ProductsAdmin() {
       && editing.minBuy <= editing.maxBuy && amountRuleValid
       && presaleTimesValid && (editing.deliveryMode !== "MANUAL" || deliveryFields.length > 0);
     return (
-      <div className="animate-fade-up">
+      <div className="product-editor animate-fade-up">
         {/* 顶栏 */}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <button className="btn-ghost !px-3.5" onClick={() => setEditing(null)}>
@@ -220,7 +222,7 @@ export default function ProductsAdmin() {
           </button>
           <div className="flex items-center gap-2.5">
             <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
-              editing.visible ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-ink/[0.06] text-ink/45"}`}>
+              editing.visible ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-ink/[0.06] text-ink/75"}`}>
               {editing.visible ? "上架中" : "已下架"}
             </span>
             <button className="btn-primary" disabled={saving || !canSave} onClick={() => saveProduct()}>
@@ -230,14 +232,14 @@ export default function ProductsAdmin() {
           </div>
         </div>
         {error && <p className="mb-3 rounded-xl bg-red-500/10 px-4 py-2.5 text-xs text-red-500">{error}</p>}
-        {!canSave && <p className="mb-3 text-[11px] text-ink/35">填写商品名称、分类、售价和有效售卖设置后即可保存</p>}
+        {!canSave && <p className="mb-3 text-[11px] text-ink/75">填写商品名称、分类、售价和有效售卖设置后即可保存</p>}
 
         <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
           {/* 左:名称 + 图文 */}
           <div className="space-y-5">
             <div className="card !p-0">
               <input
-                className="w-full bg-transparent px-6 py-5 text-xl font-extrabold tracking-tight outline-none placeholder:text-ink/25"
+                className="product-editor-field w-full bg-transparent px-6 py-5 text-xl font-extrabold tracking-tight outline-none placeholder:text-ink/75"
                 placeholder="商品名称,例:Netflix 高级会员 · 一年"
                 autoFocus={!editing.id}
                 value={editing.name}
@@ -245,7 +247,7 @@ export default function ProductsAdmin() {
               />
               <div className="border-t border-ink/[0.06]">
                 <input
-                  className="w-full bg-transparent px-6 py-3.5 text-sm outline-none placeholder:text-ink/25"
+                  className="product-editor-field w-full bg-transparent px-6 py-3.5 text-sm outline-none placeholder:text-ink/75"
                   placeholder="一句话简介(列表页展示):秒发 · 质保 30 天"
                   value={editing.brief}
                   onChange={(e) => setEditing({ ...editing, brief: e.target.value })}
@@ -256,7 +258,7 @@ export default function ProductsAdmin() {
             <div className="card !p-0">
               <p className="section-label !mb-0 px-6 pt-5"><span className="h-1 w-4 rounded-full bg-accent" /> 商品详情 · 详情页展示</p>
               <textarea
-                className="w-full resize-none bg-transparent px-6 pb-5 pt-3 text-sm leading-relaxed outline-none placeholder:text-ink/25"
+                className="product-editor-field w-full resize-none bg-transparent px-6 pb-5 pt-3 text-sm leading-relaxed outline-none placeholder:text-ink/75"
                 rows={9}
                 placeholder={"套餐说明、有效期、适用范围…\n支持换行分段。"}
                 value={editing.description}
@@ -265,7 +267,7 @@ export default function ProductsAdmin() {
               <div className="border-t border-ink/[0.06]">
                 <p className="section-label !mb-0 px-6 pt-5"><span className="h-1 w-4 rounded-full bg-accent" /> 使用说明 · 发货后随卡密一并展示</p>
                 <textarea
-                  className="w-full resize-none bg-transparent px-6 pb-5 pt-3 text-sm leading-relaxed outline-none placeholder:text-ink/25"
+                  className="product-editor-field w-full resize-none bg-transparent px-6 pb-5 pt-3 text-sm leading-relaxed outline-none placeholder:text-ink/75"
                   rows={5}
                   placeholder={"兑换入口、使用步骤、注意事项…"}
                   value={editing.usageNote}
@@ -280,7 +282,7 @@ export default function ProductsAdmin() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="flex items-center gap-2 text-base font-extrabold"><Wrench size={18} className="text-primary" /> 人工交付信息表</p>
-                      <p className="mt-1 text-xs leading-relaxed text-ink/45">买家必须按字段填写，后端逐项校验后才允许创建订单。</p>
+                      <p className="mt-1 text-xs leading-relaxed text-ink/75">买家必须按字段填写，后端逐项校验后才允许创建订单。</p>
                     </div>
                     <span className="rounded-full bg-sky-500/10 px-3 py-1 text-[11px] font-semibold text-sky-600 dark:text-sky-400">{deliveryFields.length} 个字段</span>
                   </div>
@@ -291,7 +293,7 @@ export default function ProductsAdmin() {
                     <textarea className="input min-h-[88px] resize-none text-sm leading-relaxed"
                       placeholder="例：付款后 24 小时内处理；请确保账号可正常登录，处理期间不要修改密码。"
                       value={editing.manualPrompt} onChange={(e) => setEditing({ ...editing, manualPrompt: e.target.value })} />
-                    <p className="mt-2 text-[11px] text-ink/40">这里只写处理时效和注意事项，不再让买家把所有资料挤进一段文本。</p>
+                    <p className="mt-2 text-[11px] text-ink/75">这里只写处理时效和注意事项，不再让买家把所有资料挤进一段文本。</p>
                   </div>
 
                   <div className="space-y-3">
@@ -351,7 +353,7 @@ export default function ProductsAdmin() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="flex items-center gap-2 text-base font-extrabold"><TicketCheck size={18} className="text-primary" /> 预售履约计划</p>
-                      <p className="mt-1 text-xs leading-relaxed text-ink/45">这里配置的是从售卖、核销、排队到逾期赔付的完整规则。</p>
+                      <p className="mt-1 text-xs leading-relaxed text-ink/75">这里配置的是从售卖、核销、排队到逾期赔付的完整规则。</p>
                     </div>
                     <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${presaleTimesValid ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}`}>
                       {presaleTimesValid ? "时间计划有效" : "等待完善时间"}
@@ -369,10 +371,10 @@ export default function ProductsAdmin() {
                     <div key={String(no)} className="bg-surface px-5 py-4">
                       <div className="mb-2 flex items-center justify-between">
                         <Icon size={16} className="text-primary" />
-                        <span className="text-[10px] font-bold tracking-widest text-ink/25">{String(no)}</span>
+                        <span className="text-[10px] font-bold tracking-widest text-ink/75">{String(no)}</span>
                       </div>
                       <p className="text-sm font-bold">{String(title)}</p>
-                      <p className="mt-1 text-[11px] leading-relaxed text-ink/45">{String(text)}</p>
+                      <p className="mt-1 text-[11px] leading-relaxed text-ink/75">{String(text)}</p>
                     </div>
                   ))}
                 </div>
@@ -388,19 +390,19 @@ export default function ProductsAdmin() {
                         <label className="label">停止销售时间 <span className="text-red-500">*</span></label>
                         <input className="input !py-2.5" type="datetime-local" value={editing.presaleSaleEndAt}
                           onChange={(e) => setEditing({ ...editing, presaleSaleEndAt: e.target.value })} />
-                        <p className="mt-2 text-[11px] leading-relaxed text-ink/40">到点后前台停止接受新订单，已付款订单继续履约。</p>
+                        <p className="mt-2 text-[11px] leading-relaxed text-ink/75">到点后前台停止接受新订单，已付款订单继续履约。</p>
                       </div>
                       <div className="rounded-2xl border border-ink/[0.08] p-4">
-                        <label className="label">预计开始交付 <span className="font-normal text-ink/30">选填</span></label>
+                        <label className="label">预计开始交付 <span className="font-normal text-ink/75">选填</span></label>
                         <input className="input !py-2.5" type="datetime-local" value={editing.presaleStartAt}
                           onChange={(e) => setEditing({ ...editing, presaleStartAt: e.target.value })} />
-                        <p className="mt-2 text-[11px] leading-relaxed text-ink/40">买家仍可提前核销；该时间前先排队，不承诺立即发卡。</p>
+                        <p className="mt-2 text-[11px] leading-relaxed text-ink/75">买家仍可提前核销；该时间前先排队，不承诺立即发卡。</p>
                       </div>
                       <div className="rounded-2xl border border-ink/[0.08] p-4">
                         <label className="label">最晚交付保障 <span className="text-red-500">*</span></label>
                         <input className="input !py-2.5" type="datetime-local" value={editing.presaleEndAt}
                           onChange={(e) => setEditing({ ...editing, presaleEndAt: e.target.value })} />
-                        <p className="mt-2 text-[11px] leading-relaxed text-ink/40">到点仍未拿到卡密的凭证进入赔付或人工处理。</p>
+                        <p className="mt-2 text-[11px] leading-relaxed text-ink/75">到点仍未拿到卡密的凭证进入赔付或人工处理。</p>
                       </div>
                     </div>
                     {!presaleTimesValid && (
@@ -413,7 +415,7 @@ export default function ProductsAdmin() {
                   <section className="grid gap-4 lg:grid-cols-[1fr_1.15fr]">
                     <div className="rounded-2xl bg-ink/[0.025] p-4">
                       <p className="flex items-center gap-2 text-sm font-bold"><Package size={15} className="text-primary" /> 库存与排队</p>
-                      <div className="mt-3 space-y-2 text-xs leading-relaxed text-ink/50">
+                      <div className="mt-3 space-y-2 text-xs leading-relaxed text-ink/75">
                         <p>• 预售下单不预占现货库存，付款后只签发提货凭证。</p>
                         <p>• 买家核销后绑定会员；有货立即发卡，无货进入队列。</p>
                         <p>• 在“卡密管理”补货后，系统每分钟按核销顺序尝试交付。</p>
@@ -431,16 +433,16 @@ export default function ProductsAdmin() {
                             className={`rounded-2xl border p-3.5 text-left transition ${editing.presaleSettlementMode === value ? "border-primary bg-accent-soft/60" : "border-ink/[0.08] hover:border-ink/20"}`}>
                             <span className="flex items-center justify-between gap-3">
                               <span className="text-sm font-bold">{title}</span>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${value === "SINK" ? "bg-red-500/10 text-red-500" : "bg-ink/[0.06] text-ink/45"}`}>{badge}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${value === "SINK" ? "bg-red-500/10 text-red-500" : "bg-ink/[0.06] text-ink/75"}`}>{badge}</span>
                             </span>
-                            <span className="mt-1 block text-[11px] leading-relaxed text-ink/45">{text}</span>
+                            <span className="mt-1 block text-[11px] leading-relaxed text-ink/75">{text}</span>
                           </button>
                         ))}
                       </div>
                     </div>
                   </section>
 
-                  <div className="rounded-2xl border border-primary/15 bg-accent-soft/45 px-4 py-3.5 text-xs leading-relaxed text-ink/60">
+                  <div className="rounded-2xl border border-primary/15 bg-accent-soft/45 px-4 py-3.5 text-xs leading-relaxed text-ink/75">
                     <span className="font-bold text-ink">当前规则：</span>
                     销售至 {planTime(editing.presaleSaleEndAt)}；{editing.presaleStartAt ? `预计 ${planTime(editing.presaleStartAt)} 开始交付` : "未承诺具体开始交付时间"}；最晚 {planTime(editing.presaleEndAt)} 完成交付或进入保障处理。
                   </div>
@@ -454,12 +456,12 @@ export default function ProductsAdmin() {
             <div className="card p-5">
               <p className="section-label"><span className="h-1 w-4 rounded-full bg-accent" /> 定价</p>
               <div className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-lg font-bold text-ink/35">{currencySymbol()}</span>
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-lg font-bold text-ink/75">{currencySymbol()}</span>
                 <input className="input !pl-10 !text-xl !font-extrabold" placeholder="9.90" inputMode="decimal"
                   value={editing.price} onChange={(e) => setEditing({ ...editing, price: e.target.value })} />
               </div>
               {editing.id != null && (
-                <p className="mt-2 text-[11px] text-ink/40">
+                <p className="mt-2 text-[11px] text-ink/75">
                   {editing.deliveryMode === "AUTO_CARD"
                     ? `当前库存 ${editing.stockCached ?? 0} 张(在「卡密管理」补充)`
                     : editing.deliveryMode === "PRESALE_VOUCHER"
@@ -471,7 +473,13 @@ export default function ProductsAdmin() {
 
             <div className="card p-5">
               <p className="section-label"><span className="h-1 w-4 rounded-full bg-accent" /> 商品封面</p>
-              <ImageUpload value={editing.coverImage} onChange={(url) => setEditing({ ...editing, coverImage: url })} />
+              <ImageUpload aspect="square" value={editing.coverImage} onChange={(url) => setEditing({ ...editing, coverImage: url })} />
+              {!editing.coverImage && <div className="mt-3 flex items-center gap-3 rounded-xl bg-accent-soft p-3">
+                <ProductImage name={editing.name} className="h-12 w-12 rounded-xl" />
+                <p className="text-xs text-ink/75">{matchProductBrand(editing.name)
+                  ? `已根据商品名匹配 ${matchProductBrand(editing.name)!.title} 图标，上传封面可替换。`
+                  : "未上传封面时，自动按商品名匹配品牌图标；未匹配则显示通用图标。"}</p>
+              </div>}
             </div>
 
             <div className="card p-5">
@@ -489,30 +497,30 @@ export default function ProductsAdmin() {
                   className={`rounded-2xl border px-3 py-3 text-left transition ${
                     editing.deliveryMode === "AUTO_CARD"
                       ? "border-primary bg-accent-soft text-ink"
-                      : "border-ink/[0.08] bg-surface text-ink/55 hover:border-ink/20"
+                      : "border-ink/[0.08] bg-surface text-ink/75 hover:border-ink/20"
                   }`}>
                   <span className="flex items-center gap-1.5 text-sm font-bold"><KeyRound size={14} /> 自动卡密</span>
-                  <span className="mt-1 block text-[11px] leading-relaxed text-ink/40">使用现货卡密，付款确认后立即自动发放</span>
+                  <span className="mt-1 block text-[11px] leading-relaxed text-ink/75">使用现货卡密，付款确认后立即自动发放</span>
                 </button>
                 <button type="button"
                   onClick={() => setEditing({ ...editing, deliveryMode: "MANUAL" })}
                   className={`rounded-2xl border px-3 py-3 text-left transition ${
                     editing.deliveryMode === "MANUAL"
                       ? "border-primary bg-accent-soft text-ink"
-                      : "border-ink/[0.08] bg-surface text-ink/55 hover:border-ink/20"
+                      : "border-ink/[0.08] bg-surface text-ink/75 hover:border-ink/20"
                   }`}>
                   <span className="flex items-center gap-1.5 text-sm font-bold"><Wrench size={14} /> 人工发货</span>
-                  <span className="mt-1 block text-[11px] leading-relaxed text-ink/40">收集买家信息，付款后进入后台待处理</span>
+                  <span className="mt-1 block text-[11px] leading-relaxed text-ink/75">收集买家信息，付款后进入后台待处理</span>
                 </button>
                 <button type="button"
                   onClick={() => setEditing({ ...editing, deliveryMode: "PRESALE_VOUCHER" })}
                   className={`rounded-2xl border px-3 py-3 text-left transition ${
                     editing.deliveryMode === "PRESALE_VOUCHER"
                       ? "border-primary bg-accent-soft text-ink"
-                      : "border-ink/[0.08] bg-surface text-ink/55 hover:border-ink/20"
+                      : "border-ink/[0.08] bg-surface text-ink/75 hover:border-ink/20"
                   }`}>
                   <span className="flex items-center gap-1.5 text-sm font-bold"><TicketCheck size={14} /> 预售提货码</span>
-                  <span className="mt-1 block text-[11px] leading-relaxed text-ink/40">先售提货凭证，核销后按队列履约</span>
+                  <span className="mt-1 block text-[11px] leading-relaxed text-ink/75">先售提货凭证，核销后按队列履约</span>
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -537,11 +545,11 @@ export default function ProductsAdmin() {
                     onChange={(e) => setEditing({ ...editing, sortOrder: Number(e.target.value) })} />
                 </div>
               </div>
-              <p className="mt-2 text-[11px] leading-relaxed text-ink/40">按商品标价 × 数量判断，会员折扣和优惠券不会让已满足的起购资格失效；填 0 表示只限制起购数量。</p>
+              <p className="mt-2 text-[11px] leading-relaxed text-ink/75">按商品标价 × 数量判断，会员折扣和优惠券不会让已满足的起购资格失效；填 0 表示只限制起购数量。</p>
               <div className="mt-4 flex items-center justify-between rounded-2xl border border-ink/[0.07] bg-ink/[0.02] px-4 py-3">
                 <div>
                   <p className="text-sm font-medium">上架展示</p>
-                  <p className="text-[11px] text-ink/40">关闭后买家不可见,已付订单不受影响</p>
+                  <p className="text-[11px] text-ink/75">关闭后买家不可见,已付订单不受影响</p>
                 </div>
                 <Switch on={editing.visible} onChange={(v) => setEditing({ ...editing, visible: v })} />
               </div>
@@ -625,9 +633,7 @@ export default function ProductsAdmin() {
                 onClick={() => { setError(""); setEditing(norm(p)); }}>
                 <td className="td">
                   <div className="flex items-center gap-3">
-                    {p.coverImage
-                      ? <img src={p.coverImage} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover" />
-                      : <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent-soft"><Package size={15} className="text-primary" /></span>}
+                    <ProductImage name={p.name} coverImage={p.coverImage} className="h-10 w-10 shrink-0 rounded-xl" />
                     <div className="min-w-0">
                       <p className="truncate font-medium text-ink">{p.name}</p>
                       {p.brief && <p className="max-w-[220px] truncate text-xs text-ink/40">{p.brief}</p>}

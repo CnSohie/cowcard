@@ -148,7 +148,7 @@ public class AdminOrderController {
         return ApiResponse.ok(ok);
     }
 
-    /** 手动关闭待支付订单(释放库存;仅 PENDING 可关,CAS 防竞态)。同为敏感操作,双因子复核。 */
+    /** 手动关单(PENDING 释放占用;EXPIRED 仅改状态,CAS 防竞态)。同为敏感操作,双因子复核。 */
     @PostMapping("/{orderNo}/close")
     @PreAuthorize("hasAuthority('order:write')")
     public ApiResponse<Boolean> close(@PathVariable String orderNo,

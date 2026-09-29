@@ -4,6 +4,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.hqyj.ka.config.AppProperties;
 import com.hqyj.ka.sysconfig.service.ConfigService;
+import com.hqyj.ka.telegram.TelegramProperties;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -42,6 +43,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private final AppProperties props;
     private final ConfigService configService;
+    private final TelegramProperties telegram;
 
     /** 令牌桶:key = 档位:IP */
     private final Cache<String, TokenBucket> buckets = Caffeine.newBuilder()
@@ -56,9 +58,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final Cache<String, AtomicInteger> banCount = Caffeine.newBuilder()
             .expireAfterWrite(Duration.ofHours(24)).maximumSize(200_000).build();
 
-    public RateLimitFilter(AppProperties props, ConfigService configService) {
+    public RateLimitFilter(AppProperties props, ConfigService configService, TelegramProperties telegram) {
         this.props = props;
         this.configService = configService;
+        this.telegram = telegram;
     }
 
     @Override
@@ -66,6 +69,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String ip = resolveClientIp(req);
         req.setAttribute(CLIENT_IP_ATTR, ip);
+
+        // Verified Telegram traffic shares infrastructure IPs across buyers. Actor quotas live in the Bot adapter.
+        if ("POST".equals(req.getMethod()) && "/api/telegram/webhook".equals(req.getRequestURI())
+                && telegram.accepts(req.getHeader("X-Telegram-Bot-Api-Secret-Token"))) {
+            chain.doFilter(req, resp);
+            return;
+        }
 
         AppProperties.RateLimit cfg = props.getSecurity().getRateLimit();
         Map<String, String> db = dbConfig();

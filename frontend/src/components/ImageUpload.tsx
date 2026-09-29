@@ -1,6 +1,7 @@
 import { useRef, useState, type DragEvent } from "react";
 import { ImagePlus, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { ApiError, uploadImage } from "../lib/api";
+import { cropImage } from "../lib/cropImage";
 
 /**
  * 图片上传(拖拽 / 点选):上传至 /api/admin/files,返回 /files/** URL。
@@ -31,9 +32,9 @@ export default function ImageUpload({
     setError("");
     setBusy(true);
     try {
-      onChange(await uploadImage(file));
+      onChange(await uploadImage(await cropImage(file, aspect)));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "上传失败,请重试");
+      setError(e instanceof ApiError || e instanceof Error ? e.message : "上传失败,请重试");
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -57,18 +58,18 @@ export default function ImageUpload({
         <div className={`group relative overflow-hidden rounded-2xl border border-ink/10 ${ratio}`}>
           <img src={value} alt="" className="h-full w-full object-cover" />
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-ink/50 opacity-0 backdrop-blur-[2px] transition group-hover:opacity-100">
-            <button type="button" onClick={() => inputRef.current?.click()}
+            <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}
               className="inline-flex items-center gap-1.5 rounded-full bg-surface px-4 py-2 text-xs font-semibold text-ink shadow-lg">
               {busy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} 更换
             </button>
-            <button type="button" onClick={() => onChange("")}
+            <button type="button" disabled={busy} onClick={() => onChange("")}
               className="inline-flex items-center gap-1.5 rounded-full bg-surface px-4 py-2 text-xs font-semibold text-red-500 shadow-lg">
               <Trash2 size={13} /> 移除
             </button>
           </div>
         </div>
       ) : (
-        <button type="button" onClick={() => inputRef.current?.click()}
+        <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
           onDragLeave={() => setDrag(false)}
           onDrop={onDrop}
@@ -84,7 +85,8 @@ export default function ImageUpload({
           </span>
         </button>
       )}
-      {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+      <p className="mt-2 text-xs text-ink/45">上传时自动居中裁剪为 {aspect === "square" ? "1:1 正方形" : "16:9 横图"}，超出画框的边缘会被裁去。</p>
+      {error && <p role="alert" className="mt-2 text-xs text-red-500">{error}</p>}
     </div>
   );
 }

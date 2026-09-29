@@ -3,6 +3,8 @@ package com.hqyj.ka.wallet.repo;
 import com.hqyj.ka.wallet.entity.WalletAccount;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -18,6 +20,10 @@ import java.util.Optional;
 public interface WalletAccountRepository extends JpaRepository<WalletAccount, Long> {
 
     Optional<WalletAccount> findByMemberId(Long memberId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select w from WalletAccount w where w.memberId = :mid")
+    Optional<WalletAccount> lockByMemberId(@Param("mid") Long memberId);
 
     List<WalletAccount> findByMemberIdIn(Collection<Long> memberIds);
 

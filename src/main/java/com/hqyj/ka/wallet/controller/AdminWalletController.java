@@ -57,7 +57,8 @@ public class AdminWalletController {
         PageResult<AdminWithdrawView> data = PageResult.of(result, r -> new AdminWithdrawView(
                 r.getId(), r.getMemberId(), emails.getOrDefault(r.getMemberId(), "?"),
                 r.getAmount(), r.getFeeAmount() == null ? java.math.BigDecimal.ZERO : r.getFeeAmount(),
-                r.getNetAmount() == null ? r.getAmount() : r.getNetAmount(),
+                r.getNetAmount() == null ? r.getAmount().subtract(r.getFeeAmount() == null ? java.math.BigDecimal.ZERO : r.getFeeAmount()) : r.getNetAmount(),
+                r.getPayoutAmount(), r.getPayoutCurrency(), r.getPayoutFxRate(),
                 r.getChannel(), r.getAccount(), r.getAccountName(), r.getBankName(), r.getStatus().name(),
                 r.getReviewedBy(), r.getReviewNote(), r.getCreatedAt(), r.getReviewedAt()));
         return ApiResponse.ok(Map.of(
@@ -75,7 +76,8 @@ public class AdminWalletController {
         String reviewer = String.valueOf(http.getAttribute("uname"));
         WithdrawRequest r = walletService.reviewWithdraw(id, true, reviewer, req.note());
         auditService.record(reviewer, "WITHDRAW_APPROVE", "withdraw:" + id,
-                RateLimitFilter.clientIp(http), "金额 " + r.getAmount() + " → " + r.getChannel() + "/" + r.getAccount());
+                RateLimitFilter.clientIp(http), "申请人民币 " + r.getAmount() + "，手续费人民币 " + r.getFeeAmount()
+                        + "，实际打款 " + r.getPayoutAmount() + " " + r.getPayoutCurrency() + " → " + r.getChannel() + "/" + r.getAccount());
         return ApiResponse.ok();
     }
 
@@ -89,7 +91,7 @@ public class AdminWalletController {
         String reviewer = String.valueOf(http.getAttribute("uname"));
         WithdrawRequest r = walletService.reviewWithdraw(id, false, reviewer, req.note());
         auditService.record(reviewer, "WITHDRAW_REJECT", "withdraw:" + id,
-                RateLimitFilter.clientIp(http), "金额 " + r.getAmount() + " 已解冻退回");
+                RateLimitFilter.clientIp(http), "金额 " + r.getAmount() + " 已解冻退回，原因：" + r.getReviewNote());
         return ApiResponse.ok();
     }
 }

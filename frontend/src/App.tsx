@@ -5,6 +5,7 @@ const Home = lazy(() => import("./pages/store/Home"));
 const ProductPage = lazy(() => import("./pages/store/ProductPage"));
 const PayPage = lazy(() => import("./pages/store/PayPage"));
 const OrderQueryPage = lazy(() => import("./pages/store/OrderQueryPage"));
+const TelegramOrderPage = lazy(() => import("./pages/store/TelegramOrderPage"));
 const PostsPage = lazy(() => import("./pages/store/PostsPage"));
 const PostDetail = lazy(() => import("./pages/store/PostDetail"));
 const MemberAuth = lazy(() => import("./pages/store/MemberAuth"));
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/product/:id" element={<ProductPage />} />
         <Route path="/pay/:orderNo" element={<PayPage />} />
         <Route path="/order" element={<OrderQueryPage />} />
+        <Route path="/tg/order" element={<TelegramOrderPage />} />
         <Route path="/redeem" element={<RedeemPage />} />
         <Route path="/posts" element={<PostsPage />} />
         <Route path="/posts/:slug" element={<PostDetail />} />
