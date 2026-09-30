@@ -31,9 +31,14 @@ public class BalancePaymentStrategy implements PaymentStrategy {
 
     @Override
     public PayCreationResult create(Order order, Map<String, String> config, PayContext ctx) {
-        if (ctx.memberId() == null || order.getMemberId() == null
-                || !order.getMemberId().equals(ctx.memberId())) {
+        if (ctx.memberId() == null) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "请登录下单会员后使用余额支付");
+        }
+        if (order.getMemberId() == null) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_INVALID, "游客订单不能使用余额支付，请登录后重新下单");
+        }
+        if (!order.getMemberId().equals(ctx.memberId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "请使用下单会员账号支付该订单");
         }
         if (order.getOrderType() != Order.OrderType.GOODS) {
             throw new BusinessException(ErrorCode.ORDER_STATE_INVALID, "充值订单不能使用余额支付");

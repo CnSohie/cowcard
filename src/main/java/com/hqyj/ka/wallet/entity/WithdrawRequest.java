@@ -55,6 +55,10 @@ public class WithdrawRequest {
     @Column(precision = 20, scale = 8)
     private BigDecimal payoutFxRate;
 
+    /** 旧申请来自旧余额,驳回退回购物钱包;新申请只能来自可提现钱包。 */
+    @Column(nullable = false)
+    private boolean withdrawableSource = true;
+
     /** 管理员允许的固定渠道编码。 */
     @Column(nullable = false, length = 32)
     private String channel;

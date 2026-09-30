@@ -268,7 +268,7 @@ export default function PayPage() {
         w?.document.write(String(r.data.html));
       }
     } catch (e) {
-      if (e instanceof ApiError && (e.code === 401 || e.code === 1003)) {
+      if (e instanceof ApiError && (e.code === 401 || e.code === 1003) && !isMemberLoggedIn()) {
         setMemberLoggedIn(false);
         if (channel === "BALANCE") {
           const next = channels.find((c) => c.code !== "BALANCE");

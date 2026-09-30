@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useLayoutEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { Languages, Moon, Newspaper, Search, ShoppingBag, Sun, TicketCheck, UserRound, Zap } from "lucide-react";
+import { Languages, Moon, Newspaper, Search, ShoppingBag, Sun, TicketCheck, UserRound, ArrowUpRight, ArrowUp } from "lucide-react";
 import { loadSite } from "../lib/site";
 import { isMemberLoggedIn, memberInfo } from "../lib/memberApi";
 import { applySiteTheme, isDark, toggleMode } from "../lib/theme";
@@ -47,19 +47,11 @@ export default function StoreLayout() {
 
   return (
     <div className="storefront min-h-screen">
-      <div className="cow-theme-decor" aria-hidden="true">
-        <span className="cow-cloud cow-cloud-a" /><span className="cow-cloud cow-cloud-b" />
-        <span className="cow-hill cow-hill-a" /><span className="cow-hill cow-hill-b" />
-        <span className="cow-mini cow-mini-cow"><i /><b /></span>
-        <span className="cow-mini cow-mini-bird"><i /><b /></span>
-        <span className="cow-mini cow-mini-sheep"><i /><b /></span>
-        <span className="cow-mini cow-mini-butterfly"><i /><b /></span>
-      </div>
-      <header className="sticky top-0 z-40 border-b border-ink/[0.06] bg-base/95">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-5">
+      <header className="sticky top-0 z-40 border-b border-ink/[0.06] bg-surface/95">
+        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-5">
           <Link to="/" className="flex items-center gap-2.5">
             <span className="brand-mark grid h-9 w-9 place-items-center rounded-full bg-primary">
-              <Zap size={16} strokeWidth={2.5} className="brand-mark-icon text-accent dark:text-primary-contrast" />
+              <span className="text-sm font-bold text-primary-contrast">{site.siteName.slice(0, 1).toUpperCase()}</span>
             </span>
             <span className="hidden text-lg font-extrabold tracking-tight min-[400px]:block">{site.siteName}</span>
           </Link>
@@ -69,11 +61,11 @@ export default function StoreLayout() {
                 key={n.to}
                 to={n.to}
                 aria-current={active(n.to) ? "page" : undefined}
-                className={`rounded-full px-3 py-2 text-sm font-medium transition sm:px-4 ${
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition sm:px-4 ${
                   active(n.to) ? "bg-ink/[0.06] text-ink" : "text-ink/60 hover:text-ink"
                 }`}
               >
-                {n.label}
+                <n.icon size={16} strokeWidth={1.7} />{n.label}
               </Link>
             ))}
             <LanguageButton lang={lang} label={copy.nav.language} onToggle={() => setLang(lang === "zh" ? "en" : "zh")} />
@@ -123,16 +115,36 @@ export default function StoreLayout() {
           </div>
         )}
       </header>
-      <main className="mx-auto max-w-6xl px-4 pb-32 pt-8 sm:px-5 sm:pt-10 md:pb-24">
+      <main className="mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 sm:pt-8 md:pb-20">
         <Suspense fallback={<div className="card min-h-64 animate-pulse p-8" role="status">{copy.common.loading}</div>}><Outlet /></Suspense>
       </main>
-      <footer className="border-t border-ink/[0.06] py-10 text-center text-xs text-ink/40">
-        <p>{site.siteName} · {copy.footer.promise}</p>
-        <p className="mt-2 flex items-center justify-center gap-3">
-          <Link to="/about" className="font-medium text-ink/55 underline decoration-ink/20 underline-offset-4 hover:text-ink">{copy.footer.about}</Link>
-          <Link to="/tos" className="font-medium text-ink/55 underline decoration-ink/20 underline-offset-4 hover:text-ink">{copy.footer.tos}</Link>
-        </p>
-        {site.contact && <p className="mt-2 text-ink/50">{copy.footer.support}<span className="font-medium text-ink/70">{site.contact}</span></p>}
+      <footer className="store-footer border-t border-ink/10 bg-surface">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="grid gap-10 py-12 sm:grid-cols-[2fr_1fr_1fr] sm:py-16">
+            <div>
+              <Link to="/" className="text-2xl font-bold tracking-tight">{site.siteName}</Link>
+              <p className="mt-4 max-w-sm text-sm leading-7 text-ink/55">{lang === "zh" ? "选购数字商品，查看订单与交付记录。" : "Digital goods, order tracking and delivery records."}</p>
+              <Link to="/order" className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-primary">{copy.nav.order}<ArrowUpRight size={15} /></Link>
+            </div>
+            <div>
+              <h2 className="mb-4 text-sm font-semibold">{lang === "zh" ? "逛逛商店" : "Explore"}</h2>
+              <div className="flex flex-col items-start gap-3 text-sm text-ink/60">
+                <Link to="/">{copy.nav.store}</Link><Link to="/posts">{copy.nav.posts}</Link><Link to="/redeem">{copy.nav.redeem}</Link>
+              </div>
+            </div>
+            <div>
+              <h2 className="mb-4 text-sm font-semibold">{lang === "zh" ? "服务与帮助" : "Information"}</h2>
+              <div className="flex flex-col items-start gap-3 text-sm text-ink/60">
+                <Link to="/about">{copy.footer.about}</Link><Link to="/tos">{copy.footer.tos}</Link>
+                {site.contact && <p className="max-w-full break-words leading-6">{copy.footer.support}{site.contact}</p>}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-4 border-t border-ink/10 py-6 text-xs text-ink/45">
+            <p>© {new Date().getFullYear()} {site.siteName}</p>
+            <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" })} className="inline-flex items-center gap-2 rounded-full border border-ink/10 px-3 py-2 hover:text-ink">{lang === "zh" ? "返回顶部" : "Back to top"}<ArrowUp size={14} /></button>
+          </div>
+        </div>
       </footer>
       <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-ink/[0.08] bg-surface/95 px-2 pb-[max(0.45rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-10px_30px_rgb(var(--c-ink)/0.06)] backdrop-blur-xl md:hidden">
         {BASE_NAV.map((n) => (

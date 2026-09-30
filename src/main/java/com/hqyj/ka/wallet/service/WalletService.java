@@ -10,6 +10,9 @@ import com.hqyj.ka.wallet.repo.WalletAccountRepository;
 import com.hqyj.ka.wallet.repo.WalletTxnRepository;
 import com.hqyj.ka.wallet.repo.WithdrawRequestRepository;
 import lombok.RequiredArgsConstructor;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.LockModeType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +35,8 @@ public class WalletService {
     private final ConfigService configService;
     private final WithdrawMethodService withdrawMethodService;
     private final WithdrawPayoutService withdrawPayoutService;
+    @PersistenceContext
+    private EntityManager entityManager;
 
     /**
      * 确保钱包存在。正常路径:注册事务内已建(无并发);此处兜底存量会员。
@@ -54,23 +59,42 @@ public class WalletService {
         if (amount.scale() > 2) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "入账金额精度无效");
         }
-        ensureAccount(memberId);
-        accountRepository.credit(memberId, amount);
-        writeTxn(memberId, type, amount, refType, refId, remark);
+        WalletAccount account = lockedAccount(memberId);
+        BigDecimal withdrawable = BigDecimal.ZERO;
+        if (type == WalletTxn.Type.COMMISSION) withdrawable = amount;
+        if (type == WalletTxn.Type.ADMIN_REFUND || type == WalletTxn.Type.WALLET_ORDER_REFUND) {
+            // 只恢复同一会员、同一订单中尚未退还的可提现资金;外部支付退款进入购物钱包。
+            BigDecimal outstanding = BigDecimal.ZERO;
+            if (refId != null && refType != null) {
+                for (WalletTxn t : txnRepository.findByMemberIdAndRefTypeAndRefIdOrderByIdAsc(memberId, refType, refId)) {
+                    if (t.getWithdrawableAmount() != null && (t.getType() == WalletTxn.Type.PURCHASE
+                            || t.getType() == WalletTxn.Type.ADMIN_REFUND || t.getType() == WalletTxn.Type.WALLET_ORDER_REFUND)) {
+                        outstanding = outstanding.subtract(t.getWithdrawableAmount());
+                    }
+                }
+            }
+            withdrawable = outstanding.max(BigDecimal.ZERO).min(amount);
+        }
+        account.setBalance(account.getBalance().add(amount));
+        account.setWithdrawableBalance(account.getWithdrawableBalance().add(withdrawable));
+        persistTxn(account, type, amount.subtract(withdrawable), withdrawable, refType, refId, remark);
     }
 
-    /** 出账(消费):余额不足抛 BALANCE_NOT_ENOUGH(原子守卫,防双花)。 */
+    /** 购物优先使用购物钱包;撤销充值只能扣回购物钱包。 */
     @Transactional
     public void debit(Long memberId, BigDecimal amount, WalletTxn.Type type,
                       String refType, Long refId, String remark) {
-        if (memberId == null || amount == null || amount.scale() > 2 || amount.signum() <= 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "出账金额无效");
-        }
-        ensureAccount(memberId);
-        if (accountRepository.debit(memberId, amount) == 0) {
+        validateAmount(memberId, amount);
+        WalletAccount account = lockedAccount(memberId);
+        BigDecimal shopping = account.getShoppingBalance().min(amount);
+        BigDecimal withdrawable = amount.subtract(shopping);
+        if (account.getBalance().compareTo(amount) < 0
+                || (type == WalletTxn.Type.RECHARGE_REVERSAL && withdrawable.signum() > 0)) {
             throw new BusinessException(ErrorCode.BALANCE_NOT_ENOUGH);
         }
-        writeTxn(memberId, type, amount.negate(), refType, refId, remark);
+        account.setBalance(account.getBalance().subtract(amount));
+        account.setWithdrawableBalance(account.getWithdrawableBalance().subtract(withdrawable));
+        persistTxn(account, type, shopping.negate(), withdrawable.negate(), refType, refId, remark);
     }
 
     @Transactional(readOnly = true)
@@ -79,35 +103,37 @@ public class WalletService {
         return accountRepository.findByMemberId(memberId).map(WalletAccount::getBalance).orElse(BigDecimal.ZERO);
     }
 
-    /** 管理员风控冻结:只做可用->冻结的原子搬移,不凭空增减总资产。 */
+    /** 风控冻结独立于提现占用;按购物钱包优先冻结,分别记账。 */
     @Transactional
     public void adminFreeze(Long memberId, BigDecimal amount, String actor, String note) {
-        if (amount == null || amount.scale() > 2 || amount.signum() <= 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "冻结金额无效");
-        }
-        ensureAccount(memberId);
-        if (accountRepository.freeze(memberId, amount) == 0) {
-            throw new BusinessException(ErrorCode.BALANCE_NOT_ENOUGH);
-        }
-        writeTxn(memberId, WalletTxn.Type.ADMIN_FREEZE, amount.negate(),
+        validateAmount(memberId, amount);
+        WalletAccount a = lockedAccount(memberId);
+        if (a.getBalance().compareTo(amount) < 0) throw new BusinessException(ErrorCode.BALANCE_NOT_ENOUGH);
+        BigDecimal shopping = a.getShoppingBalance().min(amount);
+        BigDecimal withdrawable = amount.subtract(shopping);
+        a.setBalance(a.getBalance().subtract(amount));
+        a.setWithdrawableBalance(a.getWithdrawableBalance().subtract(withdrawable));
+        a.setFrozen(a.getFrozen().add(amount));
+        a.setWithdrawableFrozen(a.getWithdrawableFrozen().add(withdrawable));
+        persistTxn(a, WalletTxn.Type.ADMIN_FREEZE, shopping.negate(), withdrawable.negate(),
                 "MANUAL", null, "管理员冻结 " + actor + remarkSuffix(note));
     }
 
-    /** 管理员解冻:冻结->可用,同样写流水方便对账。 */
+    /** 只释放风控冻结,退回原钱包;无法释放任何提现占用。 */
     @Transactional
     public void adminUnfreeze(Long memberId, BigDecimal amount, String actor, String note) {
-        if (amount == null || amount.scale() > 2 || amount.signum() <= 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "解冻金额无效");
+        validateAmount(memberId, amount);
+        WalletAccount a = lockedAccount(memberId);
+        if (a.getFrozen().compareTo(amount) < 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "风控冻结余额不足;提现占用请到提现审核处理");
         }
-        ensureAccount(memberId);
-        accountRepository.lockByMemberId(memberId).orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "钱包不存在"));
-        if (!withdrawRepository.lockByMemberIdAndStatus(memberId, WithdrawRequest.Status.PENDING).isEmpty()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "该会员有待审核提现，请先在提现审核中处理；退回提现金额请使用驳回，不能手动解冻");
-        }
-        if (accountRepository.unfreeze(memberId, amount) == 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "冻结余额不足");
-        }
-        writeTxn(memberId, WalletTxn.Type.ADMIN_UNFREEZE, amount,
+        BigDecimal shopping = a.getShoppingFrozen().min(amount);
+        BigDecimal withdrawable = amount.subtract(shopping);
+        a.setFrozen(a.getFrozen().subtract(amount));
+        a.setWithdrawableFrozen(a.getWithdrawableFrozen().subtract(withdrawable));
+        a.setBalance(a.getBalance().add(amount));
+        a.setWithdrawableBalance(a.getWithdrawableBalance().add(withdrawable));
+        persistTxn(a, WalletTxn.Type.ADMIN_UNFREEZE, shopping, withdrawable,
                 "MANUAL", null, "管理员解冻 " + actor + remarkSuffix(note));
     }
 
@@ -121,16 +147,18 @@ public class WalletService {
         if (amount.compareTo(minWithdraw()) < 0) {
             throw new BusinessException(ErrorCode.WITHDRAW_MIN);
         }
-        ensureAccount(memberId);
-        accountRepository.lockByMemberId(memberId).orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "钱包不存在"));
+        WalletAccount wallet = lockedAccount(memberId);
         if (!withdrawRepository.lockByMemberIdAndStatus(memberId, WithdrawRequest.Status.PENDING).isEmpty()) {
             throw new BusinessException(ErrorCode.WITHDRAW_PENDING_EXISTS);
         }
         WithdrawMethodService.Normalized recipient = withdrawMethodService.validate(channel, account, accountName, bankName);
         WithdrawMethodService.FeeQuote fee = withdrawMethodService.feeQuote(recipient.code(), amount);
-        if (accountRepository.freeze(memberId, amount) == 0) {
-            throw new BusinessException(ErrorCode.BALANCE_NOT_ENOUGH);
+        if (wallet.getWithdrawableBalance().compareTo(amount) < 0) {
+            throw new BusinessException(ErrorCode.BALANCE_NOT_ENOUGH, "可提现余额不足;购物余额不可提现");
         }
+        wallet.setBalance(wallet.getBalance().subtract(amount));
+        wallet.setWithdrawableBalance(wallet.getWithdrawableBalance().subtract(amount));
+        wallet.setWithdrawalFrozen(wallet.getWithdrawalFrozen().add(amount));
         WithdrawRequest request = new WithdrawRequest();
         request.setMemberId(memberId);
         request.setAmount(amount);
@@ -142,7 +170,7 @@ public class WalletService {
         request.setBankName(recipient.bankName());
         withdrawPayoutService.snapshot(request);
         request = withdrawRepository.save(request);
-        writeTxn(memberId, WalletTxn.Type.WITHDRAW_FREEZE, amount.negate(),
+        persistTxn(wallet, WalletTxn.Type.WITHDRAW_FREEZE, BigDecimal.ZERO, amount.negate(),
                 "WITHDRAW", request.getId(), "提现申请冻结");
         return request;
     }
@@ -158,28 +186,30 @@ public class WalletService {
         WithdrawRequest existing = withdrawRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WITHDRAW_STATE));
         // 与申请、手动解冻保持一致的锁顺序:先钱包,再提现状态 CAS。
-        accountRepository.lockByMemberId(existing.getMemberId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.WITHDRAW_STATE, "钱包不存在"));
+        lockedAccount(existing.getMemberId());
         WithdrawRequest.Status target = approve ? WithdrawRequest.Status.APPROVED : WithdrawRequest.Status.REJECTED;
         if (withdrawRepository.casStatus(id, WithdrawRequest.Status.PENDING, target) == 0) {
             throw new BusinessException(ErrorCode.WITHDRAW_STATE);
         }
         WithdrawRequest request = withdrawRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WITHDRAW_STATE));
+        // CAS 会清理持久化上下文,重新取得受同一事务行锁保护的钱包。
+        WalletAccount wallet = lockedAccount(request.getMemberId());
+        if (wallet.getWithdrawalFrozen().compareTo(request.getAmount()) < 0) {
+            throw new BusinessException(ErrorCode.WITHDRAW_STATE, "提现冻结异常,请核对流水后重试");
+        }
+        if (approve && request.getChannel().startsWith("USDT_") && request.getPayoutAmount() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "旧申请缺少 USDT 打款汇率快照,请驳回并请会员重新申请");
+        }
+        wallet.setWithdrawalFrozen(wallet.getWithdrawalFrozen().subtract(request.getAmount()));
         if (approve) {
-            if (request.getChannel().startsWith("USDT_") && request.getPayoutAmount() == null) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "旧申请缺少 USDT 打款汇率快照,请驳回并请会员重新申请");
-            }
-            if (accountRepository.consumeFrozen(request.getMemberId(), request.getAmount()) == 0) {
-                // 冻结额被异常动过:回滚整个审核事务(状态连同回退),人工排查
-                throw new BusinessException(ErrorCode.WITHDRAW_STATE, "冻结余额异常,请核对流水后重试");
-            }
+            accountRepository.saveAndFlush(wallet);
         } else {
-            if (accountRepository.unfreeze(request.getMemberId(), request.getAmount()) == 0) {
-                throw new BusinessException(ErrorCode.WITHDRAW_STATE, "冻结余额异常,请核对流水后重试");
-            }
-            writeTxn(request.getMemberId(), WalletTxn.Type.WITHDRAW_REJECT, request.getAmount(),
-                    "WITHDRAW", request.getId(), "提现驳回退回");
+            BigDecimal withdrawable = request.isWithdrawableSource() ? request.getAmount() : BigDecimal.ZERO;
+            wallet.setBalance(wallet.getBalance().add(request.getAmount()));
+            wallet.setWithdrawableBalance(wallet.getWithdrawableBalance().add(withdrawable));
+            persistTxn(wallet, WalletTxn.Type.WITHDRAW_REJECT, request.getAmount().subtract(withdrawable), withdrawable,
+                    "WITHDRAW", request.getId(), request.isWithdrawableSource() ? "提现驳回退回可提现余额" : "历史提现驳回退回购物余额");
         }
         request.setReviewedBy(reviewer);
         request.setReviewNote(reviewNote);
@@ -196,16 +226,33 @@ public class WalletService {
         }
     }
 
-    /** 流水落账:清缓存后重读余额作为 balanceAfter 快照(与原子 UPDATE 同事务)。 */
-    private void writeTxn(Long memberId, WalletTxn.Type type, BigDecimal signedAmount,
-                          String refType, Long refId, String remark) {
-        BigDecimal after = accountRepository.findByMemberId(memberId)
-                .map(WalletAccount::getBalance).orElse(BigDecimal.ZERO);
+    private WalletAccount lockedAccount(Long memberId) {
+        ensureAccount(memberId);
+        WalletAccount account = accountRepository.lockByMemberId(memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "钱包不存在"));
+        // 父事务可能已读取钱包;行锁后刷新一级缓存,避免用等待锁前的余额覆盖并发提交。
+        entityManager.refresh(account, LockModeType.PESSIMISTIC_WRITE);
+        return account;
+    }
+
+    private void validateAmount(Long memberId, BigDecimal amount) {
+        if (memberId == null || amount == null || amount.scale() > 2 || amount.signum() <= 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "金额无效");
+        }
+    }
+
+    private void persistTxn(WalletAccount a, WalletTxn.Type type, BigDecimal shopping, BigDecimal withdrawable,
+                            String refType, Long refId, String remark) {
+        accountRepository.saveAndFlush(a);
         WalletTxn txn = new WalletTxn();
-        txn.setMemberId(memberId);
+        txn.setMemberId(a.getMemberId());
         txn.setType(type);
-        txn.setAmount(signedAmount);
-        txn.setBalanceAfter(after);
+        txn.setAmount(shopping.add(withdrawable));
+        txn.setBalanceAfter(a.getBalance());
+        txn.setShoppingAmount(shopping);
+        txn.setWithdrawableAmount(withdrawable);
+        txn.setShoppingBalanceAfter(a.getShoppingBalance());
+        txn.setWithdrawableBalanceAfter(a.getWithdrawableBalance());
         txn.setRefType(refType);
         txn.setRefId(refId);
         txn.setRemark(remark);

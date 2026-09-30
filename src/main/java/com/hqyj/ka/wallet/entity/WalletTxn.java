@@ -51,6 +51,19 @@ public class WalletTxn {
     @Column(nullable = false, precision = 20, scale = 2)
     private BigDecimal balanceAfter;
 
+    /** 两个可用钱包的本笔变动;历史流水留 NULL,保持历史账本不改写。 */
+    @Column(precision = 20, scale = 2)
+    private BigDecimal shoppingAmount;
+
+    @Column(precision = 20, scale = 2)
+    private BigDecimal withdrawableAmount;
+
+    @Column(precision = 20, scale = 2)
+    private BigDecimal shoppingBalanceAfter;
+
+    @Column(precision = 20, scale = 2)
+    private BigDecimal withdrawableBalanceAfter;
+
     /** 关联单据类型(ORDER / ARTICLE / WITHDRAW / MANUAL) */
     @Column(length = 16)
     private String refType;

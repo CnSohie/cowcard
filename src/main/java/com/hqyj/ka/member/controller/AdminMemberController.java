@@ -42,7 +42,9 @@ public class AdminMemberController {
 
     public record AdminMemberView(Long id, String email, String nickname, boolean enabled,
                                   String inviteCode, Long inviterId, BigDecimal balance,
-                                  BigDecimal frozen, Long levelId, BigDecimal totalRecharge,
+                                  BigDecimal frozen, BigDecimal shoppingBalance, BigDecimal withdrawableBalance,
+                                  BigDecimal shoppingFrozen, BigDecimal withdrawableFrozen, BigDecimal withdrawalFrozen,
+                                  Long levelId, BigDecimal totalRecharge,
                                   BigDecimal totalSpend, LocalDateTime lastLoginAt, LocalDateTime createdAt) {}
 
     public record FreezeBalanceRequest(BigDecimal amount, String note, String password, String totpCode) {}
@@ -66,7 +68,12 @@ public class AdminMemberController {
             return new AdminMemberView(m.getId(), m.getEmail(), m.getNickname(), m.isEnabled(),
                     m.getInviteCode(), m.getInviterId(),
                     w != null ? w.getBalance() : BigDecimal.ZERO,
-                    w != null ? w.getFrozen() : BigDecimal.ZERO,
+                    w != null ? w.getTotalFrozen() : BigDecimal.ZERO,
+                    w != null ? w.getShoppingBalance() : BigDecimal.ZERO,
+                    w != null ? w.getWithdrawableBalance() : BigDecimal.ZERO,
+                    w != null ? w.getShoppingFrozen() : BigDecimal.ZERO,
+                    w != null ? w.getWithdrawableFrozen() : BigDecimal.ZERO,
+                    w != null ? w.getWithdrawalFrozen() : BigDecimal.ZERO,
                     m.getLevelId(), m.getTotalRecharge(), m.getTotalSpend(),
                     m.getLastLoginAt(), m.getCreatedAt());
         }));
@@ -108,7 +115,7 @@ public class AdminMemberController {
 
     @PostMapping("/{id}/freeze")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('wallet:freeze','member:manage')")
-    public ApiResponse<Void> freeze(@PathVariable Long id, @RequestBody FreezeBalanceRequest req,
+    public ApiResponse<WalletBalances> freeze(@PathVariable Long id, @RequestBody FreezeBalanceRequest req,
                                     HttpServletRequest http) {
         memberRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "会员不存在"));
         authService.verifySensitive((Long) http.getAttribute("uid"), req.password(), req.totpCode(),
@@ -117,12 +124,12 @@ public class AdminMemberController {
         walletService.adminFreeze(id, req.amount(), actor, req.note());
         auditService.record(actor, "MEMBER_BALANCE_FREEZE", "member:" + id,
                 RateLimitFilter.clientIp(http), "{\"amount\":\"" + req.amount() + "\"}");
-        return ApiResponse.ok();
+        return ApiResponse.ok(WalletBalances.of(walletService.ensureAccount(id)));
     }
 
     @PostMapping("/{id}/unfreeze")
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('wallet:freeze','member:manage')")
-    public ApiResponse<Void> unfreeze(@PathVariable Long id, @RequestBody FreezeBalanceRequest req,
+    public ApiResponse<WalletBalances> unfreeze(@PathVariable Long id, @RequestBody FreezeBalanceRequest req,
                                       HttpServletRequest http) {
         memberRepository.findById(id).orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "会员不存在"));
         authService.verifySensitive((Long) http.getAttribute("uid"), req.password(), req.totpCode(),
@@ -131,6 +138,14 @@ public class AdminMemberController {
         walletService.adminUnfreeze(id, req.amount(), actor, req.note());
         auditService.record(actor, "MEMBER_BALANCE_UNFREEZE", "member:" + id,
                 RateLimitFilter.clientIp(http), "{\"amount\":\"" + req.amount() + "\"}");
-        return ApiResponse.ok();
+        return ApiResponse.ok(WalletBalances.of(walletService.ensureAccount(id)));
+    }
+    public record WalletBalances(BigDecimal balance, BigDecimal frozen, BigDecimal shoppingBalance,
+                                 BigDecimal withdrawableBalance, BigDecimal shoppingFrozen,
+                                 BigDecimal withdrawableFrozen, BigDecimal withdrawalFrozen) {
+        static WalletBalances of(WalletAccount a) {
+            return new WalletBalances(a.getBalance(), a.getTotalFrozen(), a.getShoppingBalance(),
+                    a.getWithdrawableBalance(), a.getShoppingFrozen(), a.getWithdrawableFrozen(), a.getWithdrawalFrozen());
+        }
     }
 }

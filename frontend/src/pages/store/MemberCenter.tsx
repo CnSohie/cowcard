@@ -243,9 +243,9 @@ export default function MemberCenter() {
 
   async function doWithdraw() {
     const v = Number(amount);
-    const available = Number(me?.balance ?? 0);
+    const available = Number(me?.withdrawableBalance ?? 0);
     if (!Number.isFinite(v) || v <= 0 || v > available) {
-      setModalErr(`提现金额不能超过当前可用余额 ${money(me?.balance ?? "0.00")}`); return;
+      setModalErr(`提现金额不能超过当前可提现余额 ${money(me?.withdrawableBalance ?? "0.00")}`); return;
     }
     if (wallet && v < Number(wallet.minWithdraw)) {
       setModalErr(`最低提现金额为 ${money(wallet.minWithdraw)}`); return;
@@ -411,34 +411,23 @@ export default function MemberCenter() {
           </div>
         </div>
 
-        {/* 钱包卡 */}
-        <div className="relative overflow-hidden rounded-3xl bg-primary p-6 text-primary-contrast shadow-xl sm:p-7">
-          <Wallet size={130} className="pointer-events-none absolute -right-6 -top-6 opacity-[0.08]" />
-          <p className="text-xs font-medium opacity-70">平台余额({currencyCode()})</p>
-          <p className="mt-1.5 text-4xl font-extrabold tracking-tight">
-            <span className="text-lg opacity-60">{currencySymbol()}</span>{me?.balance ?? "0.00"}
-          </p>
-          <p className="mt-2.5 text-[11px] opacity-70">
-            冻结中 {money(me?.frozen ?? "0.00")} · 可购付费文章 · 佣金自动入账
-          </p>
-          {wallet?.freezeReason && Number(me?.frozen ?? 0) > 0 && (
-            <div className="mt-3 inline-flex max-w-full rounded-2xl bg-white/12 px-3 py-2 text-[11px] leading-relaxed text-primary-contrast/80">
-              <span className="truncate">冻结原因: {wallet.freezeReason}</span>
-            </div>
-          )}
-          <div className="mt-5 grid grid-cols-3 gap-2.5">
-            <button onClick={() => { setModal("recharge"); setAmount(""); setModalErr(""); }}
-              className="rounded-full bg-surface py-2.5 text-sm font-bold text-ink shadow transition hover:opacity-90">
-              <span className="inline-flex items-center gap-1.5"><ArrowUpRight size={14} /> 充值</span>
-            </button>
-            <button onClick={() => { setModal("gift"); setGiftCode(""); setModalErr(""); }}
-              className="rounded-full border border-white/30 py-2.5 text-sm font-bold transition hover:bg-white/10">
-              <span className="inline-flex items-center gap-1.5"><Gift size={14} /> 兑换</span>
-            </button>
-            <button onClick={() => { setModal("withdraw"); setAmount(""); setModalErr(""); }}
-              className="rounded-full border border-white/30 py-2.5 text-sm font-bold transition hover:bg-white/10">
-              <span className="inline-flex items-center gap-1.5"><ArrowDownToLine size={14} /> 提现</span>
-            </button>
+        {/* 两类余额使用普通排版,不增加独立告警框。 */}
+        <div className="card p-6 sm:p-7">
+          <p className="text-sm font-medium text-ink">我的钱包 · 人民币</p>
+          <div className="mt-5 grid grid-cols-2 gap-5">
+            <div><p className="text-xs text-ink/55">购物余额</p><p className="mt-2 break-words text-sm tabular-nums text-ink">{money(me?.shoppingBalance ?? "0.00", "CNY")}</p><p className="mt-1 text-[11px] text-ink/40">可购物，不可提现</p></div>
+            <div><p className="text-xs text-ink/55">可提现余额</p><p className="mt-2 break-words text-sm tabular-nums text-ink">{money(me?.withdrawableBalance ?? "0.00", "CNY")}</p><p className="mt-1 text-[11px] text-ink/40">佣金收入，可购物或提现</p></div>
+          </div>
+          <div className="mt-5 space-y-1 border-t border-ink/[0.06] pt-4 text-[11px] leading-relaxed text-ink/45">
+            <p>风控冻结：购物 {money(me?.shoppingFrozen ?? "0.00", "CNY")} · 可提现 {money(me?.withdrawableFrozen ?? "0.00", "CNY")}</p>
+            <p>提现处理中：{money(me?.withdrawalFrozen ?? "0.00", "CNY")}</p>
+            <p>购物优先使用购物余额，不足部分使用可提现余额。</p>
+            {wallet?.freezeReason && <p className="break-words">冻结说明：{wallet.freezeReason}</p>}
+          </div>
+          <div className="mt-5 grid grid-cols-3 gap-2">
+            <button onClick={() => { setModal("recharge"); setAmount(""); setModalErr(""); }} className="btn-ghost !px-2 !text-xs">充值</button>
+            <button onClick={() => { setModal("gift"); setGiftCode(""); setModalErr(""); }} className="btn-ghost !px-2 !text-xs">兑换</button>
+            <button onClick={() => { setModal("withdraw"); setAmount(""); setModalErr(""); }} className="btn-ghost !px-2 !text-xs">提现</button>
           </div>
         </div>
       </div>
@@ -732,8 +721,8 @@ export default function MemberCenter() {
         {tab === "withdrawals" && (
           <>
             <div className="mx-5 mt-5 grid grid-cols-3 gap-3 border-b border-ink/[0.06] pb-5 sm:mx-6">
-              <div><p className="text-[11px] text-ink/45">可提现余额</p><p className="mt-2 break-words text-lg font-bold tabular-nums text-primary">{money(me?.balance ?? "0.00", "CNY")}</p></div>
-              <div><p className="text-[11px] text-ink/45">冻结中</p><p className="mt-2 break-words text-lg font-bold tabular-nums text-ink">{money(me?.frozen ?? "0.00", "CNY")}</p></div>
+              <div><p className="text-[11px] text-ink/45">可提现余额</p><p className="mt-2 break-words text-lg font-bold tabular-nums text-primary">{money(me?.withdrawableBalance ?? "0.00", "CNY")}</p></div>
+              <div><p className="text-[11px] text-ink/45">提现处理中</p><p className="mt-2 break-words text-lg font-bold tabular-nums text-ink">{money(me?.withdrawalFrozen ?? "0.00", "CNY")}</p></div>
               <div><p className="text-[11px] text-ink/45">最低提现</p><p className="mt-2 break-words text-lg font-bold tabular-nums text-ink">{money(wallet?.minWithdraw ?? "0.00", "CNY")}</p></div>
             </div>
             <div className="divide-y divide-ink/[0.06] px-5 py-3 sm:px-6">
@@ -757,7 +746,7 @@ export default function MemberCenter() {
                   {(w.reviewNote || w.status === "REJECTED") && <div role="note" className="mt-3 space-y-1 text-xs leading-relaxed text-ink/55">
                     <p className="font-normal text-ink/55">{w.status === "REJECTED" ? "拒绝原因" : "审核备注"}</p>
                     <p className="mt-1 whitespace-pre-wrap break-words text-ink/55">{w.reviewNote?.trim() || DEFAULT_REJECT_NOTE}</p>
-                    {w.status === "REJECTED" && <p className="mt-2 text-ink/40">{money(w.amount, "CNY")} 人民币已全部退回余额，未收取手续费。修改收款信息后可重新申请。</p>}
+                    {w.status === "REJECTED" && <p className="mt-2 text-ink/40">{money(w.amount, "CNY")} 人民币已退回{w.withdrawableSource ? "可提现余额" : "购物余额"}，未收取手续费。</p>}
                   </div>}
                 </article>;
               })}
@@ -802,6 +791,7 @@ export default function MemberCenter() {
                 onClick={() => { setAmount(v); setModalErr(""); }}>{money(v)}</button>
             ))}
           </div>
+          <p className="mb-3 text-xs text-ink/55">充值进入购物余额，仅限消费，不可提现。</p>
           <label className="label">充值金额({currencyCode()})</label>
           <div className="relative">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-ink/35">{currencySymbol()}</span>
@@ -850,7 +840,7 @@ export default function MemberCenter() {
       {modal === "withdraw" && (
         <Modal title="申请提现" onClose={() => setModal("")}>
           <p className="mb-4 rounded-2xl bg-accent-soft/70 px-4 py-3 text-xs leading-relaxed text-ink/55">
-            可提余额 <span className="font-bold text-ink">{money(me?.balance ?? "0.00", "CNY")}</span>
+            可提余额 <span className="font-bold text-ink">{money(me?.withdrawableBalance ?? "0.00", "CNY")}</span>
             {wallet && Number(wallet.minWithdraw) > 0 && <> · 最低提现 {money(wallet.minWithdraw)}</>}
             ,提交后需管理员审核,审核期间金额冻结。
           </p>
@@ -859,15 +849,15 @@ export default function MemberCenter() {
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-ink/35">{currencySymbol("CNY")}</span>
             <input className="input !rounded-3xl !py-4 !pl-10 !pr-24 text-lg font-bold" placeholder="0.00" inputMode="decimal"
               maxLength={21} value={amount} aria-label="提现金额" aria-describedby="withdraw-limit"
-              onChange={(e) => changeAmount(e.target.value, Math.max(0, Number(me?.balance ?? 0)),
-                `提现金额不能超过当前可用余额 ${money(me?.balance ?? "0.00", "CNY")}`)} />
+              onChange={(e) => changeAmount(e.target.value, Math.max(0, Number(me?.withdrawableBalance ?? 0)),
+                `提现金额不能超过当前可提现余额 ${money(me?.withdrawableBalance ?? "0.00", "CNY")}`)} />
             <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-ink/[0.05] px-3 py-1.5 text-[11px] font-bold text-ink/55 hover:bg-ink/[0.08]"
-              onClick={() => { setAmount(me?.balance ?? "0.00"); setModalErr(""); }}>
+              onClick={() => { setAmount(me?.withdrawableBalance ?? "0.00"); setModalErr(""); }}>
               全部可提
             </button>
           </div>
-          <p id="withdraw-limit" className="-mt-2 mb-4 text-[11px] text-ink/40">最多可提 {money(me?.balance ?? "0.00", "CNY")}，可自填部分金额，最多两位小数。未提现的余额仍可使用。</p>
-          {Number.isFinite(requestedWithdraw) && requestedWithdraw > 0 && requestedWithdraw <= Number(me?.balance ?? 0) && <p className="mb-4 text-xs text-ink/55">本次申请 {money(amount, "CNY")} 人民币，申请后剩余可用余额 {money((Number(me?.balance ?? 0) - requestedWithdraw).toFixed(2), "CNY")} 人民币。手续费从本次申请金额中扣除。</p>}
+          <p id="withdraw-limit" className="-mt-2 mb-4 text-[11px] text-ink/40">最多可提 {money(me?.withdrawableBalance ?? "0.00", "CNY")}，可自填部分金额，最多两位小数。未提现的余额仍可使用。</p>
+          {Number.isFinite(requestedWithdraw) && requestedWithdraw > 0 && requestedWithdraw <= Number(me?.withdrawableBalance ?? 0) && <p className="mb-4 text-xs text-ink/55">本次申请 {money(amount, "CNY")} 人民币，申请后剩余可提现余额 {money((Number(me?.withdrawableBalance ?? 0) - requestedWithdraw).toFixed(2), "CNY")} 人民币。手续费从本次申请金额中扣除。</p>}
           {selectedWithdrawMethod && requestedWithdraw > 0 && (
             <div className="mb-4 grid grid-cols-3 gap-2 rounded-2xl border border-primary/15 bg-accent-soft/45 p-3 text-center">
               <div><p className="text-[10px] text-ink/40">余额扣除</p><p className="mt-1 text-sm font-bold">{money(amount, "CNY")}</p></div>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Check, Sparkles, Heart, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowRight, Check, Search, TicketCheck, ChevronLeft, ChevronRight } from "lucide-react";
 import { get, type Category, type ProductCard } from "../../lib/api";
 import { loadSite } from "../../lib/site";
 import ProductCatalog from "../../components/ProductCatalog";
@@ -51,7 +51,7 @@ export default function Home() {
 
   return (
     <div className="animate-fade-up">
-      {/* Hero:大字排版 + 柠檬绿高亮 */}
+      {/* Configurable storefront banner. */}
       <section
         className={`store-hero ${activeHero.layout === "illustration" ? "cow-hero" : ""} hero-shell hero-layout-${activeHero.layout} hero-tone-${activeHero.tone} relative mb-8 overflow-hidden`}
         aria-roledescription="carousel"
@@ -64,9 +64,9 @@ export default function Home() {
           const heroCopy = localizeHeroSlide(slide, lang);
           return <div key={slide.id} aria-hidden={index !== heroIndex} style={{ visibility: index === heroIndex ? "visible" : "hidden" }} className="cow-hero-copy hero-slide relative z-10">
           {heroCopy.eyebrow && <p className="hero-eyebrow">{heroCopy.eyebrow}</p>}
-          <h1 className="max-w-4xl text-2xl font-bold leading-tight sm:text-4xl">
+          <h1 className="max-w-4xl text-3xl font-bold leading-tight sm:text-5xl">
             {heroCopy.title}
-            {heroCopy.highlight && <span className="cow-highlight ml-1 rounded-lg bg-accent px-1 text-ink dark:bg-primary dark:text-primary-contrast">{heroCopy.highlight}</span>}
+            {heroCopy.highlight && <span className="hero-highlight">{heroCopy.highlight}</span>}
           </h1>
           <p className="mt-3 line-clamp-2 max-w-xl text-sm leading-relaxed text-ink/55 sm:mt-5 sm:line-clamp-none sm:text-[1rem]">
             {heroCopy.description}
@@ -84,7 +84,7 @@ export default function Home() {
         </div>;
         })}
         </div>
-            <div className="hero-controls" aria-label={`${heroIndex + 1} / ${visibleHeroSlides.length}`}>
+            <div className={`hero-controls ${visibleHeroSlides.length === 1 ? "hidden" : ""}`} aria-label={`${heroIndex + 1} / ${visibleHeroSlides.length}`}>
             {visibleHeroSlides.length > 1 && <button type="button" aria-label={lang === "zh" ? "上一张" : "Previous slide"}
               className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink/60 transition hover:bg-ink/5 focus-visible:outline-primary"
               onClick={() => setHeroIndex((i) => (i - 1 + visibleHeroSlides.length) % visibleHeroSlides.length)}><ChevronLeft size={16} /></button>}
@@ -141,24 +141,10 @@ function HeroVisual({ slide, lang }: { slide: HeroSlide; lang: "zh" | "en" }) {
     );
   }
   return (
-    <div aria-hidden="true">
-      <div className="store-mascot">
-        <span className="mascot-spark"><Sparkles size={28} /></span>
-        <span className="mascot-ticket"><Heart size={20} /><i /><i /></span>
-        <span className="mascot-parcel"><span className="mascot-ribbon" /><span className="mascot-eyes" /><span className="mascot-smile" /></span>
-        <span className="mascot-shadow" />
-      </div>
-      <div className="cow-hero-friends">
-      <span className="cow-friend cow-friend-main"><i /><b /></span>
-      <span className="cow-friend cow-friend-calf"><i /><b /></span>
-      <span className="cow-friend cow-friend-bird"><i /><b /></span>
-      <span className="cow-friend cow-friend-sheep"><i /><b /></span>
-      <span className="cow-friend cow-friend-butterfly"><i /><b /></span>
-      <span className="cow-friend cow-friend-grass cow-friend-grass-a" />
-      <span className="cow-friend cow-friend-grass cow-friend-grass-b" />
-      <span className="cow-friend cow-friend-flower cow-friend-flower-a" />
-      <span className="cow-friend cow-friend-flower cow-friend-flower-b" />
-      </div>
+    <div className="hero-service-links">
+      <p className="mb-5 text-xs font-medium text-ink/45">{lang === "zh" ? "已经购买？" : "Already ordered?"}</p>
+      <Link to="/order" className="hero-service-link"><Search size={20} strokeWidth={1.5} /><span><b>{lang === "zh" ? "查询订单" : "Find your order"}</b><small>{lang === "zh" ? "查看进度与交付内容" : "Track status and view delivery"}</small></span><ArrowRight size={17} /></Link>
+      <Link to="/redeem" className="hero-service-link"><TicketCheck size={20} strokeWidth={1.5} /><span><b>{lang === "zh" ? "兑换卡密" : "Redeem a voucher"}</b><small>{lang === "zh" ? "使用已购买的兑换凭证" : "Use your purchased voucher"}</small></span><ArrowRight size={17} /></Link>
     </div>
   );
 }

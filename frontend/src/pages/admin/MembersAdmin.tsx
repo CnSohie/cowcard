@@ -14,6 +14,8 @@ interface AdminMember {
   id: number; email: string; nickname: string | null; enabled: boolean;
   inviteCode: string; inviterId: number | null;
   balance: string; frozen: string;
+  shoppingBalance: string; withdrawableBalance: string;
+  shoppingFrozen: string; withdrawableFrozen: string; withdrawalFrozen: string;
   lastLoginAt: string | null; createdAt: string;
 }
 interface PageResult<T> { items: T[]; total: number; page: number; size: number; }
@@ -77,12 +79,6 @@ export default function MembersAdmin() {
     get<MemberStats>("/admin/members/stats").then(setStats).catch(() => void 0);
   }
 
-  function updateMemberWallet(id: number, balance: string, frozen: string) {
-    setData((d) => d && ({ ...d, items: d.items.map((x) => (x.id === id ? { ...x, balance, frozen } : x)) }));
-    setSelected((s) => (s?.id === id ? { ...s, balance, frozen } : s));
-    get<MemberStats>("/admin/members/stats").then(setStats).catch(() => void 0);
-  }
-
   function openFreeze(mode: "freeze" | "unfreeze") {
     if (!canFreezeWallet) return;
     setFreezeMode(mode);
@@ -96,18 +92,14 @@ export default function MembersAdmin() {
     const amount = Number(freezeAmount);
     if (!amount || amount <= 0) throw new Error("请输入正确的金额");
     try {
-      await post(`/admin/members/${selected.id}/${freezeMode}`, {
+      const balances = await post<Pick<AdminMember, "balance" | "frozen" | "shoppingBalance" | "withdrawableBalance" | "shoppingFrozen" | "withdrawableFrozen" | "withdrawalFrozen">>(`/admin/members/${selected.id}/${freezeMode}`, {
         amount: freezeAmount,
         note: freezeNote.trim() || (freezeMode === "freeze" ? "管理员临时冻结" : "管理员解除冻结"),
         ...auth,
       });
-      const balance = freezeMode === "freeze"
-        ? (Number(selected.balance) - amount).toFixed(2)
-        : (Number(selected.balance) + amount).toFixed(2);
-      const frozen = freezeMode === "freeze"
-        ? (Number(selected.frozen) + amount).toFixed(2)
-        : (Number(selected.frozen) - amount).toFixed(2);
-      updateMemberWallet(selected.id, balance, frozen);
+      setData((d) => d && ({ ...d, items: d.items.map((x) => x.id === selected.id ? { ...x, ...balances } : x) }));
+      setSelected((m) => m && { ...m, ...balances });
+      get<MemberStats>("/admin/members/stats").then(setStats).catch(() => void 0);
       setFreezeMode(null);
     } catch (e) {
       throw e instanceof ApiError ? e : new Error("操作失败,请稍后再试");
@@ -190,7 +182,7 @@ export default function MembersAdmin() {
                     </div>
                   </td>
                   <td className="td">
-                    <div className="font-semibold text-ink">{money(m.balance)}</div>
+                    <div className="text-xs text-ink/70">购物 {money(m.shoppingBalance, "CNY")}<br />可提现 {money(m.withdrawableBalance, "CNY")}</div>
                     {Number(m.frozen) > 0 && <div className="text-xs text-amber-600 dark:text-amber-400">冻结 {money(m.frozen)}</div>}
                   </td>
                   <td className="td"><span className="chip !py-0.5 font-mono text-[11px]">{m.inviteCode}</span></td>
@@ -262,17 +254,10 @@ export default function MembersAdmin() {
 
             <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
               <section className="overflow-hidden rounded-3xl border border-ink/[0.07]">
-                <div className="grid grid-cols-2 divide-x divide-ink/[0.06] bg-accent-soft/50">
-                  <div className="p-5">
-                    <p className="flex items-center gap-2 text-xs font-semibold text-ink/45"><Wallet size={13} /> 可用余额</p>
-                    <p className="mt-2 text-2xl font-extrabold">{money(selected.balance)}</p>
-                  </div>
-                  <div className="p-5">
-                    <p className="flex items-center gap-2 text-xs font-semibold text-ink/45"><Ban size={13} /> 冻结中</p>
-                    <p className={`mt-2 text-2xl font-extrabold ${Number(selected.frozen) > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}>
-                      {money(selected.frozen)}
-                    </p>
-                  </div>
+                <div className="grid grid-cols-2 gap-4 p-5 text-xs text-ink/55">
+                  <div><p>购物余额（不可提现）</p><p className="mt-2 text-sm text-ink">{money(selected.shoppingBalance, "CNY")}</p><p className="mt-2">风控冻结 {money(selected.shoppingFrozen, "CNY")}</p></div>
+                  <div><p>可提现余额</p><p className="mt-2 text-sm text-ink">{money(selected.withdrawableBalance, "CNY")}</p><p className="mt-2">风控冻结 {money(selected.withdrawableFrozen, "CNY")}</p></div>
+                  <p className="col-span-2">提现处理中 {money(selected.withdrawalFrozen, "CNY")} · 仅能在提现审核中处理</p>
                 </div>
                 {canFreezeWallet ? (
                   <div className="p-4">
@@ -283,7 +268,7 @@ export default function MembersAdmin() {
                         <span className="inline-flex items-center gap-2"><Snowflake size={14} /> 冻结余额</span>
                       </button>
                       <button className="rounded-2xl border border-ink/10 px-4 py-3 text-sm font-bold text-ink transition hover:border-primary/30 hover:bg-accent-soft/60 disabled:cursor-not-allowed disabled:opacity-40"
-                        disabled={Number(selected.frozen) <= 0}
+                        disabled={Number(selected.shoppingFrozen) + Number(selected.withdrawableFrozen) <= 0}
                         onClick={() => openFreeze("unfreeze")}>
                         <span className="inline-flex items-center gap-2"><Wallet size={14} /> 解除冻结</span>
                       </button>
@@ -355,20 +340,21 @@ export default function MembersAdmin() {
               <div className="space-y-1">
                 <div className="flex justify-between gap-3"><span className="text-ink/45">会员</span><span>{selected.email}</span></div>
                 <div className="flex justify-between gap-3"><span className="text-ink/45">可用余额</span><span>{money(selected.balance)}</span></div>
-                <div className="flex justify-between gap-3"><span className="text-ink/45">冻结中</span><span>{money(selected.frozen)}</span></div>
+                <div className="flex justify-between gap-3"><span className="text-ink/45">可解冻风控金额</span><span>{money((Number(selected.shoppingFrozen) + Number(selected.withdrawableFrozen)).toFixed(2), "CNY")}</span></div>
               </div>
             ),
           }}
           onClose={() => setFreezeMode(null)}
           onConfirm={execFreeze}
         >
-          <label className="label">金额</label>
+          <p className="mb-3 text-xs leading-relaxed text-ink/55">风控冻结先占用购物余额，再占用可提现余额；解冻退回原钱包。提现处理中金额不在此处解冻。</p>
+          <label className="label">金额（人民币）</label>
           <div className="mb-3 flex gap-2">
             <input className="input flex-1" inputMode="decimal" placeholder="0.00"
             value={freezeAmount} onChange={(e) => setFreezeAmount(e.target.value)} />
             <button type="button" className="btn-ghost shrink-0 !px-3 text-xs"
-              onClick={() => setFreezeAmount(freezeMode === "freeze" ? selected.balance : selected.frozen)}>
-              {freezeMode === "freeze" ? "全部可用" : "全部冻结"}
+              onClick={() => setFreezeAmount(freezeMode === "freeze" ? selected.balance : (Number(selected.shoppingFrozen) + Number(selected.withdrawableFrozen)).toFixed(2))}>
+              {freezeMode === "freeze" ? "全部可用" : "全部风控冻结"}
             </button>
           </div>
           <label className="label">{freezeMode === "freeze" ? "冻结原因" : "解冻原因"}</label>

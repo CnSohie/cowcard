@@ -31,13 +31,28 @@ public class WalletAccount {
     @Column(nullable = false)
     private Long memberId;
 
-    /** 可用余额(CNY) */
+    /** 可用总额(CNY),兼容购物抵扣;购物余额 = balance - withdrawableBalance。 */
     @Column(nullable = false, precision = 20, scale = 2)
     private BigDecimal balance = BigDecimal.ZERO;
 
-    /** 冻结中(提现审核占用) */
+    /** 后台风控冻结总额,不含提现占用。 */
     @Column(nullable = false, precision = 20, scale = 2)
     private BigDecimal frozen = BigDecimal.ZERO;
+
+    @Column(nullable = false, precision = 20, scale = 2)
+    private BigDecimal withdrawableBalance = BigDecimal.ZERO;
+
+    /** 风控冻结中属于可提现钱包的部分。 */
+    @Column(nullable = false, precision = 20, scale = 2)
+    private BigDecimal withdrawableFrozen = BigDecimal.ZERO;
+
+    /** 仅提现审核可操作,手工解冻不能触碰。 */
+    @Column(nullable = false, precision = 20, scale = 2)
+    private BigDecimal withdrawalFrozen = BigDecimal.ZERO;
+
+    public BigDecimal getShoppingBalance() { return balance.subtract(withdrawableBalance); }
+    public BigDecimal getShoppingFrozen() { return frozen.subtract(withdrawableFrozen); }
+    public BigDecimal getTotalFrozen() { return frozen.add(withdrawalFrozen); }
 
     @CreatedDate
     @Column(updatable = false)

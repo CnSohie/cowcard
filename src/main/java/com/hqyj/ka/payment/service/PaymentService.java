@@ -103,7 +103,8 @@ public class PaymentService {
             throw new BusinessException(ErrorCode.ORDER_EXPIRED);
         }
         if (order.getMemberId() != null && (ctx.memberId() == null || !order.getMemberId().equals(ctx.memberId()))) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "请登录下单会员账号后支付该订单");
+            throw new BusinessException(ctx.memberId() == null ? ErrorCode.UNAUTHORIZED : ErrorCode.FORBIDDEN,
+                    "请登录下单会员账号后支付该订单");
         }
         PaymentChannel channel = channelRepository.findByCodeAndEnabledTrue(channelCode)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHANNEL_DISABLED));

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
-import { CheckCircle2, Copy, History, KeyRound, Search, ShieldCheck, TicketCheck, X } from "lucide-react";
+import { CheckCircle2, Copy, Loader2, History, KeyRound, Search, ShieldCheck, TicketCheck, X } from "lucide-react";
 import { ApiError, post, type OrderView } from "../../lib/api";
 import { consumePresaleVoucherToken, findLocalOrder, forgetOrder, localOrders, rememberOrder, type LocalOrder } from "../../lib/orderHistory";
 import { recalledContact } from "../../lib/contactMemory";
@@ -40,22 +41,21 @@ export default function OrderQueryPage() {
   const [queryToken, setQueryToken] = useState(location.state?.queryToken ?? "");
   const [order, setOrder] = useState<OrderView | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resultOpen, setResultOpen] = useState(false);
+  const [needsCredentials, setNeedsCredentials] = useState(false);
   const [error, setError] = useState<number | "captcha" | "failed" | null>(null);
   const errorText = error === "captcha" ? t.captcha : error === "failed" ? t.failed : error == null ? "" : (t.errors as Record<string, string>)[error] ?? t.failed;
   const [copied, setCopied] = useState(-1);
   const [historySearch, setHistorySearch] = useState("");
   const [manualOpen, setManualOpen] = useState(Boolean(location.state?.orderNo));
   const queryLock = useRef(false);
+  const queryOpener = useRef<HTMLElement | null>(null);
   const [history, setHistory] = useState<LocalOrder[]>(() => localOrders());
   const [revealedPresaleToken, setRevealedPresaleToken] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaEnabled, setCaptchaEnabled] = useState(false);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const autoQueryKey = useRef("");
-  const resultRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (order) resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [order]);
   const handleCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
   const handleCaptchaEnabled = useCallback((enabled: boolean) => setCaptchaEnabled(enabled), []);
 
@@ -80,15 +80,19 @@ export default function OrderQueryPage() {
   async function doQuery(no: string, ct: string, token = queryToken) {
     if (queryLock.current) return;
     queryLock.current = true;
+    if (!resultOpen) queryOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setResultOpen(true);
+    setNeedsCredentials(false);
     setBusy(true);
     setError(null);
     setOrder(null);
+    setCopied(-1);
     setRevealedPresaleToken(null);
     if (captchaEnabled && !captchaToken) {
       setError("captcha");
       setBusy(false);
       queryLock.current = false;
-      setManualOpen(true);
+      setNeedsCredentials(true);
       return;
     }
     try {
@@ -122,7 +126,6 @@ export default function OrderQueryPage() {
       }
       setHistory(localOrders());
     } catch (e) {
-      setManualOpen(true);
       setError(e instanceof ApiError ? e.code : "failed");
     } finally {
       setCaptchaToken("");
@@ -138,8 +141,7 @@ export default function OrderQueryPage() {
     setContact(h.contact);
     setQueryToken(h.queryToken ?? "");
     if (h.queryToken) void doQuery(h.orderNo, h.contact, h.queryToken);
-    else { setManualOpen(true); setOrder(null); setError(null); }
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    else { queryOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setNeedsCredentials(true); setResultOpen(true); setOrder(null); setError(null); }
   }
 
   function removeHistory(no: string) {
@@ -161,6 +163,36 @@ export default function OrderQueryPage() {
   ) : null;
   const fmtPresaleTime = (s: string | null) => s ? new Date(s).toLocaleString(lang === "en" ? "en-US" : "zh-CN") : t.tba;
   const presaleReady = order?.deliveryMode === "PRESALE_VOUCHER" && ["PAID", "DELIVERED"].includes(order.status);
+
+  const queryForm = (<>
+        <p className="mb-4 mt-3 text-xs leading-relaxed text-ink/50">{t.manualNote}</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="label">{t.number}</label>
+            <input className="input font-mono" aria-label={t.number} placeholder={t.paste} value={orderNo}
+              onChange={(e) => { setOrderNo(e.target.value); setQueryToken(""); }} />
+          </div>
+          <div>
+            <label className="label">{t.email}</label>
+            <input className="input" type="email" autoComplete="email" aria-label={t.email} placeholder="you@example.com" value={contact} onChange={(e) => setContact(e.target.value)} />
+          </div>
+        </div>
+        <div className="mt-3">
+          <label className="label">{t.passwordLabel}</label>
+          <input className="input" type="password" aria-label={t.password} placeholder={t.optional} value={queryPassword} onChange={(e) => setQueryPassword(e.target.value)} />
+        </div>
+        {errorText && (!resultOpen || needsCredentials) && <p role="alert" className="mt-3 text-sm text-red-500">{errorText}</p>}
+        <CaptchaBox
+          action="order_query"
+          onToken={handleCaptchaToken}
+          onEnabledChange={handleCaptchaEnabled}
+          resetKey={captchaResetKey}
+        />
+        <button className="btn-primary mt-5 w-full !py-3.5" disabled={busy || !orderNo || (!contact && !queryToken)}
+          onClick={() => doQuery(orderNo, contact)}>
+          {busy ? t.querying : t.submit}
+        </button>
+  </>);
 
   return (
     <div className="mx-auto max-w-2xl animate-fade-up">
@@ -203,39 +235,29 @@ export default function OrderQueryPage() {
           <span className="text-xs text-primary">{manualOpen ? t.collapse : t.credentials}</span>
         </button>
         <div id="manual-order-query" hidden={!manualOpen}>
-        <p className="mb-4 mt-3 text-xs leading-relaxed text-ink/50">{t.manualNote}</p>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className="label">{t.number}</label>
-            <input className="input font-mono" aria-label={t.number} placeholder={t.paste} value={orderNo}
-              onChange={(e) => { setOrderNo(e.target.value); setQueryToken(""); }} />
-          </div>
-          <div>
-            <label className="label">{t.email}</label>
-            <input className="input" type="email" autoComplete="email" aria-label={t.email} placeholder="you@example.com" value={contact} onChange={(e) => setContact(e.target.value)} />
-          </div>
-        </div>
-        <div className="mt-3">
-          <label className="label">{t.passwordLabel}</label>
-          <input className="input" type="password" aria-label={t.password} placeholder={t.optional} value={queryPassword} onChange={(e) => setQueryPassword(e.target.value)} />
-        </div>
-        {errorText && <p role="alert" className="mt-3 text-sm text-red-500">{errorText}</p>}
-        <CaptchaBox
-          action="order_query"
-          onToken={handleCaptchaToken}
-          onEnabledChange={handleCaptchaEnabled}
-          resetKey={captchaResetKey}
-        />
-        <button className="btn-primary mt-5 w-full !py-3.5" disabled={busy || !orderNo || (!contact && !queryToken)}
-          onClick={() => doQuery(orderNo, contact)}>
-          {busy ? t.querying : t.submit}
-        </button>
+        {!(resultOpen && needsCredentials) && queryForm}
         </div>
       </div>
-      {busy && <p role="status" className="mt-4 text-center text-sm text-ink/50">{t.loading}</p>}
-
+      {resultOpen && <OrderQueryDialog
+        returnFocus={queryOpener.current}
+        title={lang === "zh" ? "订单详情" : "Order details"}
+        closeLabel={lang === "zh" ? "关闭订单详情" : "Close order details"}
+        onClose={() => setResultOpen(false)}>
+        {busy && <div role="status" className="flex min-h-48 flex-col items-center justify-center gap-4 text-ink/60">
+          <Loader2 size={26} className="animate-spin text-primary" />
+          <p className="font-medium">{t.querying}</p>
+          <p className="max-w-full break-all text-xs text-ink/45">{t.order} {orderNo}</p>
+        </div>}
+        {needsCredentials && <div>{queryForm}</div>}
+        {!busy && errorText && !needsCredentials && <div className="py-8">
+          <p role="alert" className="text-sm leading-6 text-red-600 dark:text-red-400">{errorText}</p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button className="btn-primary" onClick={() => doQuery(orderNo, contact)}>{lang === "zh" ? "重新查询" : "Try again"}</button>
+            <button className="btn-ghost" onClick={() => { setNeedsCredentials(true); setQueryToken(""); }}>{lang === "zh" ? "修改查询信息" : "Edit details"}</button>
+          </div>
+        </div>}
       {order && statusInfo && (
-        <div ref={resultRef} className="card mt-5 scroll-mt-24 animate-fade-up p-7 md:p-8">
+        <div className="min-w-0" data-order-result>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-bold">{order.productName} × {order.quantity}</h2>
             <span className={`text-sm font-semibold ${statusInfo[1]}`}>{statusInfo[0]}</span>
@@ -315,7 +337,37 @@ export default function OrderQueryPage() {
           )}
         </div>
       )}
-
+      </OrderQueryDialog>}
     </div>
+  );
+}
+
+
+function OrderQueryDialog({ title, closeLabel, onClose, children, returnFocus }: {
+  title: string; closeLabel: string; onClose: () => void; children: ReactNode; returnFocus: HTMLElement | null;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const element = dialog.current!;
+    const previousOverflow = document.body.style.overflow;
+    element.showModal();
+    document.body.style.overflow = "hidden";
+    return () => {
+      element.close();
+      document.body.style.overflow = previousOverflow;
+      returnFocus?.focus({ preventScroll: true });
+    };
+  }, []);
+  return createPortal(
+    <dialog ref={dialog} aria-labelledby="order-dialog-title" onCancel={(event) => { event.preventDefault(); onClose(); }}
+      className="order-query-dialog m-auto w-[calc(100%_-_2rem)] max-w-2xl overflow-hidden rounded-2xl border border-ink/10 bg-surface p-0 text-ink shadow-xl">
+      <div className="flex max-h-[85dvh] flex-col">
+        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-ink/10 px-5 py-4 sm:px-7">
+          <h2 id="order-dialog-title" className="font-bold">{title}</h2>
+          <button autoFocus type="button" aria-label={closeLabel} onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full text-ink/60 hover:bg-ink/5"><X size={20} /></button>
+        </header>
+        <div className="overflow-y-auto overscroll-contain p-5 sm:p-7">{children}</div>
+      </div>
+    </dialog>, document.body,
   );
 }

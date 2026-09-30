@@ -30,35 +30,7 @@ public interface WalletAccountRepository extends JpaRepository<WalletAccount, Lo
     @Query("select coalesce(sum(w.balance), 0) from WalletAccount w")
     BigDecimal sumBalance();
 
-    @Query("select coalesce(sum(w.frozen), 0) from WalletAccount w")
+    @Query("select coalesce(sum(w.frozen + w.withdrawalFrozen), 0) from WalletAccount w")
     BigDecimal sumFrozen();
 
-    /** 入账(充值/佣金/调账加钱) */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("update WalletAccount w set w.balance = w.balance + :amt where w.memberId = :mid")
-    int credit(@Param("mid") Long memberId, @Param("amt") BigDecimal amount);
-
-    /** 出账(消费):余额充足才成功 */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("update WalletAccount w set w.balance = w.balance - :amt " +
-           "where w.memberId = :mid and w.balance >= :amt")
-    int debit(@Param("mid") Long memberId, @Param("amt") BigDecimal amount);
-
-    /** 提现冻结:可用 → 冻结 */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("update WalletAccount w set w.balance = w.balance - :amt, w.frozen = w.frozen + :amt " +
-           "where w.memberId = :mid and w.balance >= :amt")
-    int freeze(@Param("mid") Long memberId, @Param("amt") BigDecimal amount);
-
-    /** 提现驳回:冻结 → 可用 */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("update WalletAccount w set w.frozen = w.frozen - :amt, w.balance = w.balance + :amt " +
-           "where w.memberId = :mid and w.frozen >= :amt")
-    int unfreeze(@Param("mid") Long memberId, @Param("amt") BigDecimal amount);
-
-    /** 提现通过:核销冻结(钱已线下打出) */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("update WalletAccount w set w.frozen = w.frozen - :amt " +
-           "where w.memberId = :mid and w.frozen >= :amt")
-    int consumeFrozen(@Param("mid") Long memberId, @Param("amt") BigDecimal amount);
 }

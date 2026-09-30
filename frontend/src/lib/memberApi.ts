@@ -67,19 +67,38 @@ http.interceptors.request.use((cfg) => {
 let refreshing: Promise<boolean> | null = null;
 
 async function tryRefresh(): Promise<boolean> {
-  if (!refreshToken) return false;
-  refreshing = refreshing ?? axios
-    .post("/api/member/auth/refresh", { refreshToken })
+  if (refreshing) return refreshing;
+  const originalRefresh = localStorage.getItem("ka.m.refresh");
+  if (!originalRefresh) return false;
+  refreshing = axios.post("/api/member/auth/refresh", { refreshToken: originalRefresh }, { timeout: 15000 })
     .then((r) => {
+      // Another tab may have signed out or switched accounts while this request was in flight.
+      if (localStorage.getItem("ka.m.refresh") !== originalRefresh) {
+        throw new ApiError(-1, "登录状态已变化，请重试");
+      }
       if (r.data.code === 0) {
         setMemberTokens(r.data.data.accessToken, r.data.data.refreshToken);
         return true;
       }
-      return false;
+      if ([401, 1003, 1004].includes(r.data.code)) return false;
+      throw new ApiError(r.data.code ?? -1, r.data.message ?? "登录续期暂时失败，请重试");
     })
-    .catch(() => false)
-    .finally(() => setTimeout(() => (refreshing = null), 0));
-  return refreshing ?? false;
+    .catch((error: unknown) => {
+      if (error instanceof ApiError) throw error;
+      if (axios.isAxiosError(error) && localStorage.getItem("ka.m.refresh") === originalRefresh
+          && (error.response?.status === 401 || [1003, 1004].includes(error.response?.data?.code))) return false;
+      // A timeout, rate limit or server outage does not revoke a valid session.
+      throw new ApiError(-1, "登录续期暂时失败，请稍后重试");
+    })
+    .finally(() => { refreshing = null; });
+  return refreshing;
+}
+
+// A delayed 401 may belong to the old access token after another request refreshed it.
+async function recoverSession(sentAuthorization: unknown): Promise<boolean> {
+  const current = localStorage.getItem("ka.m.access");
+  if (current && sentAuthorization !== `Bearer ${current}`) return true;
+  return tryRefresh();
 }
 
 http.interceptors.response.use(
@@ -89,7 +108,7 @@ http.interceptors.response.use(
       if (body.code === 1003) memberLogout();
       if (body.code === 401) {
         const cfg = resp.config as typeof resp.config & { _memberRetried?: boolean };
-        if (!cfg._memberRetried && (await tryRefresh())) {
+        if (!cfg._memberRetried && (await recoverSession(cfg.headers?.Authorization))) {
           cfg._memberRetried = true;
           return http.request(cfg);
         }
@@ -103,7 +122,7 @@ http.interceptors.response.use(
     const resp = err.response;
     if (resp?.status === 401) {
       const cfg = err.config as typeof err.config & { _memberRetried?: boolean };
-      if (!cfg?._memberRetried && (await tryRefresh())) {
+      if (!cfg?._memberRetried && (await recoverSession(cfg.headers?.Authorization))) {
         cfg._memberRetried = true;
         return http.request(cfg);
       }
@@ -183,6 +202,11 @@ export interface MemberMe {
   } | null;
   balance: string;
   frozen: string;
+  shoppingBalance: string;
+  withdrawableBalance: string;
+  shoppingFrozen: string;
+  withdrawableFrozen: string;
+  withdrawalFrozen: string;
   invitedCount: number;
   commissionTotal: string;
 }
@@ -190,6 +214,11 @@ export interface MemberMe {
 export interface WalletSummary {
   balance: string;
   frozen: string;
+  shoppingBalance: string;
+  withdrawableBalance: string;
+  shoppingFrozen: string;
+  withdrawableFrozen: string;
+  withdrawalFrozen: string;
   totalCommission: string;
   minWithdraw: string;
   commissionRate: string;
@@ -203,6 +232,8 @@ export interface WithdrawMethod {
 }
 
 export interface TxnView {
+  shoppingAmount: string | null;
+  withdrawableAmount: string | null;
   id: number;
   type: "RECHARGE" | "PURCHASE" | "COMMISSION" | "WITHDRAW_FREEZE" | "WITHDRAW_REJECT"
     | "ADMIN_FREEZE" | "ADMIN_UNFREEZE" | "RECHARGE_REVERSAL" | "WALLET_ORDER_REFUND"
@@ -214,6 +245,7 @@ export interface TxnView {
 }
 
 export interface WithdrawView {
+  withdrawableSource: boolean;
   payoutAmount: string | null;
   payoutCurrency: string | null;
   payoutFxRate: string | null;

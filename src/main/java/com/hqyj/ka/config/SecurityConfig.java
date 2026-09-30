@@ -70,7 +70,7 @@ public class SecurityConfig {
                 .anyRequest().authenticated())
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(rateLimitFilter, JwtAuthenticationFilter.class)
-            .addFilterAfter(captchaFilter, RateLimitFilter.class);
+            .addFilterAfter(captchaFilter, JwtAuthenticationFilter.class);
         return http.build();
     }
 

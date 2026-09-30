@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { I18nProvider } from "./lib/i18n";
 import "./index.css";
+import "./storefront.css";
 import { bootstrapSiteTheme } from "./lib/theme";
 
 function start() {

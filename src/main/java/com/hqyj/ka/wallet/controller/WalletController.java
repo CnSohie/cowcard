@@ -49,13 +49,18 @@ public class WalletController {
         WalletAccount account = accountRepository.findByMemberId(mid).orElse(null);
         if (account != null) {
             balance = account.getBalance();
-            frozen = account.getFrozen();
+            frozen = account.getTotalFrozen();
         }
         String freezeReason = frozen.signum() > 0
                 ? txnRepository.findTopByMemberIdAndTypeOrderByIdDesc(mid, WalletTxn.Type.ADMIN_FREEZE)
                         .map(WalletTxn::getRemark).orElse(null)
                 : null;
         return ApiResponse.ok(new WalletSummary(balance, frozen,
+                account == null ? BigDecimal.ZERO : account.getShoppingBalance(),
+                account == null ? BigDecimal.ZERO : account.getWithdrawableBalance(),
+                account == null ? BigDecimal.ZERO : account.getShoppingFrozen(),
+                account == null ? BigDecimal.ZERO : account.getWithdrawableFrozen(),
+                account == null ? BigDecimal.ZERO : account.getWithdrawalFrozen(),
                 txnRepository.sumByType(mid, WalletTxn.Type.COMMISSION),
                 walletService.minWithdraw(), commissionService.rate(), freezeReason,
                 withdrawMethodService.enabledMethods()));

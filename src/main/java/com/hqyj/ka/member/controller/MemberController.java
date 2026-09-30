@@ -57,7 +57,12 @@ public class MemberController {
                     return item;
                 }).orElse(null));
         data.put("balance", account != null ? account.getBalance() : BigDecimal.ZERO);
-        data.put("frozen", account != null ? account.getFrozen() : BigDecimal.ZERO);
+        data.put("frozen", account != null ? account.getTotalFrozen() : BigDecimal.ZERO);
+        data.put("shoppingBalance", account != null ? account.getShoppingBalance() : BigDecimal.ZERO);
+        data.put("withdrawableBalance", account != null ? account.getWithdrawableBalance() : BigDecimal.ZERO);
+        data.put("shoppingFrozen", account != null ? account.getShoppingFrozen() : BigDecimal.ZERO);
+        data.put("withdrawableFrozen", account != null ? account.getWithdrawableFrozen() : BigDecimal.ZERO);
+        data.put("withdrawalFrozen", account != null ? account.getWithdrawalFrozen() : BigDecimal.ZERO);
         data.put("invitedCount", memberRepository.countByInviterId(mid));
         data.put("commissionTotal", txnRepository.sumByType(mid, WalletTxn.Type.COMMISSION));
         return ApiResponse.ok(data);

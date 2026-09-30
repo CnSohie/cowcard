@@ -37,39 +37,53 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "member-level:manage", "wallet:freeze", "security:manage");
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        // These endpoints authenticate credentials/refresh tokens themselves. An old bearer
+        // token must not prevent a user from signing in again.
+        return Set.of("/api/auth/login", "/api/auth/refresh", "/api/member/auth/login",
+                "/api/member/auth/register", "/api/member/auth/refresh").contains(request.getRequestURI());
+    }
+
+    @Override
     @SuppressWarnings("unchecked")
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
             Claims claims = jwtService.parse(header.substring(7));
-            if (claims != null && JwtService.TYPE_ACCESS.equals(claims.get("typ", String.class))) {
-                boolean isMember = JwtService.KIND_MEMBER.equals(JwtService.kindOf(claims));
-                List<String> auth = claims.get("auth", List.class);
-                var authorities = new ArrayList<SimpleGrantedAuthority>();
-                if (auth != null) auth.forEach(a -> authorities.add(new SimpleGrantedAuthority(a)));
-                if (auth != null && auth.contains("ROLE_SUPER_ADMIN")) {
-                    SUPER_ADMIN_PERMISSIONS.forEach(p -> authorities.add(new SimpleGrantedAuthority(p)));
-                }
-                // 阵营合成权限:URL 级硬隔离(/api/member/** vs /api/admin/**),见 SecurityConfig
-                authorities.add(new SimpleGrantedAuthority(isMember ? "KIND_MEMBER" : "KIND_ADMIN"));
-                if (!tokenActive(claims, isMember)) {
-                    SecurityContextHolder.clearContext();
-                    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-                    response.setContentType("application/json;charset=UTF-8");
-                    response.getWriter().write("{\"code\":" + ErrorCode.ACCOUNT_DISABLED.getCode()
-                            + ",\"message\":\"" + ErrorCode.ACCOUNT_DISABLED.getMessage() + "\"}");
-                    return;
-                }
-                var token = new UsernamePasswordAuthenticationToken(claims.getSubject(), null, authorities);
-                SecurityContextHolder.getContext().setAuthentication(token);
-                if (isMember) {
-                    request.setAttribute("mid", Long.valueOf(claims.getSubject()));
-                    request.setAttribute("mname", claims.get("username", String.class));
-                } else {
-                    request.setAttribute("uid", Long.valueOf(claims.getSubject()));
-                    request.setAttribute("uname", claims.get("username", String.class));
-                }
+            // A supplied but expired/invalid identity must not silently become a guest order.
+            if (claims == null || !JwtService.TYPE_ACCESS.equals(claims.get("typ", String.class))) {
+                SecurityContextHolder.clearContext();
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.setContentType("application/json;charset=UTF-8");
+                response.getWriter().write("{\"code\":401,\"message\":\"登录已过期,请重新登录\"}");
+                return;
+            }
+            boolean isMember = JwtService.KIND_MEMBER.equals(JwtService.kindOf(claims));
+            List<String> auth = claims.get("auth", List.class);
+            var authorities = new ArrayList<SimpleGrantedAuthority>();
+            if (auth != null) auth.forEach(a -> authorities.add(new SimpleGrantedAuthority(a)));
+            if (auth != null && auth.contains("ROLE_SUPER_ADMIN")) {
+                SUPER_ADMIN_PERMISSIONS.forEach(p -> authorities.add(new SimpleGrantedAuthority(p)));
+            }
+            // 阵营合成权限:URL 级硬隔离(/api/member/** vs /api/admin/**),见 SecurityConfig
+            authorities.add(new SimpleGrantedAuthority(isMember ? "KIND_MEMBER" : "KIND_ADMIN"));
+            if (!tokenActive(claims, isMember)) {
+                SecurityContextHolder.clearContext();
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                response.setContentType("application/json;charset=UTF-8");
+                response.getWriter().write("{\"code\":" + ErrorCode.ACCOUNT_DISABLED.getCode()
+                        + ",\"message\":\"" + ErrorCode.ACCOUNT_DISABLED.getMessage() + "\"}");
+                return;
+            }
+            var token = new UsernamePasswordAuthenticationToken(claims.getSubject(), null, authorities);
+            SecurityContextHolder.getContext().setAuthentication(token);
+            if (isMember) {
+                request.setAttribute("mid", Long.valueOf(claims.getSubject()));
+                request.setAttribute("mname", claims.get("username", String.class));
+            } else {
+                request.setAttribute("uid", Long.valueOf(claims.getSubject()));
+                request.setAttribute("uname", claims.get("username", String.class));
             }
         }
         chain.doFilter(request, response);

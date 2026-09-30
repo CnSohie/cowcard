@@ -12,6 +12,7 @@ import WithdrawAmounts from "../../components/WithdrawAmounts";
 
 interface WithdrawRow {
   id: number; memberId: number; memberEmail: string;
+  withdrawableSource: boolean;
   payoutAmount: string | null; payoutCurrency: string | null; payoutFxRate: string | null;
   amount: string; feeAmount: string; netAmount: string; channel: string; account: string; accountName: string | null; bankName: string | null;
   status: "PENDING" | "APPROVED" | "REJECTED";
@@ -186,7 +187,7 @@ export default function WithdrawalsAdmin() {
                 <p className="pt-1 text-[11px] leading-relaxed text-ink/40">
                   {review.approve
                     ? "请先在线下完成打款再确认;冻结金额将正式扣除,不可撤销。"
-                    : "驳回后冻结金额自动退回会员余额;原因会员端可见。"}
+                    : (review.row.withdrawableSource ? "驳回后退回可提现余额；原因会员端可见。" : "历史申请驳回后退回购物余额，不可再次提现；原因会员端可见。")}
                 </p>
               </div>
             ),

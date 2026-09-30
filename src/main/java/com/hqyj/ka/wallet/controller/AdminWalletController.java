@@ -58,7 +58,7 @@ public class AdminWalletController {
                 r.getId(), r.getMemberId(), emails.getOrDefault(r.getMemberId(), "?"),
                 r.getAmount(), r.getFeeAmount() == null ? java.math.BigDecimal.ZERO : r.getFeeAmount(),
                 r.getNetAmount() == null ? r.getAmount().subtract(r.getFeeAmount() == null ? java.math.BigDecimal.ZERO : r.getFeeAmount()) : r.getNetAmount(),
-                r.getPayoutAmount(), r.getPayoutCurrency(), r.getPayoutFxRate(),
+                r.getPayoutAmount(), r.getPayoutCurrency(), r.getPayoutFxRate(), r.isWithdrawableSource(),
                 r.getChannel(), r.getAccount(), r.getAccountName(), r.getBankName(), r.getStatus().name(),
                 r.getReviewedBy(), r.getReviewNote(), r.getCreatedAt(), r.getReviewedAt()));
         return ApiResponse.ok(Map.of(
