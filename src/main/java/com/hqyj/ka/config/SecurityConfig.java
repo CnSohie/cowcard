@@ -65,7 +65,10 @@ public class SecurityConfig {
                 .requestMatchers("/api/store/**", "/api/orders/**", "/api/pay/**", "/api/posts/**").permitAll()
                 // React 单页应用的入口与 Vite 构建产物必须在 JWT 认证前公开，
                 // 否则首页与其 JS/CSS 会被 anyRequest() 返回 401。
-                .requestMatchers("/", "/assets/**", "/favicon.ico", "/manifest.webmanifest", "/site.webmanifest").permitAll()
+                .requestMatchers(
+                        "/", "/index.html", "/assets/**", "/favicon.ico", "/manifest.webmanifest", "/site.webmanifest",
+                        "/product/**", "/pay/**", "/order", "/tg/**", "/redeem", "/posts/**", "/login", "/register", "/me", "/tos", "/about",
+                        "/admin", "/admin/**").permitAll()
                 .requestMatchers("/robots.txt", "/sitemap.xml").permitAll()
                 .requestMatchers("/files/**").permitAll()
                 .requestMatchers("/error").permitAll()
