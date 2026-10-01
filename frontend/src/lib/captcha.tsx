@@ -249,16 +249,19 @@ export function CaptchaBox({
             <CheckCircle2 size={17} /> 验证已完成
           </div>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,240px)_1fr_auto] sm:items-center">
+          <div className="grid min-w-0 gap-3">
             {challenge
               ? <img src={challenge.imageDataUrl} alt="图形验证码" className="h-[72px] w-full rounded-xl border border-ink/[0.08] bg-white object-contain" />
               : <div className="h-[72px] animate-pulse rounded-xl bg-ink/[0.05]" />}
-            <input className="input !py-3 font-mono uppercase tracking-[0.22em]" value={answer}
-              maxLength={6} autoComplete="off" inputMode="text" placeholder="输入字符"
-              onChange={(e) => setAnswer(e.target.value.replace(/[^0-9a-z]/gi, "").toUpperCase())}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void verifyBuiltin(); } }} />
-            <button type="button" className="btn-primary !px-5 !py-3" disabled={checking || !challenge}
-              onClick={() => void verifyBuiltin()}>{checking ? "验证中…" : "验证"}</button>
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+              <input className="input min-w-0 !px-3 !py-3 font-mono text-base text-ink uppercase tracking-[0.12em]" value={answer}
+                aria-label="图形验证码字符" spellCheck={false}
+                maxLength={6} autoComplete="off" inputMode="text" placeholder="输入字符"
+                onChange={(e) => setAnswer(e.target.value.replace(/[^0-9a-z]/gi, "").toUpperCase())}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void verifyBuiltin(); } }} />
+              <button type="button" className="btn-primary !px-5 !py-3" disabled={checking || !challenge}
+                onClick={() => void verifyBuiltin()}>{checking ? "验证中…" : "验证"}</button>
+            </div>
           </div>
         )}
         {error && <p className="mt-2 text-xs text-red-500">{error}</p>}

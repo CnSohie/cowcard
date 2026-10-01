@@ -32,12 +32,12 @@ public class OrderController {
     /** 已持有随机订单凭证的查单不重复要求验证码,仍由服务端核验该订单的令牌。 */
     @PostMapping("/query-by-token")
     public ApiResponse<OrderView> queryByToken(@Valid @RequestBody TokenOrderRequest req) {
-        return ApiResponse.ok(orderService.query(req.orderNo(), null, null, req.queryToken()));
+        return ApiResponse.ok(orderService.queryRecent(req.orderNo(), req.queryToken(), req.historyToken()));
     }
 
     @PostMapping("/presale-token-by-token")
     public ApiResponse<PresaleVoucherClaimResponse> claimPresaleByToken(@Valid @RequestBody TokenOrderRequest req) {
-        return ApiResponse.ok(orderService.claimPresaleVoucherToken(req.orderNo(), null, null, req.queryToken()));
+        return ApiResponse.ok(orderService.claimPresaleRecent(req.orderNo(), req.queryToken(), req.historyToken()));
     }
 
     /** POST 查单:凭证不进 URL/访问日志 */

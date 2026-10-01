@@ -29,7 +29,13 @@ public final class OrderDtos {
 
     /** 下单时签发的 256-bit 随机凭证;不接受邮箱/密码替代。 */
     public record TokenOrderRequest(@NotBlank @Size(max = 32) String orderNo,
-                                    @NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{43}") String queryToken) {}
+                                    @Pattern(regexp = "[A-Za-z0-9_-]{43}") String queryToken,
+                                    @Size(min = 1, max = 2048) String historyToken) {
+        @AssertTrue(message = "请提供有效查询凭证")
+        public boolean isCredentialPresent() {
+            return (queryToken != null && !queryToken.isBlank()) ^ (historyToken != null && !historyToken.isBlank());
+        }
+    }
 
     public record PresaleVoucherClaimResponse(String token, String tokenHint, String status) {}
 
@@ -40,7 +46,12 @@ public final class OrderDtos {
                             List<String> cards, String usageNote,
                             String deliveryMode, String buyerNote, String deliveryContent,
                             String presaleVoucherHint, String presaleVoucherStatus, String presaleFulfillmentNote,
-                            LocalDateTime presaleStartAt, LocalDateTime presaleEndAt) {}
+                            LocalDateTime presaleStartAt, LocalDateTime presaleEndAt,
+                            String historyToken, java.time.Instant historyExpiresAt) {
+        public OrderView withHistory(String token, java.time.Instant expiresAt) {
+            return new OrderView(orderNo, productName, unitPrice, quantity, amount, discountAmount, walletPaidAmount, status, paidChannel, createdAt, expireAt, paidAt, cards, usageNote, deliveryMode, buyerNote, deliveryContent, presaleVoucherHint, presaleVoucherStatus, presaleFulfillmentNote, presaleStartAt, presaleEndAt, token, expiresAt);
+        }
+    }
 
     public record QueryOrderRequest(
             @NotBlank String orderNo,

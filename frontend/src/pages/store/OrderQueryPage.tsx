@@ -39,7 +39,6 @@ export default function OrderQueryPage() {
   const [orderNo, setOrderNo] = useState(location.state?.orderNo ?? "");
   const [contact, setContact] = useState(() => location.state?.contact ?? recalledContact());
   const [queryPassword, setQueryPassword] = useState("");
-  const [queryToken, setQueryToken] = useState(location.state?.queryToken ?? "");
   const [order, setOrder] = useState<OrderView | null>(null);
   const [busy, setBusy] = useState(false);
   const [resultOpen, setResultOpen] = useState(false);
@@ -75,15 +74,14 @@ export default function OrderQueryPage() {
       const token = location.state?.queryToken || hit?.queryToken || "";
       const savedContact = location.state?.contact || hit?.contact || "";
       if (savedContact) setContact(savedContact);
-      if (token) setQueryToken(token);
       if (token && autoQueryKey.current !== `${no}:${token}`) {
         autoQueryKey.current = `${no}:${token}`;
-        void doQuery(no, savedContact, token);
+        void doQuery(no, savedContact, { queryToken: token });
       }
     }
   }, [location.state?.contact, location.state?.orderNo, location.state?.queryToken]);
 
-  async function doQuery(no: string, ct: string, token = queryToken) {
+  async function doQuery(no: string, ct: string, credential?: { queryToken?: string; historyToken?: string }) {
     if (queryLock.current) return;
     queryLock.current = true;
     if (!resultOpen) queryOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -94,7 +92,7 @@ export default function OrderQueryPage() {
     setOrder(null);
     setCopied(-1);
     setRevealedPresaleToken(null);
-    if (!token && captchaEnabled && !captchaToken) {
+    if (!credential && captchaEnabled && !captchaToken) {
       setError("captcha");
       setBusy(false);
       queryLock.current = false;
@@ -105,17 +103,16 @@ export default function OrderQueryPage() {
       const payload = {
         orderNo: no.trim(),
         contact: ct.trim() || undefined,
-        queryPassword: token ? undefined : queryPassword || undefined,
-        queryToken: token || undefined,
+        queryPassword: queryPassword || undefined,
       };
-      const r = await post<OrderView>(token ? "/orders/query-by-token" : "/orders/query", token ? { orderNo: no.trim(), queryToken: token } : payload, { headers: captchaHeaders(captchaToken) });
+      const r = await post<OrderView>(credential ? "/orders/query-by-token" : "/orders/query", credential ? { orderNo: no.trim(), ...credential } : payload, { headers: captchaHeaders(captchaToken) });
       // 查询成功 → 留存/刷新本机凭证(其他设备下的单也能被记住)
       const previous = findLocalOrder(r.orderNo);
       let nextOrder = r;
       const presalePaid = r.deliveryMode === "PRESALE_VOUCHER" && ["PAID", "DELIVERED"].includes(r.status);
       let oneTimePresaleToken = presalePaid ? previous?.presaleVoucherToken ?? null : null;
       if (!oneTimePresaleToken && presalePaid) {
-        const claimed = await post<PresaleVoucherClaim>(token ? "/orders/presale-token-by-token" : "/orders/presale-token", token ? { orderNo: no.trim(), queryToken: token } : payload);
+        const claimed = await post<PresaleVoucherClaim>("/orders/presale-token-by-token", { orderNo: no.trim(), historyToken: r.historyToken });
         nextOrder = { ...r, presaleVoucherHint: claimed.tokenHint, presaleVoucherStatus: claimed.status };
         oneTimePresaleToken = claimed.token;
       }
@@ -123,7 +120,8 @@ export default function OrderQueryPage() {
       const savedContact = ct.trim() || previous?.contact || "";
       rememberOrder({
         orderNo: nextOrder.orderNo, contact: savedContact, productName: nextOrder.productName,
-        amount: String(nextOrder.amount), createdAt: nextOrder.createdAt, queryToken: token || undefined,
+        amount: String(nextOrder.amount), createdAt: nextOrder.createdAt, queryToken: credential?.queryToken,
+        historyToken: r.historyToken, historyExpiresAt: r.historyExpiresAt,
         presaleVoucherToken: oneTimePresaleToken ?? previous?.presaleVoucherToken,
       }, { bump: !previous });
       if (oneTimePresaleToken) {
@@ -133,8 +131,7 @@ export default function OrderQueryPage() {
       setHistory(localOrders());
     } catch (e) {
       setError(e instanceof ApiError ? e.code : "failed");
-      if (token && e instanceof ApiError && (e.code === 3001 || e.code === 400)) {
-        setQueryToken("");
+      if (credential && e instanceof ApiError && [3001, 3005, 400].includes(e.code)) {
         setNeedsCredentials(true);
       }
     } finally {
@@ -149,9 +146,9 @@ export default function OrderQueryPage() {
     setQueryPassword("");
     setOrderNo(h.orderNo);
     setContact(h.contact);
-    setQueryToken(h.queryToken ?? "");
-    if (h.queryToken) void doQuery(h.orderNo, h.contact, h.queryToken);
-    else { queryOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setNeedsCredentials(true); setResultOpen(true); setOrder(null); setError(null); }
+    if (h.historyToken && Date.parse(h.historyExpiresAt ?? "") > Date.now()) void doQuery(h.orderNo, h.contact, { historyToken: h.historyToken });
+    else if (!h.historyToken && h.queryToken) void doQuery(h.orderNo, h.contact, { queryToken: h.queryToken });
+    else { queryOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setNeedsCredentials(true); setResultOpen(true); setOrder(null); setError(h.historyToken ? 3005 : null); }
   }
 
   function removeHistory(no: string) {
@@ -180,7 +177,7 @@ export default function OrderQueryPage() {
           <div>
             <label className="label">{t.number}</label>
             <input className="input font-mono" aria-label={t.number} placeholder={t.paste} value={orderNo}
-              onChange={(e) => { setOrderNo(e.target.value); setQueryToken(""); }} />
+              onChange={(e) => setOrderNo(e.target.value)} />
           </div>
           <div>
             <label className="label">{t.email}</label>
@@ -192,13 +189,13 @@ export default function OrderQueryPage() {
           <input className="input" type="password" aria-label={t.password} placeholder={t.optional} value={queryPassword} onChange={(e) => setQueryPassword(e.target.value)} />
         </div>
         {errorText && (!resultOpen || needsCredentials) && <p role="alert" className="mt-3 text-sm text-red-500">{errorText}</p>}
-        {!queryToken && <CaptchaBox
+        <CaptchaBox
           action="order_query"
           onToken={handleCaptchaToken}
           onEnabledChange={handleCaptchaEnabled}
           resetKey={captchaResetKey}
-        />}
-        <button className="btn-primary mt-5 w-full !py-3.5" disabled={busy || !orderNo || (!contact && !queryToken)}
+        />
+        <button className="btn-primary mt-5 w-full !py-3.5" disabled={busy || !orderNo || !contact}
           onClick={() => doQuery(orderNo, contact)}>
           {busy ? t.querying : t.submit}
         </button>
@@ -263,7 +260,7 @@ export default function OrderQueryPage() {
           <p role="alert" className="text-sm leading-6 text-red-600 dark:text-red-400">{errorText}</p>
           <div className="mt-6 flex flex-wrap gap-3">
             <button className="btn-primary" onClick={() => doQuery(orderNo, contact)}>{lang === "zh" ? "重新查询" : "Try again"}</button>
-            <button className="btn-ghost" onClick={() => { setNeedsCredentials(true); setQueryToken(""); }}>{lang === "zh" ? "修改查询信息" : "Edit details"}</button>
+            <button className="btn-ghost" onClick={() => { setNeedsCredentials(true); }}>{lang === "zh" ? "修改查询信息" : "Edit details"}</button>
           </div>
         </div>}
       {order && statusInfo && (

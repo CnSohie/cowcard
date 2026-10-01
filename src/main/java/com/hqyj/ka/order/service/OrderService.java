@@ -51,6 +51,7 @@ public class OrderService {
     private static final SecureRandom TOKEN_RANDOM = new SecureRandom();
 
     private final OrderRepository orderRepository;
+    private final com.hqyj.ka.security.JwtService jwtService;
     private final OrderDeliveryRecordRepository deliveryRecordRepository;
     private final ProductRepository productRepository;
     private final CardService cardService;
@@ -427,7 +428,42 @@ public class OrderService {
     public OrderView query(String orderNo, String contact, String queryPassword, String queryToken) {
         Order order = authorizeOrder(orderRepository.findByOrderNo(orderNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND)), contact, queryPassword, queryToken);
-        return toView(order, order.getStatus() == Order.Status.DELIVERED);
+        var expires = java.time.Instant.now().plus(java.time.Duration.ofDays(7));
+        return toView(order, order.getStatus() == Order.Status.DELIVERED)
+                .withHistory(jwtService.createOrderHistoryToken(order.getOrderNo(), expires), expires);
+    }
+
+    @Transactional(readOnly = true)
+    public OrderView queryRecent(String orderNo, String queryToken, String historyToken) {
+        Order order = orderRepository.findByOrderNo(orderNo)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+        var expires = authorizeRecent(order, queryToken, historyToken);
+        return toView(order, order.getStatus() == Order.Status.DELIVERED)
+                .withHistory(historyToken != null ? historyToken : jwtService.createOrderHistoryToken(orderNo, expires), expires);
+    }
+
+    private java.time.Instant authorizeRecent(Order order, String queryToken, String historyToken) {
+        if (historyToken != null && !historyToken.isBlank()) {
+            var expires = jwtService.orderHistoryExpiry(historyToken, order.getOrderNo());
+            if (expires == null || !expires.isAfter(java.time.Instant.now()))
+                throw new BusinessException(ErrorCode.ORDER_QUERY_EXPIRED);
+            return expires;
+        }
+        authorizeOrder(order, null, null, queryToken);
+        var expires = order.getCreatedAt() == null ? java.time.Instant.EPOCH
+                : order.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().plus(java.time.Duration.ofDays(7));
+        if (!expires.isAfter(java.time.Instant.now())) throw new BusinessException(ErrorCode.ORDER_QUERY_EXPIRED);
+        return expires;
+    }
+
+    @Transactional
+    public PresaleVoucherClaimResponse claimPresaleRecent(String orderNo, String queryToken, String historyToken) {
+        Order order = orderRepository.lockByOrderNo(orderNo)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+        authorizeRecent(order, queryToken, historyToken);
+        var issued = presaleVoucherService.issueForPaidOrder(order);
+        var voucher = issued.voucher();
+        return new PresaleVoucherClaimResponse(issued.token(), voucher.getTokenHint(), voucher.getStatus().name());
     }
 
     /** 游客创建支付前必须证明自己持有订单凭证,避免仅凭订单号占用或操作他人支付流程。 */
@@ -545,7 +581,7 @@ public class OrderService {
                 showVoucher ? voucher.getStatus().name() : null,
                 showVoucher ? voucher.getFulfillmentNote() : null,
                 showVoucher ? voucher.getPresaleStartAt() : null,
-                showVoucher ? voucher.getPresaleEndAt() : null);
+                showVoucher ? voucher.getPresaleEndAt() : null, null, null);
     }
 
     private void refundWalletHold(Order order, String remark) {

@@ -31,6 +31,12 @@ class TokenOrderQueryTest {
     @Mock CardService cards;
     @Mock ProductRepository products;
     @Mock CaptchaService captcha;
+    @org.mockito.Spy com.hqyj.ka.security.JwtService jwt = new com.hqyj.ka.security.JwtService(jwtProps());
+    static com.hqyj.ka.config.AppProperties jwtProps() {
+        var props = new com.hqyj.ka.config.AppProperties();
+        props.getSecurity().setJwtSecret(java.util.Base64.getEncoder().encodeToString(new byte[32]));
+        return props;
+    }
     @InjectMocks OrderService orders;
     MockMvc mvc;
     static final String TOKEN = "a".repeat(43);
@@ -44,6 +50,7 @@ class TokenOrderQueryTest {
 
     private Order order() {
         var o = new Order(); o.setId(1L); o.setOrderNo("TEST"); o.setProductId(7L);
+        o.setCreatedAt(java.time.LocalDateTime.now());
         o.setContact("buyer@example.com"); o.setQueryTokenHash("hash"); o.setStatus(Order.Status.DELIVERED);
         return o;
     }
@@ -73,6 +80,51 @@ class TokenOrderQueryTest {
                 .content("{\"orderNo\":\"TEST\",\"contact\":\"buyer@example.com\",\"queryToken\":\"" + TOKEN + "\"}"))
                 .andExpect(jsonPath("$.code").value(3001));
         verifyNoInteractions(cards);
+    }
+
+    @Test void originalCredentialExpiresAfterSevenDays() throws Exception {
+        var old = order(); old.setCreatedAt(java.time.LocalDateTime.now().minusDays(8));
+        when(repository.findByOrderNo("TEST")).thenReturn(Optional.of(old));
+        when(passwords.matches(TOKEN, "hash")).thenReturn(true);
+        mvc.perform(post("/api/orders/query-by-token").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"orderNo\":\"TEST\",\"queryToken\":\"" + TOKEN + "\"}"))
+                .andExpect(jsonPath("$.code").value(3005));
+        verifyNoInteractions(cards);
+    }
+
+    @Test void signedHistoryWorksForOldOrdersWithoutExtendingExpiry() throws Exception {
+        var old = order(); old.setCreatedAt(java.time.LocalDateTime.now().minusDays(30));
+        when(repository.findByOrderNo("TEST")).thenReturn(Optional.of(old));
+        var expiry = java.time.Instant.now().plusSeconds(3600).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        var token = jwt.createOrderHistoryToken("TEST", expiry);
+        mvc.perform(post("/api/orders/query-by-token").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"orderNo\":\"TEST\",\"historyToken\":\"" + token + "\"}"))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.historyToken").value(token));
+        org.junit.jupiter.api.Assertions.assertEquals(expiry, jwt.orderHistoryExpiry(token, "TEST"));
+        verify(captcha, never()).verify(any(), any(), any());
+    }
+
+    @Test void expiredForgedAndOtherOrderHistoryCredentialsAreRejected() throws Exception {
+        when(repository.findByOrderNo("TEST")).thenReturn(Optional.of(order()));
+        for (var token : List.of("forged", jwt.createOrderHistoryToken("TEST", java.time.Instant.now().minusSeconds(60)),
+                jwt.createOrderHistoryToken("OTHER", java.time.Instant.now().plusSeconds(3600)),
+                jwt.createMemberAccessToken(1L, "member", "v1"))) {
+            mvc.perform(post("/api/orders/query-by-token").contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"orderNo\":\"TEST\",\"historyToken\":\"" + token + "\"}"))
+                    .andExpect(jsonPath("$.code").value(3005));
+        }
+        verifyNoInteractions(cards);
+    }
+
+    @Test void manualQueryIssuesSevenDayHistoryCredential() {
+        when(repository.findByOrderNo("TEST")).thenReturn(Optional.of(order()));
+        var before = java.time.Instant.now().plus(java.time.Duration.ofDays(7));
+        var result = orders.query("TEST", "buyer@example.com", null, null);
+        org.junit.jupiter.api.Assertions.assertFalse(result.historyExpiresAt().isBefore(before));
+        org.junit.jupiter.api.Assertions.assertNotNull(jwt.orderHistoryExpiry(result.historyToken(), "TEST"));
+        org.junit.jupiter.api.Assertions.assertNotEquals(com.hqyj.ka.security.JwtService.TYPE_ACCESS,
+                jwt.parse(result.historyToken()).get("typ", String.class));
     }
 
     @Test void ordinaryQueryStillRequiresCaptcha() throws Exception {

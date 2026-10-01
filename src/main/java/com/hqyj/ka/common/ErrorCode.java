@@ -33,6 +33,8 @@ public enum ErrorCode {
     ORDER_EXPIRED(3003, "订单已超时关闭,请重新下单"),
     ORDER_PENDING_LIMIT(3004, "存在多笔未支付订单,请先完成支付或等待其自动关闭后再下单"),
 
+    ORDER_QUERY_EXPIRED(3005, "历史查单免验证已过期,请手动验证后查询"),
+
     // 支付 40xx
     CHANNEL_DISABLED(4001, "该支付方式暂不可用"),
     PAY_CREATE_FAILED(4002, "支付创建失败,请稍后再试"),

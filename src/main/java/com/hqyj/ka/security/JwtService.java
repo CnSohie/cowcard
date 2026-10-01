@@ -8,6 +8,7 @@ import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
@@ -84,6 +85,21 @@ public class JwtService {
                 .expiration(new Date(System.currentTimeMillis() + ttl))
                 .signWith(key, Jwts.SIG.HS256)
                 .compact();
+    }
+
+    /** 仅用于历史订单查询,不能作为登录或刷新令牌使用。 */
+    public String createOrderHistoryToken(String orderNo, java.time.Instant expiresAt) {
+        return Jwts.builder().subject(orderNo).claim("typ", "order_history")
+                .claim(CLAIM_KIND, "order_history").issuedAt(new Date())
+                .expiration(Date.from(expiresAt)).signWith(key, Jwts.SIG.HS256).compact();
+    }
+
+    public java.time.Instant orderHistoryExpiry(String token, String orderNo) {
+        Claims claims = parse(token);
+        if (claims == null || !"order_history".equals(claims.get("typ", String.class))
+                || !"order_history".equals(kindOf(claims)) || !orderNo.equals(claims.getSubject())
+                || claims.getExpiration() == null) return null;
+        return claims.getExpiration().toInstant();
     }
 
     /** 令牌阵营:缺失(存量令牌)按 admin 处理。 */

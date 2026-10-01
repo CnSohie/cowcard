@@ -157,6 +157,7 @@ export interface CryptoIntent {
   txHash: string | null; eip681: string;
 }
 export interface OrderView {
+  historyToken?: string; historyExpiresAt?: string;
   orderNo: string; productName: string; unitPrice: string; quantity: number; amount: string;
   discountAmount: string; walletPaidAmount: string;
   status: string; paidChannel: string | null; createdAt: string; expireAt: string;

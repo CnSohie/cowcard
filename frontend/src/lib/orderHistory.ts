@@ -1,6 +1,6 @@
 /**
  * 本机订单历史(localStorage):记录本浏览器上购买/查询过的订单凭证,
- * 游客无需翻邮箱即可一键再查询。仅存单号+邮箱等非敏感信息,不存查询密码。
+ * 游客无需翻邮箱即可一键再查询。保存订单查询凭证,不存查询密码。
  */
 export interface LocalOrder {
   orderNo: string;
@@ -9,6 +9,8 @@ export interface LocalOrder {
   amount: string;
   createdAt: string; // ISO
   queryToken?: string;
+  historyToken?: string;
+  historyExpiresAt?: string;
   presaleVoucherToken?: string;
 }
 
@@ -56,6 +58,8 @@ export function rememberOrder(o: LocalOrder, options: { bump?: boolean } = {}): 
       ...o,
       orderNo: o.orderNo.trim(),
       queryToken: o.queryToken ?? previous?.queryToken,
+      historyToken: o.historyToken ?? previous?.historyToken,
+      historyExpiresAt: o.historyExpiresAt ?? previous?.historyExpiresAt,
       presaleVoucherToken: o.presaleVoucherToken ?? previous?.presaleVoucherToken,
     };
     const rest = old.filter((x) => orderKey(x.orderNo) !== key);
