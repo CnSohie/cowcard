@@ -1,3 +1,4 @@
+import SecretBlock from "../../components/SecretBlock";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
@@ -56,7 +57,12 @@ export default function OrderQueryPage() {
   const [captchaEnabled, setCaptchaEnabled] = useState(false);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const autoQueryKey = useRef("");
-  const handleCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
+  const handleCaptchaToken = useCallback((token: string) => {
+    setCaptchaToken(token);
+    if (token) {
+      setError((current) => current === "captcha" ? null : current);
+    }
+  }, []);
   const handleCaptchaEnabled = useCallback((enabled: boolean) => setCaptchaEnabled(enabled), []);
 
   // 从支付页跳来时:若本机历史里有这单,自动补全凭证并直接展示结果
@@ -88,7 +94,7 @@ export default function OrderQueryPage() {
     setOrder(null);
     setCopied(-1);
     setRevealedPresaleToken(null);
-    if (captchaEnabled && !captchaToken) {
+    if (!token && captchaEnabled && !captchaToken) {
       setError("captcha");
       setBusy(false);
       queryLock.current = false;
@@ -102,14 +108,14 @@ export default function OrderQueryPage() {
         queryPassword: token ? undefined : queryPassword || undefined,
         queryToken: token || undefined,
       };
-      const r = await post<OrderView>("/orders/query", payload, { headers: captchaHeaders(captchaToken) });
+      const r = await post<OrderView>(token ? "/orders/query-by-token" : "/orders/query", token ? { orderNo: no.trim(), queryToken: token } : payload, { headers: captchaHeaders(captchaToken) });
       // 查询成功 → 留存/刷新本机凭证(其他设备下的单也能被记住)
       const previous = findLocalOrder(r.orderNo);
       let nextOrder = r;
       const presalePaid = r.deliveryMode === "PRESALE_VOUCHER" && ["PAID", "DELIVERED"].includes(r.status);
       let oneTimePresaleToken = presalePaid ? previous?.presaleVoucherToken ?? null : null;
       if (!oneTimePresaleToken && presalePaid) {
-        const claimed = await post<PresaleVoucherClaim>("/orders/presale-token", payload);
+        const claimed = await post<PresaleVoucherClaim>(token ? "/orders/presale-token-by-token" : "/orders/presale-token", token ? { orderNo: no.trim(), queryToken: token } : payload);
         nextOrder = { ...r, presaleVoucherHint: claimed.tokenHint, presaleVoucherStatus: claimed.status };
         oneTimePresaleToken = claimed.token;
       }
@@ -127,6 +133,10 @@ export default function OrderQueryPage() {
       setHistory(localOrders());
     } catch (e) {
       setError(e instanceof ApiError ? e.code : "failed");
+      if (token && e instanceof ApiError && (e.code === 3001 || e.code === 400)) {
+        setQueryToken("");
+        setNeedsCredentials(true);
+      }
     } finally {
       setCaptchaToken("");
       setCaptchaResetKey((x) => x + 1);
@@ -182,12 +192,12 @@ export default function OrderQueryPage() {
           <input className="input" type="password" aria-label={t.password} placeholder={t.optional} value={queryPassword} onChange={(e) => setQueryPassword(e.target.value)} />
         </div>
         {errorText && (!resultOpen || needsCredentials) && <p role="alert" className="mt-3 text-sm text-red-500">{errorText}</p>}
-        <CaptchaBox
+        {!queryToken && <CaptchaBox
           action="order_query"
           onToken={handleCaptchaToken}
           onEnabledChange={handleCaptchaEnabled}
           resetKey={captchaResetKey}
-        />
+        />}
         <button className="btn-primary mt-5 w-full !py-3.5" disabled={busy || !orderNo || (!contact && !queryToken)}
           onClick={() => doQuery(orderNo, contact)}>
           {busy ? t.querying : t.submit}
@@ -269,14 +279,10 @@ export default function OrderQueryPage() {
 
           {order.cards.length > 0 && (
             <div className="mt-6">
-              <label className="label flex items-center gap-1.5"><KeyRound size={13} />{t.cards}</label>
+              <label className="label flex items-center gap-1.5"><KeyRound size={13} />{lang === "zh" ? "卡密" : "Cards"}</label>
               <div className="space-y-2">
                 {order.cards.map((c, i) => (
-                  <button key={i} onClick={() => copyCard(c, i)}
-                    className="group flex w-full items-center justify-between gap-3 rounded-2xl bg-accent-soft px-4 py-3 text-left transition hover:brightness-95">
-                    <code className="break-all font-mono text-sm font-semibold">{c}</code>
-                    {copied === i ? <CheckCircle2 size={15} className="shrink-0 text-primary" /> : <Copy size={15} className="shrink-0 text-ink/40 group-hover:text-ink" />}
-                  </button>
+                  <SecretBlock key={i} value={c} label={`${lang === "zh" ? "卡密" : "Card"} ${i + 1}`} />
                 ))}
               </div>
             </div>
@@ -284,11 +290,7 @@ export default function OrderQueryPage() {
           {order.deliveryContent && (
             <div className="mt-6">
               <label className="label flex items-center gap-1.5"><KeyRound size={13} />{t.content}</label>
-              <button onClick={() => copyCard(order.deliveryContent ?? "", 9999)}
-                className="group flex w-full items-center justify-between gap-3 rounded-2xl bg-accent-soft px-4 py-3 text-left transition hover:brightness-95">
-                <code className="whitespace-pre-wrap break-all font-mono text-sm font-semibold">{order.deliveryContent}</code>
-                {copied === 9999 ? <CheckCircle2 size={15} className="shrink-0 text-primary" /> : <Copy size={15} className="shrink-0 text-ink/40 group-hover:text-ink" />}
-              </button>
+              <SecretBlock value={order.deliveryContent} label={t.content} />
             </div>
           )}
           {order.deliveryMode === "MANUAL" && order.status === "PAID" && (

@@ -27,6 +27,10 @@ public final class OrderDtos {
                                       BigDecimal walletPaidAmount, BigDecimal memberDiscountAmount,
                                       String presaleVoucherToken) {}
 
+    /** 下单时签发的 256-bit 随机凭证;不接受邮箱/密码替代。 */
+    public record TokenOrderRequest(@NotBlank @Size(max = 32) String orderNo,
+                                    @NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{43}") String queryToken) {}
+
     public record PresaleVoucherClaimResponse(String token, String tokenHint, String status) {}
 
     public record OrderView(String orderNo, String productName, BigDecimal unitPrice, int quantity,

@@ -1,6 +1,7 @@
+import SecretBlock from "../../components/SecretBlock";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2, Copy, KeyRound, Loader2, Mail, ShieldCheck, TicketCheck } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, Mail, ShieldCheck, TicketCheck } from "lucide-react";
 import { ApiError } from "../../lib/api";
 import { isMemberLoggedIn, memberInfo, mPost } from "../../lib/memberApi";
 import { useI18n } from "../../lib/i18n";
@@ -14,21 +15,25 @@ interface RedeemResult {
 }
 
 export default function RedeemPage() {
-  const { copy: ui } = useI18n();
+  const { copy: ui, lang } = useI18n();
   const t = ui.redeem;
   const [token, setToken] = useState("");
   const [contact, setContact] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<RedeemResult | null>(null);
-  const [copied, setCopied] = useState(-1);
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaEnabled, setCaptchaEnabled] = useState(false);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const memberLoggedIn = isMemberLoggedIn();
   const member = memberLoggedIn ? memberInfo() : null;
   const memberLocked = !!member?.email;
-  const handleCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
+  const handleCaptchaToken = useCallback((token: string) => {
+    setCaptchaToken(token);
+    if (token) {
+      setError((current) => current === "请先完成人机验证" ? "" : current);
+    }
+  }, []);
   const handleCaptchaEnabled = useCallback((enabled: boolean) => setCaptchaEnabled(enabled), []);
 
   useEffect(() => {
@@ -61,13 +66,6 @@ export default function RedeemPage() {
       setCaptchaResetKey((x) => x + 1);
       setBusy(false);
     }
-  }
-
-  function copyVoucher(text: string, i: number) {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(i);
-      setTimeout(() => setCopied(-1), 1500);
-    });
   }
 
   return (
@@ -143,14 +141,7 @@ export default function RedeemPage() {
           {result.cards.length > 0 ? (
             <div className="mt-5 space-y-2">
               {result.cards.map((c, i) => (
-                <button
-                  key={i}
-                  onClick={() => copyVoucher(c, i)}
-                  className="group flex w-full items-center justify-between gap-3 rounded-2xl bg-accent-soft px-4 py-3 text-left transition hover:brightness-95"
-                >
-                  <code className="break-all font-mono text-sm font-semibold">{c}</code>
-                  {copied === i ? <CheckCircle2 size={15} className="shrink-0 text-primary" /> : <Copy size={15} className="shrink-0 text-ink/40 group-hover:text-ink" />}
-                </button>
+                <SecretBlock key={i} value={c} label={`${lang === "zh" ? "卡密" : "Card"} ${i + 1}`} />
               ))}
             </div>
           ) : (

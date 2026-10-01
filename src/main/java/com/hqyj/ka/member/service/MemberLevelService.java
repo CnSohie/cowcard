@@ -1,6 +1,7 @@
 package com.hqyj.ka.member.service;
 
 import com.hqyj.ka.catalog.entity.Product;
+import com.hqyj.ka.catalog.service.WholesalePricingService;
 import com.hqyj.ka.common.BusinessException;
 import com.hqyj.ka.common.ErrorCode;
 import com.hqyj.ka.member.entity.Member;
@@ -25,9 +26,10 @@ public class MemberLevelService {
     private final MemberLevelRepository levelRepository;
     private final MemberLevelPriceRepository priceRepository;
     private final MemberRepository memberRepository;
+    private final WholesalePricingService wholesalePricingService;
 
     public record PriceResult(BigDecimal unitPrice, BigDecimal discountPerUnit,
-                              String levelName, Long levelId, String source) {}
+                              String levelName, Long levelId, String source, List<WholesalePricingService.PublicTier> wholesaleTiers) {}
 
     @Transactional
     public MemberLevel ensureDefaultLevel() {
@@ -68,6 +70,10 @@ public class MemberLevelService {
         level.setSpendThreshold(nonNegative(req.getSpendThreshold()));
         level.setSortWeight(req.getSortWeight());
         level.setEnabled(req.isEnabled());
+        if (req.isManualOnly() && req.isDefaultLevel()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "仅人工授予的等级不能设为默认等级");
+        }
+        level.setManualOnly(req.isManualOnly());
         level.setDefaultLevel(req.isDefaultLevel());
         if (level.isDefaultLevel()) {
             levelRepository.findByDefaultLevelTrue().filter(x -> !x.getId().equals(level.getId()))
@@ -118,22 +124,37 @@ public class MemberLevelService {
 
     @Transactional(readOnly = true)
     public PriceResult priceFor(Long memberId, Product product) {
+        return priceFor(memberId, product, 1);
+    }
+
+    @Transactional(readOnly = true)
+    public PriceResult priceFor(Long memberId, Product product, int quantity) {
+        if (quantity < 1 || quantity > product.getMaxBuy()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "购买数量超出允许范围");
+        }
         BigDecimal original = product.getPrice();
-        if (memberId == null) return new PriceResult(original, BigDecimal.ZERO, null, null, "ORIGINAL");
-        Member member = memberRepository.findById(memberId).orElse(null);
-        MemberLevel level = currentLevel(member).orElse(null);
-        if (level == null || !level.isEnabled()) {
-            return new PriceResult(original, BigDecimal.ZERO, null, null, "ORIGINAL");
+        Member member = memberId == null ? null : memberRepository.findById(memberId).orElse(null);
+        MemberLevel level = currentLevel(member).filter(MemberLevel::isEnabled).orElse(null);
+        BigDecimal candidate = original;
+        String source = "ORIGINAL";
+        if (level != null) {
+            Optional<MemberLevelPrice> specific = priceRepository.findByLevelIdAndProductIdAndSkuCode(level.getId(), product.getId(), "");
+            BigDecimal memberPrice = specific.map(MemberLevelPrice::getPrice)
+                    .orElse(original.multiply(level.getDiscountRate()).divide(new BigDecimal("100"), 2, RoundingMode.DOWN));
+            if (memberPrice.compareTo(candidate) < 0) {
+                candidate = memberPrice;
+                source = specific.isPresent() ? "PRODUCT_PRICE" : "LEVEL_DISCOUNT";
+            }
         }
-        BigDecimal candidate = priceRepository.findByLevelIdAndProductIdAndSkuCode(level.getId(), product.getId(), "")
-                .map(MemberLevelPrice::getPrice)
-                .orElse(original.multiply(level.getDiscountRate()).divide(new BigDecimal("100"), 2, RoundingMode.DOWN));
-        if (candidate.compareTo(original) >= 0) {
-            return new PriceResult(original, BigDecimal.ZERO, level.getName(), level.getId(), "ORIGINAL");
+        var tiers = wholesalePricingService.available(product, level == null ? null : level.getId());
+        for (var tier : tiers) {
+            if (quantity >= tier.minQuantity() && tier.unitPrice().compareTo(candidate) < 0) {
+                candidate = tier.unitPrice();
+                source = "WHOLESALE";
+            }
         }
-        return new PriceResult(candidate, original.subtract(candidate), level.getName(), level.getId(),
-                priceRepository.findByLevelIdAndProductIdAndSkuCode(level.getId(), product.getId(), "").isPresent()
-                        ? "PRODUCT_PRICE" : "LEVEL_DISCOUNT");
+        return new PriceResult(candidate, original.subtract(candidate), level == null ? null : level.getName(),
+                level == null ? null : level.getId(), source, tiers);
     }
 
     @Transactional(readOnly = true)
@@ -171,9 +192,11 @@ public class MemberLevelService {
     }
 
     private void autoUpgrade(Member member) {
-        int currentWeight = currentLevel(member).map(MemberLevel::getSortWeight).orElse(Integer.MIN_VALUE);
+        Optional<MemberLevel> current = currentLevel(member);
+        if (current.map(MemberLevel::isManualOnly).orElse(false)) return;
+        int currentWeight = current.map(MemberLevel::getSortWeight).orElse(Integer.MIN_VALUE);
         for (MemberLevel level : levelRepository.findByEnabledTrueOrderBySortWeightDescIdDesc()) {
-            if (level.getSortWeight() <= currentWeight) continue;
+            if (level.isManualOnly() || level.getSortWeight() <= currentWeight) continue;
             boolean rechargeOk = level.getRechargeThreshold().signum() > 0
                     && member.getTotalRecharge().compareTo(level.getRechargeThreshold()) >= 0;
             boolean spendOk = level.getSpendThreshold().signum() > 0

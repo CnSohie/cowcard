@@ -39,7 +39,8 @@ public class AuthService {
     private final AppProperties props;
     private final AuditService auditService;
     private final ConfigService configService;
-    private final Map<Long, LocalDateTime> sensitiveTrustedUntil = new ConcurrentHashMap<>();
+    // 保存验证时间,避免修改免验证时长后仍沿用旧的到期时间。
+    private final Map<Long, LocalDateTime> sensitiveVerifiedAt = new ConcurrentHashMap<>();
 
     @Transactional
     public TokenResponse login(LoginRequest req, String ip) {
@@ -168,7 +169,7 @@ public class AuthService {
             auditService.record(user.getUsername(), "SENSITIVE_TOTP_FAILED", action, ip, null);
             throw new BusinessException(ErrorCode.TOTP_INVALID);
         }
-        sensitiveTrustedUntil.put(userId, LocalDateTime.now().plusMinutes(sensitiveGraceMinutes()));
+        sensitiveVerifiedAt.put(userId, LocalDateTime.now());
     }
 
     // ---------- TOTP 两步验证管理(登录后自助操作,均有审计) ----------
@@ -179,15 +180,16 @@ public class AuthService {
     }
 
     public boolean sensitiveTrusted(Long userId) {
-        LocalDateTime until = sensitiveTrustedUntil.get(userId);
-        if (until == null) return false;
-        if (until.isAfter(LocalDateTime.now())) return true;
-        sensitiveTrustedUntil.remove(userId);
-        return false;
+        return sensitiveTrustedUntil(userId) != null;
     }
 
     public LocalDateTime sensitiveTrustedUntil(Long userId) {
-        return sensitiveTrusted(userId) ? sensitiveTrustedUntil.get(userId) : null;
+        LocalDateTime verifiedAt = sensitiveVerifiedAt.get(userId);
+        if (verifiedAt == null) return null;
+        LocalDateTime until = verifiedAt.plusMinutes(sensitiveGraceMinutes());
+        if (until.isAfter(LocalDateTime.now())) return until;
+        sensitiveVerifiedAt.remove(userId, verifiedAt);
+        return null;
     }
 
     public int sensitiveGraceMinutes() {

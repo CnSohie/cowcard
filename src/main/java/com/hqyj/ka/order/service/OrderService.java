@@ -143,7 +143,7 @@ public class OrderService {
                 : presale ? Order.DeliveryMode.PRESALE_VOUCHER : Order.DeliveryMode.MANUAL);
         order.setProductId(product.getId());
         order.setProductName(product.getName());
-        var memberPrice = memberLevelService.priceFor(memberId, product);
+        var memberPrice = memberLevelService.priceFor(memberId, product, req.quantity());
         order.setOriginalUnitPrice(product.getPrice());
         order.setUnitPrice(memberPrice.unitPrice());
         order.setMemberLevelId(memberPrice.levelId());
@@ -436,6 +436,19 @@ public class OrderService {
         authorizeOrder(orderRepository.findByOrderNo(orderNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND)),
                 contact, queryPassword, queryToken);
+    }
+
+    /** 收银台与加密支付接口共用：会员严格校验归属，游客校验订单凭证。 */
+    @Transactional(readOnly = true)
+    public Order authorizePaymentAccess(String orderNo, Long memberId, String contact,
+                                        String queryPassword, String queryToken) {
+        Order order = orderRepository.findByOrderNo(orderNo)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+        if (memberId != null) {
+            if (!memberId.equals(order.getMemberId())) throw new BusinessException(ErrorCode.ORDER_NOT_FOUND);
+            return order;
+        }
+        return authorizeOrder(order, contact, queryPassword, queryToken);
     }
 
     @Transactional

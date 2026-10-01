@@ -26,7 +26,7 @@ public class AdminMemberLevelController {
 
     public record SaveLevelRequest(Long id, String name, String slug, String icon, BigDecimal discountRate,
                                    BigDecimal rechargeThreshold, BigDecimal spendThreshold, int sortWeight,
-                                   boolean defaultLevel, boolean enabled, String password, String totpCode) {}
+                                   boolean defaultLevel, boolean enabled, boolean manualOnly, String password, String totpCode) {}
     public record SavePriceRequest(Long productId, BigDecimal price, String password, String totpCode) {}
     public record AssignRequest(Long levelId, String password, String totpCode) {}
 
@@ -52,6 +52,7 @@ public class AdminMemberLevelController {
         level.setSortWeight(req.sortWeight());
         level.setDefaultLevel(req.defaultLevel());
         level.setEnabled(req.enabled());
+        level.setManualOnly(req.manualOnly());
         MemberLevel saved = levelService.saveLevel(level);
         auditService.record(String.valueOf(http.getAttribute("uname")), "MEMBER_LEVEL_SAVE",
                 "level:" + saved.getId(), RateLimitFilter.clientIp(http), saved.getSlug());

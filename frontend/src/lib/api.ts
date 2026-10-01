@@ -13,6 +13,25 @@ export function setTokens(access: string | null, refresh: string | null) {
   else localStorage.removeItem("ka.access");
   if (refresh) localStorage.setItem("ka.refresh", refresh);
   else localStorage.removeItem("ka.refresh");
+  if (!access) {
+    localStorage.removeItem("ka.auth");
+    localStorage.removeItem("ka.user");
+  }
+  window.dispatchEvent(new Event("ka:admin-session"));
+}
+
+export function subscribeAdminSession(listener: () => void) {
+  const sync = () => {
+    accessToken = localStorage.getItem("ka.access");
+    refreshToken = localStorage.getItem("ka.refresh");
+    listener();
+  };
+  window.addEventListener("ka:admin-session", listener);
+  window.addEventListener("storage", sync);
+  return () => {
+    window.removeEventListener("ka:admin-session", listener);
+    window.removeEventListener("storage", sync);
+  };
 }
 
 export function isLoggedIn() {
@@ -47,6 +66,7 @@ http.interceptors.response.use(
     const body = resp.data;
     if (body && typeof body.code === "number" && body.code !== 0) {
       if (body.code === 401 && (await tryRefresh())) return http.request(resp.config);
+      if (body.code === 401) setTokens(null, null);
       throw new ApiError(body.code, body.message ?? "请求失败");
     }
     return resp;
@@ -113,6 +133,7 @@ export async function uploadImage(file: File): Promise<string> {
 
 // ---------- 类型 ----------
 export interface ProductCard {
+  soldQuantity?: number | null;
   id: number; categoryId: number; name: string; brief: string | null;
   coverImage: string | null; price: string; minOrderAmount: string; stock: number; minBuy: number; maxBuy: number;
   deliveryMode: "AUTO_CARD" | "MANUAL" | "PRESALE_VOUCHER";

@@ -29,6 +29,7 @@ public class CaptchaFilter extends OncePerRequestFilter {
         actions.put("/api/member/auth/login", "member_login");
         actions.put("/api/member/auth/register", "member_register");
         actions.put("/api/orders", "order_create");
+        // /orders/*-by-token 仅接受并校验 256-bit 随机订单凭证,不属于人工查单表单。
         actions.put("/api/orders/query", "order_query");
         actions.put("/api/orders/presale-token", "order_query");
         actions.put("/api/pay/create", "payment");

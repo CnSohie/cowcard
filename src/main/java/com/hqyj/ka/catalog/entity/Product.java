@@ -97,6 +97,10 @@ public class Product {
     @Column(nullable = false)
     private int sortOrder = 0;
 
+    /** 批发数量阶梯(JSON),空数组表示关闭。 */
+    @Column(columnDefinition = "TEXT")
+    private String wholesaleRules;
+
     /** 乐观锁:后台并发编辑保护 */
     @Version
     private Long version;

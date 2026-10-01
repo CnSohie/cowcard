@@ -27,10 +27,11 @@ public class TotpController {
     @GetMapping("/status")
     public ApiResponse<Map<String, Object>> status(HttpServletRequest http) {
         Long uid = uid(http);
+        var trustedUntil = authService.sensitiveTrustedUntil(uid);
         return ApiResponse.ok(Map.of(
                 "enabled", authService.totpEnabled(uid),
-                "trusted", authService.sensitiveTrusted(uid),
-                "trustedUntil", authService.sensitiveTrustedUntil(uid) == null ? "" : authService.sensitiveTrustedUntil(uid).toString(),
+                "trusted", trustedUntil != null,
+                "trustedUntil", trustedUntil == null ? "" : trustedUntil.toString(),
                 "graceMinutes", authService.sensitiveGraceMinutes()));
     }
 

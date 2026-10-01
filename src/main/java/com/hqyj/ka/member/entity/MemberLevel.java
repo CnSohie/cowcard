@@ -45,4 +45,8 @@ public class MemberLevel {
 
     @Column(nullable = false)
     private boolean enabled = true;
+
+    /** 仅管理员授予,不参与充值/消费自动升级。 */
+    @Column(nullable = false)
+    private boolean manualOnly = false;
 }

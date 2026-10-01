@@ -3,8 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>商城</title>
     <script>
       (() => {
+        try {
+          const brand = JSON.parse(localStorage.getItem("ka.site.branding") || "null");
+          const title = brand && (brand.seoTitle || brand.siteName);
+          if (typeof title === "string" && title.trim()) document.title = title;
+        } catch (_) { /* Invalid or unavailable cache: keep the neutral title. */ }
         try {
           const root = document.documentElement;
           const theme = localStorage.getItem("ka.site.theme") || "mint";
@@ -18,7 +24,6 @@
       })();
     </script>
     <meta name="description" content="自动发卡 · 极速到账" />
-    <title>Ka · 自动发卡</title>
   </head>
   <body>
     <div id="root"></div>

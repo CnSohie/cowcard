@@ -43,3 +43,17 @@
 .storefront .hero-controls.hidden { display: none; }
 
 .order-query-dialog::backdrop { background: rgb(var(--c-ink) / 0.35); }
+
+/* Compact phone hero: preserve the message and actions without occupying the whole first screen. */
+@media (max-width: 760px) {
+  .storefront .store-hero { margin-bottom: 1.25rem; }
+  .storefront .store-hero .hero-copy-stack .cow-hero-copy { padding: 1.25rem 1.25rem 3.75rem; }
+  .storefront .store-hero h1 { font-size: clamp(1.35rem, 5.5vw, 1.75rem); line-height: 1.2; overflow-wrap: anywhere; }
+  .storefront .hero-eyebrow { margin-bottom: 0.5rem; font-size: 0.65rem; }
+  .storefront .hero-highlight { margin-top: 0.1rem; }
+  .storefront .store-hero .cow-hero-copy > p:not(.hero-eyebrow) { margin-top: 0.65rem; font-size: 0.8rem; }
+  .storefront .store-hero .cow-hero-copy > div:last-child { margin-top: 0.75rem; }
+  .storefront .store-hero .btn-primary { padding: 0.6rem 1rem; font-size: 0.8rem; }
+  .storefront .hero-controls { left: 1rem; bottom: 0.65rem; }
+  .storefront .store-hero:has(.hero-controls.hidden) .cow-hero-copy { padding-bottom: 1.25rem; }
+}

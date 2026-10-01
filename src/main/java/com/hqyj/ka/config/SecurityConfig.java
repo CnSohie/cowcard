@@ -45,11 +45,12 @@ public class SecurityConfig {
                 .httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000))
                 .referrerPolicy(rp -> rp.policy(
                         org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
-                // 同一进程同时托管 React 商城与 API：仅允许本站构建产物，
-                // 并禁止对象、被内嵌及第三方脚本来源。
+                // 同一进程托管 React 商城与 API：允许本站资源及 Turnstile 脚本、验证框架，
+                // 继续禁止对象和本站页面被其他站点内嵌。
                 .contentSecurityPolicy(csp -> csp.policyDirectives(
                         "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; "
-                                + "script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                                + "script-src 'self' https://challenges.cloudflare.com; "
+                                + "frame-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; "
                                 + "img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https:"))
                 .permissionsPolicyHeader(pp -> pp.policy("geolocation=(), microphone=(), camera=(), payment=()"))
                 .addHeaderWriter((request, response) -> {

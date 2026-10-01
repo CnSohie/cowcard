@@ -21,8 +21,8 @@ class DatabaseMigrationTest {
     @Test
     void freshDatabaseAndRestart() {
         var flyway = flyway(url());
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(5);
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("5");
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(6);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("6");
         assertThat(flyway.validateWithResult().validationSuccessful).isTrue();
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         assertThatThrownBy(flyway::clean).isInstanceOf(FlywayException.class);
@@ -54,7 +54,7 @@ class DatabaseMigrationTest {
         }
         var flyway = flyway(url);
         flyway.baseline();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(4);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(5);
         try (var c = DriverManager.getConnection(url, "sa", ""); var s = c.createStatement();
              var r = s.executeQuery("SELECT cfg_value FROM sys_config WHERE cfg_key='migration.sentinel'")) {
             assertThat(r.next()).isTrue();

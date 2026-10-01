@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import SecretBlock from "../../components/SecretBlock";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
@@ -38,6 +39,13 @@ export default function PayPage() {
   const [restoringIntent, setRestoringIntent] = useState(false);
   const [intent, setIntent] = useState<CryptoIntent | null>(null);
   const [orderStatus, setOrderStatus] = useState<string>("PENDING");
+  const successHeading = useRef<HTMLHeadingElement>(null);
+  const paymentSucceeded = orderStatus === "PAID" || orderStatus === "DELIVERED";
+  useLayoutEffect(() => {
+    if (!paymentSucceeded) return;
+    successHeading.current?.focus({ preventScroll: true });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [paymentSucceeded, orderNo]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
@@ -60,7 +68,13 @@ export default function PayPage() {
   const paymentLock = useRef(false);
   const [pollError, setPollError] = useState(false);
   const [channelsLoaded, setChannelsLoaded] = useState(false);
-  const handleCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
+  const handleCaptchaToken = useCallback((token: string) => {
+    setCaptchaToken(token);
+    if (token) {
+      setError((current) => current === "请先完成人机验证" ? "" : current);
+      setTxMsg((current) => current === "请先完成人机验证" ? "" : current);
+    }
+  }, []);
   const handleCaptchaEnabled = useCallback((enabled: boolean) => setCaptchaEnabled(enabled), []);
 
   const isCrypto = channel.startsWith("CRYPTO");
@@ -74,7 +88,11 @@ export default function PayPage() {
     if (!isCrypto || !chain || !token) return;
     setRestoringIntent(true);
     const query = new URLSearchParams({ mode: channel === "CRYPTO_WALLET" ? "WALLET" : "TRANSFER", chain, token });
-    get<CryptoIntent>(`/pay/crypto/intent/${orderNo}?${query}`)
+    const local = findLocalOrder(orderNo);
+    const read = isMemberLoggedIn() ? mGet : get;
+    read<CryptoIntent>(`/pay/crypto/intent/${orderNo}?${query}`, {
+      contact: local?.contact, queryToken: local?.queryToken,
+    })
       .then((existing) => {
         if (disposed) return;
         const active = existing.status === "CONFIRMING" || existing.status === "CONFIRMED"
@@ -166,7 +184,9 @@ export default function PayPage() {
         if (!finished && creation?.kind === "CRYPTO") {
           const mode = channel === "CRYPTO_WALLET" ? "WALLET" : "TRANSFER";
           const query = new URLSearchParams({ mode, chain, token });
-          const next = await get<CryptoIntent>(`/pay/crypto/intent/${orderNo}?${query.toString()}`);
+          const next = await read<CryptoIntent>(`/pay/crypto/intent/${orderNo}?${query.toString()}`, {
+            contact: local?.contact, queryToken: local?.queryToken,
+          });
           if (!disposed) setIntent(next);
         }
         failures = 0;
@@ -205,7 +225,7 @@ export default function PayPage() {
         replace: true,
         state: { orderNo, contact: local?.contact, queryToken: local?.queryToken },
       });
-    }, 1600);
+    }, 3000);
     return () => window.clearTimeout(timer);
   }, [orderNo, orderStatus, summary?.deliveryMode, summary?.orderType, nav]);
 
@@ -213,12 +233,11 @@ export default function PayPage() {
     if (orderStatus !== "DELIVERED" || summary?.orderType !== "GOODS" || summary.deliveryMode !== "PRESALE_VOUCHER") return;
     if (presaleToken || claimingPresaleToken || presaleTokenHint) return;
     const local = findLocalOrder(orderNo);
-    if (!local?.queryToken && !local?.contact) return;
+    if (!local?.queryToken) return;
     setClaimingPresaleToken(true);
-    post<{ token: string | null; tokenHint: string; status: string }>("/orders/presale-token", {
+    post<{ token: string | null; tokenHint: string; status: string }>("/orders/presale-token-by-token", {
       orderNo,
-      contact: local?.contact || undefined,
-      queryToken: local?.queryToken || undefined,
+      queryToken: local.queryToken,
     })
       .then((r) => {
         if (r.token) setPresaleToken(r.token);
@@ -306,7 +325,10 @@ export default function PayPage() {
         amountMinor: intent.amountMinor,
         provider,
       });
-      const updated = await post<CryptoIntent>(`/pay/crypto/intent/${orderNo}/tx`, { txHash });
+      const local = findLocalOrder(orderNo);
+      const updated = await mPost<CryptoIntent>(`/pay/crypto/intent/${orderNo}/tx`, {
+        txHash, contact: local?.contact, queryToken: local?.queryToken,
+      });
       setIntent(updated);
     } catch (e) {
       setError(e instanceof Error ? e.message : t.walletFailed);
@@ -340,7 +362,10 @@ export default function PayPage() {
     setTxBusy(true);
     setTxMsg("");
     try {
-      const updated = await post<CryptoIntent>(`/pay/crypto/intent/${orderNo}/tx`, { txHash: v },
+      const local = findLocalOrder(orderNo);
+      const updated = await mPost<CryptoIntent>(`/pay/crypto/intent/${orderNo}/tx`, {
+        txHash: v, contact: local?.contact, queryToken: local?.queryToken,
+      },
         { headers: captchaHeaders(captchaToken) });
       setIntent(updated);
       setTxForm(false);
@@ -387,11 +412,11 @@ export default function PayPage() {
     const presaleDelivery = summary?.orderType === "GOODS" && summary.deliveryMode === "PRESALE_VOUCHER";
     const autoDelivery = summary?.orderType === "GOODS" && summary.deliveryMode !== "MANUAL" && summary.deliveryMode !== "PRESALE_VOUCHER";
     return (
-      <div className="card mx-auto max-w-lg animate-fade-up p-10 text-center">
+      <div className="card mx-auto w-full min-w-0 max-w-lg p-6 text-center sm:p-10">
         <span className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-full bg-accent">
           <PartyPopper size={28} />
         </span>
-        <h1 className="text-2xl font-extrabold tracking-tight">{t.success}</h1>
+        <h1 ref={successHeading} tabIndex={-1} aria-live="polite" className="scroll-mt-24 text-2xl font-extrabold tracking-tight outline-none">{t.success}</h1>
         <p className="mt-2 text-sm text-ink/55">
           {summary?.orderType === "RECHARGE"
               ? t.rechargeSuccess
@@ -407,13 +432,7 @@ export default function PayPage() {
             {claimingPresaleToken ? (
               <p className="rounded-2xl bg-surface px-4 py-3 text-sm text-ink/50">{t.issuingVoucher}</p>
             ) : presaleToken ? (
-              <button
-                onClick={() => copyText(presaleToken, "presale-token")}
-                className="group flex w-full items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3 text-left transition hover:brightness-95"
-              >
-                <code className="break-all font-mono text-sm font-semibold">{presaleToken}</code>
-                {copied === "presale-token" ? <CheckCircle2 size={15} className="shrink-0 text-primary" /> : <Copy size={15} className="shrink-0 text-ink/40 group-hover:text-ink" />}
-              </button>
+              <SecretBlock value={presaleToken} label={t.oneTimeVoucher} />
             ) : (
               <p className="rounded-2xl bg-surface px-4 py-3 text-xs leading-relaxed text-ink/55">
                 {t.voucherHint} <span className="font-mono font-semibold text-ink/75">{presaleTokenHint || "-"}</span>。{t.voucherRetry}
@@ -424,25 +443,27 @@ export default function PayPage() {
             </p>
           </div>
         )}
-        {autoDelivery && orderStatus === "DELIVERED" && (
-          <p className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-accent-soft px-4 py-2 text-xs font-semibold text-primary">
-            <Loader2 size={13} className="animate-spin" /> {t.redirecting}
-          </p>
-        )}
-        {summary?.orderType === "RECHARGE" ? (
-          <Link to="/me" className="btn-primary mt-7 inline-flex">{t.backMember}</Link>
-        ) : orderStatus === "DELIVERED" || manualDelivery ? (
-          <Link to="/order" className="btn-primary mt-7 inline-flex"
-            state={{
-              orderNo,
-              contact: findLocalOrder(orderNo)?.contact,
-              queryToken: findLocalOrder(orderNo)?.queryToken,
-            }}>
-            {presaleDelivery ? t.viewOrder : manualDelivery ? t.viewProgress : t.viewCards}
-          </Link>
-        ) : (
-          <button className="btn-primary mt-7 inline-flex" disabled>{t.issuingCards}</button>
-        )}
+        <div className="mt-5 flex flex-col items-center gap-4">
+          {autoDelivery && orderStatus === "DELIVERED" && (
+            <p className="inline-flex items-center justify-center gap-2 rounded-full bg-accent-soft px-4 py-2 text-xs font-semibold text-primary">
+              <Loader2 size={13} className="animate-spin" /> {t.redirecting}
+            </p>
+          )}
+          {summary?.orderType === "RECHARGE" ? (
+            <Link to="/me" className="btn-primary inline-flex">{t.backMember}</Link>
+          ) : orderStatus === "DELIVERED" || manualDelivery ? (
+            <Link to="/order" className="btn-primary inline-flex"
+              state={{
+                orderNo,
+                contact: findLocalOrder(orderNo)?.contact,
+                queryToken: findLocalOrder(orderNo)?.queryToken,
+              }}>
+              {presaleDelivery ? t.viewOrder : manualDelivery ? t.viewProgress : t.viewCards}
+            </Link>
+          ) : (
+            <button className="btn-primary inline-flex" disabled>{t.issuingCards}</button>
+          )}
+        </div>
       </div>
     );
   }
@@ -454,7 +475,7 @@ export default function PayPage() {
 
   if (expired) {
     return (
-      <div className="card mx-auto max-w-lg animate-fade-up p-10 text-center">
+      <div className="card mx-auto w-full min-w-0 max-w-lg p-6 text-center sm:p-10">
         <span className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-full bg-ink/[0.06]">
           <AlarmClockOff size={26} className="text-ink/45" />
         </span>

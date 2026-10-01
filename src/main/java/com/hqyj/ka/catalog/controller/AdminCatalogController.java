@@ -7,6 +7,7 @@ import com.hqyj.ka.catalog.dto.CatalogDtos.SaveProductRequest;
 import com.hqyj.ka.catalog.entity.Category;
 import com.hqyj.ka.catalog.entity.Product;
 import com.hqyj.ka.catalog.service.CatalogService;
+import com.hqyj.ka.catalog.service.WholesalePricingService;
 import com.hqyj.ka.common.ApiResponse;
 import com.hqyj.ka.security.RateLimitFilter;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,6 +25,13 @@ public class AdminCatalogController {
 
     private final CatalogService catalogService;
     private final AuditService auditService;
+    private final WholesalePricingService wholesalePricingService;
+
+    @GetMapping("/price-levels")
+    @PreAuthorize("hasAuthority('product:write')")
+    public ApiResponse<List<WholesalePricingService.LevelOption>> priceLevels() {
+        return ApiResponse.ok(wholesalePricingService.levelOptions());
+    }
 
     @GetMapping("/categories")
     @PreAuthorize("hasAuthority('product:read')")

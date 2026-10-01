@@ -1,17 +1,17 @@
 import { Suspense, useEffect, useLayoutEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { Languages, Moon, Newspaper, Search, ShoppingBag, Sun, TicketCheck, UserRound, ArrowUpRight, ArrowUp } from "lucide-react";
-import { loadSite } from "../lib/site";
+import { loadSite, readSiteBranding } from "../lib/site";
 import { isMemberLoggedIn, memberInfo } from "../lib/memberApi";
 import { applySiteTheme, isDark, toggleMode } from "../lib/theme";
 import { setCurrency } from "../lib/currency";
 import { useI18n } from "../lib/i18n";
 
 export default function StoreLayout() {
-  const [site, setSite] = useState<{ siteName: string; announcement: string; contact?: string; currency?: string }>({
-    siteName: "Ka Store",
+  const [site, setSite] = useState<{ siteName: string; announcement: string; contact?: string; currency?: string }>(() => ({
+    siteName: readSiteBranding().siteName,
     announcement: "",
-  });
+  }));
   const [dark, setDark] = useState(isDark());
   const location = useLocation();
   const { lang, setLang, copy } = useI18n();

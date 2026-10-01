@@ -1,3 +1,4 @@
+import WholesaleEditor from "../../components/WholesaleEditor";
 import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, CalendarClock, CircleDollarSign, KeyRound, ListOrdered, Loader2, Package, Pencil, Plus, ShieldCheck, TicketCheck, Trash2, Wrench, X } from "lucide-react";
 import { ApiError, del, get, post, put } from "../../lib/api";
@@ -11,6 +12,7 @@ import { currencySymbol, money } from "../../lib/currency";
 interface AdminCategory { id: number; name: string; sortOrder: number; visible: boolean; }
 interface AdminProduct {
   id: number | null; categoryId: number | ""; name: string; brief: string; description: string;
+  wholesaleRules: string;
   usageNote: string; coverImage: string; price: string; stockCached?: number;
   minOrderAmount: string; minBuy: number; maxBuy: number; visible: boolean; sortOrder: number;
   deliveryMode: "AUTO_CARD" | "MANUAL" | "PRESALE_VOUCHER"; manualPrompt: string; manualFormSchema: string;
@@ -28,6 +30,7 @@ const DEFAULT_MANUAL_FIELDS: ManualField[] = [
 ];
 
 const EMPTY: AdminProduct = {
+  wholesaleRules: "[]",
   id: null, categoryId: "", name: "", brief: "", description: "", usageNote: "",
   coverImage: "", price: "", minOrderAmount: "0.00", minBuy: 1, maxBuy: 10, visible: true, sortOrder: 0,
   deliveryMode: "AUTO_CARD", manualPrompt: "", manualFormSchema: JSON.stringify(DEFAULT_MANUAL_FIELDS), presaleSaleEndAt: "", presaleStartAt: "", presaleEndAt: "", presaleSettlementMode: "BALANCE",
@@ -36,6 +39,7 @@ const EMPTY: AdminProduct = {
 function norm(p: AdminProduct): AdminProduct {
   return {
     ...EMPTY, ...p,
+    wholesaleRules: p.wholesaleRules || "[]",
     brief: p.brief ?? "", description: p.description ?? "", usageNote: p.usageNote ?? "",
     coverImage: p.coverImage ?? "", price: String(p.price ?? ""), minOrderAmount: String(p.minOrderAmount ?? "0.00"), manualPrompt: p.manualPrompt ?? "",
     manualFormSchema: p.manualFormSchema || JSON.stringify(DEFAULT_MANUAL_FIELDS),
@@ -546,6 +550,7 @@ export default function ProductsAdmin() {
                 </div>
               </div>
               <p className="mt-2 text-[11px] leading-relaxed text-ink/75">按商品标价 × 数量判断，会员折扣和优惠券不会让已满足的起购资格失效；填 0 表示只限制起购数量。</p>
+              <WholesaleEditor value={editing.wholesaleRules} onChange={(wholesaleRules) => setEditing({ ...editing, wholesaleRules })} />
               <div className="mt-4 flex items-center justify-between rounded-2xl border border-ink/[0.07] bg-ink/[0.02] px-4 py-3">
                 <div>
                   <p className="text-sm font-medium">上架展示</p>

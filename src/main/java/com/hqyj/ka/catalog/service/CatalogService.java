@@ -25,6 +25,8 @@ public class CatalogService {
     private final CategoryRepository categoryRepository;
     private final ProductRepository productRepository;
     private final ManualDeliveryFormService manualDeliveryFormService;
+    private final ProductSalesService productSalesService;
+    private final WholesalePricingService wholesalePricingService;
 
     // ---------- 前台(带缓存,2C2G 下商城首页零 DB 压力) ----------
 
@@ -35,7 +37,7 @@ public class CatalogService {
                 .map(c -> new CategoryView(c.getId(), c.getName(), c.getSortOrder(), c.isVisible())).toList();
     }
 
-    @Cacheable(cacheNames = "products", key = "'visible'")
+    @Cacheable(cacheNames = "products", key = "'visible:' + @productSalesService.enabled()")
     @Transactional(readOnly = true)
     public List<ProductCard> visibleProducts() {
         return productRepository.findByVisibleTrueOrderBySortOrderAscIdDesc().stream().map(this::toCard).toList();
@@ -49,7 +51,7 @@ public class CatalogService {
         return new ProductDetail(p.getId(), p.getCategoryId(), p.getName(), p.getBrief(), p.getDescription(),
                 p.getCoverImage(), p.getPrice(), minOrderAmount(p), p.getStockCached(), p.getMinBuy(), p.getMaxBuy(),
                 p.getDeliveryMode().name(), p.getManualPrompt(), p.getManualFormSchema(),
-                p.getPresaleSaleEndAt(), p.getPresaleStartAt(), p.getPresaleEndAt(), p.getPresaleSettlementMode());
+                p.getPresaleSaleEndAt(), p.getPresaleStartAt(), p.getPresaleEndAt(), p.getPresaleSettlementMode(), soldQuantity(p));
     }
 
     // ---------- 管理端 ----------
@@ -153,13 +155,18 @@ public class CatalogService {
         p.setMaxBuy(req.maxBuy());
         p.setVisible(req.visible());
         p.setSortOrder(req.sortOrder());
+        p.setWholesaleRules(wholesalePricingService.validate(req.wholesaleRules(), req.price(), req.maxBuy()));
         return productRepository.save(p);
     }
 
     ProductCard toCard(Product p) {
         return new ProductCard(p.getId(), p.getCategoryId(), p.getName(), p.getBrief(), p.getCoverImage(),
                 p.getPrice(), minOrderAmount(p), p.getStockCached(), p.getMinBuy(), p.getMaxBuy(), p.getDeliveryMode().name(),
-                p.getPresaleSaleEndAt(), p.getPresaleStartAt(), p.getPresaleEndAt());
+                p.getPresaleSaleEndAt(), p.getPresaleStartAt(), p.getPresaleEndAt(), soldQuantity(p));
+    }
+
+    private Long soldQuantity(Product product) {
+        return productSalesService.enabled() ? productSalesService.quantities().getOrDefault(product.getId(), 0L) : null;
     }
 
     private BigDecimal minOrderAmount(Product product) {

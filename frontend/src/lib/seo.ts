@@ -25,8 +25,8 @@ export function useSeo(input?: {
     loadSiteSeo().then((site) => {
       if (!alive) return;
       const title = input?.title
-        ? `${input.title} · ${site.siteName || site.seoTitle || "Ka"}`
-        : (site.seoTitle || site.siteName || "Ka 发卡");
+        ? `${input.title} · ${site.siteName || site.seoTitle || "商城"}`
+        : (site.seoTitle || site.siteName || "商城");
       const description = input?.description || site.seoDescription || "自动发卡 · 数字商品秒级到账";
       const keywords = input?.keywords || site.seoKeywords || "";
       const image = input?.image || site.seoOgImage || "";

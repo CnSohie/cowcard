@@ -46,10 +46,6 @@ export default function AdminLayout() {
   const displayName = localStorage.getItem("ka.user") ?? "";
 
   useEffect(() => {
-    if (!isLoggedIn()) nav("/admin/login");
-  }, [nav]);
-
-  useEffect(() => {
     if (!isLoggedIn() || !canAccess("support:manage")) return;
     let active = true;
     const load = () => {
@@ -70,7 +66,7 @@ export default function AdminLayout() {
   function logout() {
     setTokens(null, null);
     localStorage.removeItem("ka.auth");
-    nav("/admin/login");
+    nav("/admin/login", { replace: true });
   }
 
   function canAccess(perm: string | null) {

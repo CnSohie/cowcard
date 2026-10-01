@@ -51,10 +51,10 @@ public class StoreController {
     }
 
     @GetMapping("/products/{id}/member-price")
-    public ApiResponse<MemberLevelService.PriceResult> memberPrice(@PathVariable Long id, HttpServletRequest http) {
+    public ApiResponse<MemberLevelService.PriceResult> memberPrice(@PathVariable Long id, @RequestParam(defaultValue = "1") int quantity, HttpServletRequest http) {
         var product = productRepository.findByIdAndVisibleTrue(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_OFF_SHELF));
-        return ApiResponse.ok(memberLevelService.priceFor((Long) http.getAttribute("mid"), product));
+        return ApiResponse.ok(memberLevelService.priceFor((Long) http.getAttribute("mid"), product, quantity));
     }
 
     public record CouponCheckRequest(@NotBlank String code, @NotNull Long productId,
@@ -65,9 +65,11 @@ public class StoreController {
 
     /** 优惠码预览:返回折扣与到手价(不核销) */
     @PostMapping("/coupon-check")
-    public ApiResponse<Map<String, Object>> couponCheck(@Valid @RequestBody CouponCheckRequest req) {
-        var product = catalogService.productDetail(req.productId());
-        var base = product.price().multiply(java.math.BigDecimal.valueOf(req.quantity()));
+    public ApiResponse<Map<String, Object>> couponCheck(@Valid @RequestBody CouponCheckRequest req, HttpServletRequest http) {
+        var product = productRepository.findByIdAndVisibleTrue(req.productId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_OFF_SHELF));
+        var price = memberLevelService.priceFor((Long) http.getAttribute("mid"), product, req.quantity());
+        var base = price.unitPrice().multiply(java.math.BigDecimal.valueOf(req.quantity()));
         var discount = couponService.preview(req.code(), base);
         return ApiResponse.ok(Map.of("discount", discount, "finalAmount", base.subtract(discount)));
     }

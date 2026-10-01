@@ -27,7 +27,12 @@ export default function PostDetail() {
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaEnabled, setCaptchaEnabled] = useState(false);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
-  const handleCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
+  const handleCaptchaToken = useCallback((token: string) => {
+    setCaptchaToken(token);
+    if (token) {
+      setBuyErr((current) => current === "请先完成人机验证" ? "" : current);
+    }
+  }, []);
   const handleCaptchaEnabled = useCallback((enabled: boolean) => setCaptchaEnabled(enabled), []);
 
   useEffect(() => {

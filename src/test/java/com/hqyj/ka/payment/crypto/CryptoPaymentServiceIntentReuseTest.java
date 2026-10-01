@@ -5,6 +5,8 @@ import com.hqyj.ka.order.entity.Order;
 import com.hqyj.ka.payment.crypto.entity.CryptoPaymentIntent;
 import com.hqyj.ka.payment.crypto.repo.CryptoPaymentIntentRepository;
 import com.hqyj.ka.payment.service.SettlementService;
+import com.hqyj.ka.sysconfig.service.ConfigService;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -12,6 +14,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -31,24 +34,48 @@ class CryptoPaymentServiceIntentReuseTest {
     void setUp() {
         repository = mock(CryptoPaymentIntentRepository.class);
         MerchantAddressProvider merchant = mock(MerchantAddressProvider.class);
-        FxRateService fx = mock(FxRateService.class);
         when(merchant.current()).thenReturn(MERCHANT);
-        when(fx.siteToUsd(any())).thenReturn(new BigDecimal("10.00"));
         when(repository.findFirstByOrderNoAndStatusInOrderByIdDesc(any(), any())).thenReturn(Optional.empty());
         when(repository.findByOrderNoAndStatusOrderByIdDesc(any(), any())).thenReturn(List.of());
         when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AppProperties props = new AppProperties();
+        ConfigService config = mock(ConfigService.class);
+        when(config.all()).thenReturn(Map.of("site.currency", "CNY"));
+        FxRateService fx = new FxRateService(props, config, JsonMapper.builder().build());
+        fx.init();
         props.getCrypto().setIntentExpireMinutes(15);
+        var bsc = chain("BSC", 56, POLYGON_USDC);
+        bsc.getTokens().get(0).setSymbol("USDT");
+        bsc.getTokens().get(0).setDecimals(18);
         props.getCrypto().setChains(List.of(
                 chain("BASE", 8453, BASE_USDC),
-                chain("POLYGON", 137, POLYGON_USDC)));
+                chain("POLYGON", 137, POLYGON_USDC), bsc));
         service = new CryptoPaymentService(repository, props, merchant,
                 mock(ChainRpcClient.class), fx, mock(SettlementService.class));
 
         order = new Order();
         order.setId(9L);
         order.setOrderNo("KA-REUSE-1");
+    }
+
+    @Test
+    void allThreeNetworksAndBothModesUseSameHalfPercentMarkup() {
+        for (String chain : List.of("BASE", "POLYGON", "BSC")) {
+            String token = "BSC".equals(chain) ? "USDT" : "USDC";
+            int decimals = "BSC".equals(chain) ? 18 : 6;
+            for (var mode : CryptoPaymentIntent.Mode.values()) {
+                when(repository.findByOrderNoAndStatusOrderByIdDesc(any(), any())).thenReturn(List.of());
+                var result = service.createIntent(order, new BigDecimal("72.00"), chain, token, mode);
+                assertTrue(result.getAmountToken().compareTo(new BigDecimal("10.05")) > 0);
+                assertTrue(result.getAmountToken().compareTo(new BigDecimal("10.06")) < 0);
+                assertEquals(result.getAmountToken().movePointRight(decimals).toBigIntegerExact().toString(),
+                        result.getAmountMinor());
+                assertTrue(result.getAmountToken().stripTrailingZeros().scale() <= 6);
+                when(repository.findByOrderNoAndStatusOrderByIdDesc(any(), any())).thenReturn(List.of(result));
+                assertSame(result, service.createIntent(order, new BigDecimal("72.00"), chain, token, mode));
+            }
+        }
     }
 
     @Test

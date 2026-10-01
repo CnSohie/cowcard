@@ -15,6 +15,7 @@ interface Level {
   spendThreshold: string;
   sortWeight: number;
   defaultLevel: boolean;
+  manualOnly: boolean;
   enabled: boolean;
 }
 interface Product { id: number; name: string; price: string; }
@@ -37,6 +38,7 @@ const EMPTY: Level = {
   spendThreshold: "0.00",
   sortWeight: 0,
   defaultLevel: false,
+  manualOnly: false,
   enabled: true,
 };
 
@@ -232,7 +234,7 @@ export default function MemberLevelsAdmin() {
                   <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
                     level.defaultLevel ? "bg-primary text-primary-contrast" : level.enabled ? "bg-emerald-500/10 text-emerald-600" : "bg-ink/[0.06] text-ink/40"
                   }`}>
-                    {level.defaultLevel ? "默认" : level.enabled ? "启用" : "停用"}
+                    {level.manualOnly ? "人工授予" : level.defaultLevel ? "默认" : level.enabled ? "启用" : "停用"}
                   </span>
                 </div>
                 <div className="mt-4">
@@ -327,13 +329,15 @@ export default function MemberLevelsAdmin() {
               {field("排序权重", <input className="input" type="number" value={editing.sortWeight} onChange={(e) => setEditing({ ...editing, sortWeight: Number(e.target.value) })} />, "数值越大等级越高。")}
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {field("充值门槛", <input className="input" inputMode="decimal" value={editing.rechargeThreshold} onChange={(e) => setEditing({ ...editing, rechargeThreshold: e.target.value })} />)}
-              {field("消费门槛", <input className="input" inputMode="decimal" value={editing.spendThreshold} onChange={(e) => setEditing({ ...editing, spendThreshold: e.target.value })} />)}
+              {field("充值门槛", <input className="input" inputMode="decimal" disabled={editing.manualOnly} value={editing.rechargeThreshold} onChange={(e) => setEditing({ ...editing, rechargeThreshold: e.target.value })} />)}
+              {field("消费门槛", <input className="input" inputMode="decimal" disabled={editing.manualOnly} value={editing.spendThreshold} onChange={(e) => setEditing({ ...editing, spendThreshold: e.target.value })} />)}
             </div>
             <div className="flex flex-wrap gap-2">
-              <Toggle checked={editing.defaultLevel} label="默认等级" onChange={(defaultLevel) => setEditing({ ...editing, defaultLevel })} />
+              <Toggle checked={editing.defaultLevel} label="默认等级" onChange={(defaultLevel) => setEditing({ ...editing, defaultLevel, manualOnly: defaultLevel ? false : editing.manualOnly })} />
+              <Toggle checked={!!editing.manualOnly} label="仅人工授予（如代理）" onChange={(manualOnly) => setEditing({ ...editing, manualOnly, defaultLevel: manualOnly ? false : editing.defaultLevel })} />
               <Toggle checked={editing.enabled} label="启用等级" onChange={(enabled) => setEditing({ ...editing, enabled })} />
             </div>
+            {editing.manualOnly && <p className="text-xs leading-relaxed text-ink/55">此等级只能在会员管理中人工授予，不因充值或消费自动获得；已持有者也不会被自动升级到其他等级。</p>}
             <div className="rounded-3xl border border-primary/15 bg-accent-soft px-4 py-3 text-xs leading-relaxed text-ink/55">
               <div className="mb-1 flex items-center gap-2 font-bold text-ink">
                 <ShieldCheck size={14} /> 安全提示

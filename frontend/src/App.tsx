@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
 import StoreLayout from "./components/StoreLayout";
+import AdminAuthGuard from "./components/AdminAuthGuard";
 const Home = lazy(() => import("./pages/store/Home"));
 const ProductPage = lazy(() => import("./pages/store/ProductPage"));
 const PayPage = lazy(() => import("./pages/store/PayPage"));
@@ -53,7 +54,7 @@ export default function App() {
         <Route path="/about" element={<AboutPage />} />
       </Route>
       <Route path="/admin/login" element={<AdminLogin />} />
-      <Route path="/admin" element={<AdminLayout />}>
+      <Route path="/admin" element={<AdminAuthGuard><AdminLayout /></AdminAuthGuard>}>
         <Route index element={<Dashboard />} />
         <Route path="products" element={<ProductsAdmin />} />
         <Route path="cards" element={<CardsAdmin />} />

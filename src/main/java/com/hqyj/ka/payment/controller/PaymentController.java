@@ -1,11 +1,8 @@
 package com.hqyj.ka.payment.controller;
 
 import com.hqyj.ka.common.ApiResponse;
-import com.hqyj.ka.common.BusinessException;
-import com.hqyj.ka.common.ErrorCode;
 import com.hqyj.ka.order.dto.OrderDtos.PaySummary;
 import com.hqyj.ka.order.entity.Order;
-import com.hqyj.ka.order.repo.OrderRepository;
 import com.hqyj.ka.order.service.OrderService;
 import com.hqyj.ka.payment.PayContext;
 import com.hqyj.ka.payment.PayCreationResult;
@@ -27,7 +24,6 @@ import java.util.Map;
 public class PaymentController {
 
     private final PaymentService paymentService;
-    private final OrderRepository orderRepository;
     private final OrderService orderService;
 
     public record CreatePayRequest(@NotBlank String orderNo, @NotBlank String channelCode,
@@ -75,14 +71,7 @@ public class PaymentController {
 
     private Order authorizedOrder(String orderNo, String contact, String queryPassword,
                                   String queryToken, HttpServletRequest http) {
-        Order order = orderRepository.findByOrderNo(orderNo)
-                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
         Long memberId = (Long) http.getAttribute("mid");
-        if (memberId != null) {
-            if (!memberId.equals(order.getMemberId())) throw new BusinessException(ErrorCode.ORDER_NOT_FOUND);
-        } else {
-            orderService.authorizePayment(orderNo, contact, queryPassword, queryToken);
-        }
-        return order;
+        return orderService.authorizePaymentAccess(orderNo, memberId, contact, queryPassword, queryToken);
     }
 }

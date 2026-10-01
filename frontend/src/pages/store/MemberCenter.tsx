@@ -1,3 +1,4 @@
+import SecretBlock from "../../components/SecretBlock";
 import WithdrawAmounts from "../../components/WithdrawAmounts";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -155,11 +156,16 @@ export default function MemberCenter() {
   const [ticketMessage, setTicketMessage] = useState("");
   const [followUps, setFollowUps] = useState<Record<number, string>>({});
   const [ticketErr, setTicketErr] = useState("");
-  const [orderCopied, setOrderCopied] = useState("");
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaEnabled, setCaptchaEnabled] = useState(false);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
-  const handleCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
+  const handleCaptchaToken = useCallback((token: string) => {
+    setCaptchaToken(token);
+    if (token) {
+      setModalErr((current) => current === "请先完成人机验证" ? "" : current);
+      setTicketErr((current) => current === "请先完成人机验证" ? "" : current);
+    }
+  }, []);
   const handleCaptchaEnabled = useCallback((enabled: boolean) => setCaptchaEnabled(enabled), []);
 
   const loggedIn = isMemberLoggedIn();
@@ -337,13 +343,6 @@ export default function MemberCenter() {
     navigator.clipboard?.writeText(inviteLink).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
-    });
-  }
-
-  function copyOrderText(text: string, tag: string) {
-    navigator.clipboard?.writeText(text).then(() => {
-      setOrderCopied(tag);
-      setTimeout(() => setOrderCopied(""), 1500);
     });
   }
 
@@ -525,22 +524,14 @@ export default function MemberCenter() {
                         {o.cards.map((card, i) => {
                           const tag = `${o.orderNo}-${i}`;
                           return (
-                            <button key={tag} onClick={() => copyOrderText(card, tag)}
-                              className="group flex w-full items-center justify-between gap-3 rounded-2xl bg-accent-soft/70 px-4 py-3 text-left transition hover:brightness-95">
-                              <code className="break-all font-mono text-sm font-semibold">{card}</code>
-                              {orderCopied === tag ? <Check size={15} className="shrink-0 text-primary" /> : <Copy size={15} className="shrink-0 text-ink/35 group-hover:text-primary" />}
-                            </button>
+                            <SecretBlock key={tag} value={card} label={`卡密 ${i + 1}`} />
                           );
                         })}
                       </div>
                     )}
 
                     {manualDone && (
-                      <button onClick={() => copyOrderText(o.deliveryContent ?? "", `${o.orderNo}-manual`)}
-                        className="mt-4 group flex w-full items-center justify-between gap-3 rounded-2xl bg-accent-soft/70 px-4 py-3 text-left transition hover:brightness-95">
-                        <span className="whitespace-pre-wrap break-all text-sm leading-relaxed text-ink/70">{o.deliveryContent}</span>
-                        {orderCopied === `${o.orderNo}-manual` ? <Check size={15} className="shrink-0 text-primary" /> : <Copy size={15} className="shrink-0 text-ink/35 group-hover:text-primary" />}
-                      </button>
+                      <div className="mt-4"><SecretBlock value={o.deliveryContent ?? ""} /></div>
                     )}
 
                     {o.deliveryMode === "MANUAL" && o.status === "PAID" && (
@@ -608,11 +599,7 @@ export default function MemberCenter() {
                   {v.cards.length > 0 && (
                     <div className="mt-3 space-y-2">
                       {v.cards.map((card, i) => (
-                        <button key={i} onClick={() => navigator.clipboard?.writeText(card)}
-                          className="group flex w-full items-center justify-between gap-3 rounded-2xl bg-ink/[0.04] px-4 py-3 text-left transition hover:bg-ink/[0.06]">
-                          <code className="break-all font-mono text-sm font-semibold">{card}</code>
-                          <KeyRound size={14} className="shrink-0 text-ink/35 group-hover:text-primary" />
-                        </button>
+                        <SecretBlock key={i} value={card} label={`卡密 ${i + 1}`} />
                       ))}
                     </div>
                   )}

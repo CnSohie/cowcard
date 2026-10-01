@@ -14,13 +14,13 @@ public final class CatalogDtos {
     public record ProductCard(Long id, Long categoryId, String name, String brief, String coverImage,
                               BigDecimal price, BigDecimal minOrderAmount, int stock, int minBuy, int maxBuy,
                               String deliveryMode, LocalDateTime presaleSaleEndAt,
-                              LocalDateTime presaleStartAt, LocalDateTime presaleEndAt) {}
+                              LocalDateTime presaleStartAt, LocalDateTime presaleEndAt, Long soldQuantity) {}
 
     public record ProductDetail(Long id, Long categoryId, String name, String brief, String description,
                                 String coverImage, BigDecimal price, BigDecimal minOrderAmount, int stock, int minBuy, int maxBuy,
                                 String deliveryMode, String manualPrompt, String manualFormSchema,
                                 LocalDateTime presaleSaleEndAt, LocalDateTime presaleStartAt, LocalDateTime presaleEndAt,
-                                String presaleSettlementMode) {}
+                                String presaleSettlementMode, Long soldQuantity) {}
 
     public record SaveCategoryRequest(Long id,
                                       @NotBlank @Size(max = 64) String name,
@@ -47,5 +47,5 @@ public final class CatalogDtos {
                                      @Min(1) int minBuy,
                                      @Min(1) @Max(1000) int maxBuy,
                                      boolean visible,
-                                     int sortOrder) {}
+                                     int sortOrder, String wholesaleRules) {}
 }

@@ -1,3 +1,4 @@
+import { refreshSite } from "../../lib/site";
 import { useEffect, useState } from "react";
 import {
   ArrowDown, ArrowUp, Eye, EyeOff, Globe2, HandCoins, LayoutTemplate, Mail, Moon, Palette,
@@ -172,6 +173,7 @@ export default function SettingsAdmin() {
         configs: { ...cfg, "site.hero_slides": serializeHeroSlides(heroSlides) },
         ...auth,
       });
+      await refreshSite().catch(() => undefined);
       refreshCaptchaConfig();
       const loaded = await get<Record<string, string>>("/admin/config");
       setCfg(loaded);
@@ -242,6 +244,12 @@ export default function SettingsAdmin() {
         <label className="label">站点名称</label>
         <input className="input mb-3" value={cfg["site.name"] ?? ""} placeholder="Ka 发卡"
           onChange={(e) => set("site.name", e.target.value)} />
+        <label className="mb-3 flex items-center gap-3 text-sm text-ink">
+          <input type="checkbox" checked={cfg["site.show_sales"] === "1"}
+            onChange={(e) => set("site.show_sales", e.target.checked ? "1" : "0")} />
+          显示商品销量
+        </label>
+        <p className="mb-4 text-xs text-ink/45">开启后商城列表和详情显示已付款商品的购买件数，包含历史订单，不含已退款订单。销量最多延迟 10 分钟更新，买家刷新页面后查看。</p>
         <label className="label">公告(留空不展示)</label>
         <input className="input mb-3" value={cfg["site.announcement"] ?? ""} placeholder="全场自动发货…"
           onChange={(e) => set("site.announcement", e.target.value)} />
@@ -661,7 +669,7 @@ export default function SettingsAdmin() {
         <input className="input max-w-xs" type="number" min={0} max={60}
           value={cfg["security.sensitive_grace_minutes"] ?? "5"} placeholder="5"
           onChange={(e) => set("security.sensitive_grace_minutes", e.target.value)} />
-        <p className="mt-2 text-[11px] text-ink/40">填 0 表示每次敏感操作都重新验证;最大 60 分钟。</p>
+        <p className="mt-2 text-[11px] text-ink/40">填 0 表示每次敏感操作都重新验证;最大 60 分钟。保存后按上次验证时间计算有效期,期间操作不会延长有效期。</p>
       </div>
 
       <div className="card mb-5 p-6">

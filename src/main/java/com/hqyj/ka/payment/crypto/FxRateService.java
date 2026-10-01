@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class FxRateService {
 
+    private static final BigDecimal CRYPTO_COLLECTION_FACTOR = new BigDecimal("1.005");
     private static final BigDecimal MIN_SANE = new BigDecimal("3");
     private static final BigDecimal MAX_SANE = new BigDecimal("15");
     private static final Map<String, BigDecimal> FALLBACK_USD_RATES = Map.of(
@@ -77,11 +78,10 @@ public class FxRateService {
         };
     }
 
-    /** 站点计价币种 → USD 稳定币金额。 */
+    /** USDC/USDT 统一按最新缓存汇率换算并加价 0.5%,先加价再向上取整。 */
     public BigDecimal siteToUsd(BigDecimal amount) {
-        String currency = siteCurrency();
-        BigDecimal usdToCurrency = rate(currency);
-        return amount.divide(usdToCurrency, 2, RoundingMode.UP);
+        return amount.multiply(CRYPTO_COLLECTION_FACTOR)
+                .divide(rate(siteCurrency()), 2, RoundingMode.UP);
     }
 
     /** 站点计价币种 → CNY 网关收款金额(支付宝/易支付使用)。 */

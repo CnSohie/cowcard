@@ -16,6 +16,33 @@ import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
+    interface DailySales {
+        java.time.LocalDate getDay();
+        java.math.BigDecimal getAmount();
+        long getOrderCount();
+    }
+
+    /** 站点计价的商品净成交额:外部应付 + 余额抵扣 - 已退余额,每订单只计一次。 */
+    @Query("select cast(o.paidAt as LocalDate) as day, " +
+           "sum(case when o.amount + coalesce(o.walletPaidAmount, 0) - coalesce(o.walletRefundedAmount, 0) > 0 " +
+           "then o.amount + coalesce(o.walletPaidAmount, 0) - coalesce(o.walletRefundedAmount, 0) else 0 end) as amount, " +
+           "count(o) as orderCount from Order o " +
+           "where (o.orderType = com.hqyj.ka.order.entity.Order.OrderType.GOODS or o.orderType is null) " +
+           "and o.status in (com.hqyj.ka.order.entity.Order.Status.PAID, com.hqyj.ka.order.entity.Order.Status.DELIVERED) " +
+           "and o.paidAt >= :start and o.paidAt < :end group by cast(o.paidAt as LocalDate)")
+    List<DailySales> dailySales(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    interface ProductSales {
+        Long getProductId();
+        Long getQuantity();
+    }
+
+    @Query("select o.productId as productId, sum(o.quantity) as quantity from Order o " +
+           "where (o.orderType = com.hqyj.ka.order.entity.Order.OrderType.GOODS or o.orderType is null) " +
+           "and o.status in (com.hqyj.ka.order.entity.Order.Status.PAID, com.hqyj.ka.order.entity.Order.Status.DELIVERED) " +
+           "group by o.productId")
+    List<ProductSales> sumPurchasedQuantities();
+
     Optional<Order> findByOrderNo(String orderNo);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

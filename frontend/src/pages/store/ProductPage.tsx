@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, BadgePercent, Clock3, KeyRound, Mail, Minus, Plus, ShieldCheck, Wrench } from "lucide-react";
 import { ApiError, get, post, type CreateOrderResponse, type ProductDetail } from "../../lib/api";
@@ -10,6 +10,11 @@ import { useSeo } from "../../lib/seo";
 import { useI18n } from "../../lib/i18n";
 import { CaptchaBox, captchaHeaders } from "../../lib/captcha";
 
+interface PriceQuote {
+  unitPrice: string; discountPerUnit: string; levelName: string | null; source: string;
+  wholesaleTiers: { minQuantity: number; unitPrice: string }[];
+  productId: string; quantity: number;
+}
 interface ManualField { key: string; label: string; type: "TEXT" | "EMAIL" | "NUMBER" | "SELECT" | "TEXTAREA"; required: boolean; placeholder?: string; options?: string[]; }
 const LEGACY_MANUAL_FIELDS: ManualField[] = [{ key: "delivery_details", label: "交付所需信息", type: "TEXTAREA", required: true, placeholder: "请填写账号、区服、角色 ID 或其他交付资料" }];
 function parseManualFields(schema: string | null): ManualField[] {
@@ -31,14 +36,16 @@ function effectiveMinimumQuantity(product: ProductDetail) {
 export default function ProductPage() {
   const { id } = useParams();
   const nav = useNavigate();
-  const { copy } = useI18n();
+  const { copy, lang } = useI18n();
   const t = copy.product;
   const [p, setP] = useState<ProductDetail | null>(null);
   const [qty, setQty] = useState(1);
   const [contact, setContact] = useState(() => (isMemberLoggedIn() ? memberInfo()?.email : "") || recalledContact());
   const [queryPassword, setQueryPassword] = useState("");
   const [manualValues, setManualValues] = useState<Record<string, string>>({});
-  const [memberPrice, setMemberPrice] = useState<{ unitPrice: string; discountPerUnit: string; levelName: string | null; source: string } | null>(null);
+  const [memberPrice, setMemberPrice] = useState<PriceQuote | null>(null);
+  const [priceError, setPriceError] = useState("");
+  const [priceReload, setPriceReload] = useState(0);
   const [couponCode, setCouponCode] = useState("");
   const [discount, setDiscount] = useState<string | null>(null);
   const [couponMsg, setCouponMsg] = useState("");
@@ -47,29 +54,52 @@ export default function ProductPage() {
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaEnabled, setCaptchaEnabled] = useState(false);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
-  const handleCaptchaToken = useCallback((token: string) => setCaptchaToken(token), []);
+  const handleCaptchaToken = useCallback((token: string) => {
+    setCaptchaToken(token);
+    if (token) {
+      setError((current) => current === "请先完成人机验证" ? "" : current);
+    }
+  }, []);
   const handleCaptchaEnabled = useCallback((enabled: boolean) => setCaptchaEnabled(enabled), []);
 
   useEffect(() => {
+    let alive = true;
+    setP(null);
     get<ProductDetail>(`/store/products/${id}`)
       .then((d) => {
+        if (!alive) return;
         setP(d);
         setQty(effectiveMinimumQuantity(d));
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => { if (alive) setError(e.message); });
     // 已登录会员自动带入邮箱,下单同时计入账号(供推广返佣与订单归属)
     if (isMemberLoggedIn()) {
       const m = memberInfo();
       if (m?.email) setContact(m.email);
-      mGet<{ unitPrice: string; discountPerUnit: string; levelName: string | null; source: string }>(`/store/products/${id}/member-price`)
-        .then(setMemberPrice).catch(() => void 0);
     }
+    return () => { alive = false; };
   }, [id]);
+
+  useEffect(() => {
+    let alive = true;
+    setPriceError("");
+    const request = isMemberLoggedIn() ? mGet : get;
+    const timer = window.setTimeout(() => {
+      request<PriceQuote>(`/store/products/${id}/member-price`, { quantity: qty })
+        .then((quote) => { if (alive) setMemberPrice({ ...quote, productId: id!, quantity: qty }); })
+        .catch(() => { if (alive) setPriceError(lang === "zh" ? "价格加载失败，请重试" : "Could not load price. Retry."); });
+    }, 150);
+    return () => { alive = false; window.clearTimeout(timer); };
+  }, [id, qty, priceReload, lang]);
+
+  const couponRequestKey = useRef("");
+  couponRequestKey.current = `${id}:${qty}:${couponCode}:${memberPrice?.unitPrice}`;
+  const quoteReady = String(p?.id) === id && memberPrice?.productId === id && memberPrice?.quantity === qty && !priceError;
 
   useEffect(() => {
     setDiscount(null);
     setCouponMsg("");
-  }, [qty, couponCode]);
+  }, [id, qty, couponCode, memberPrice]);
 
   useSeo(p ? {
     title: p.name,
@@ -97,22 +127,28 @@ export default function ProductPage() {
   const fmtTime = (s: string | null) => s ? new Date(s).toLocaleString() : t.tba;
 
   async function checkCoupon() {
+    if (!quoteReady) return;
+    const key = couponRequestKey.current;
     setCouponMsg("");
     try {
-      const r = await post<{ discount: string; finalAmount: string }>("/store/coupon-check", {
+      const request = isMemberLoggedIn() ? mPost : post;
+      const r = await request<{ discount: string; finalAmount: string }>("/store/coupon-check", {
         code: couponCode.trim(),
         productId: p!.id,
         quantity: qty,
       });
+      if (key !== couponRequestKey.current) return;
       setDiscount(String(r.discount));
       setCouponMsg(`${t.discount} ${money(r.discount)}`);
     } catch (e) {
+      if (key !== couponRequestKey.current) return;
       setDiscount(null);
       setCouponMsg(e instanceof ApiError ? e.message : "Check failed");
     }
   }
 
   async function submit() {
+    if (!quoteReady) return;
     setError("");
     if (!meetsMinimumOrderAmount) {
       setError(`该商品最低订购金额为 ${money(p!.minOrderAmount)}，请增加购买数量`);
@@ -179,13 +215,21 @@ export default function ProductPage() {
             </span>
             {memberPrice && Number(memberPrice.discountPerUnit) > 0 && (
               <span className="chip !text-sky-600 dark:!text-sky-400">
-                {memberPrice.levelName ?? "Member"} {t.memberPrice} · {t.saved} {money((Number(memberPrice.discountPerUnit) * qty).toFixed(2))}
+                {memberPrice.source === "WHOLESALE" ? (lang === "zh" ? "批发价" : "Wholesale") : `${memberPrice.levelName ?? "Member"} ${t.memberPrice}`} · {t.saved} {money((Number(memberPrice.discountPerUnit) * qty).toFixed(2))}
               </span>
             )}
+            {p.soldQuantity != null && <span className="chip">{lang === "zh" ? `已售 ${p.soldQuantity.toLocaleString()} 件` : `${p.soldQuantity.toLocaleString()} sold`}</span>}
             <span className={`chip ${isManual || isPresale || p.stock > 0 ? "!text-primary" : "!text-red-500"}`}>
               {presaleEnded ? copy.common.presaleEnded : isPresale ? t.presaleVoucher : isManual ? copy.common.manualDelivery : p.stock > 0 ? `${t.inStock} · ${p.stock}` : copy.common.soldOut}
             </span>
           </div>
+          {!!memberPrice?.wholesaleTiers?.length && <div className="mt-5 rounded-2xl bg-accent-soft p-4">
+            <h3 className="text-sm font-bold">{lang === "zh" ? "可享批发价" : "Volume pricing"}</h3>
+            <div className="mt-2 flex flex-wrap gap-2">{memberPrice.wholesaleTiers.map((tier, i) => <span key={i} className="rounded-xl bg-surface px-3 py-2 text-xs text-ink/70">
+              {lang === "zh" ? `${tier.minQuantity} 件起` : `${tier.minQuantity}+ units`} · {money(tier.unitPrice)} / {lang === "zh" ? "件" : "unit"}
+            </span>)}</div>
+            <p className="mt-2 text-xs text-ink/55">{lang === "zh" ? "按购买数量自动取适用最低单价，与会员价不重复打折。" : "The lowest eligible unit price applies; member discounts are not stacked."}</p>
+          </div>}
           {p.description && (
             <div className="mt-7 whitespace-pre-wrap border-t border-ink/[0.06] pt-6 text-sm leading-relaxed text-ink/60">
               {p.description}
@@ -195,6 +239,9 @@ export default function ProductPage() {
 
         <div className="card h-fit p-6 md:p-7 lg:sticky lg:top-24">
           <h2 className="mb-5 font-bold">{t.orderInfo}</h2>
+          {!quoteReady && <p role="status" className="mb-3 text-xs text-ink/60">{priceError || (lang === "zh" ? "正在更新价格…" : "Updating price…")}
+            {priceError && <button className="ml-2 underline" onClick={() => setPriceReload(v => v + 1)}>{lang === "zh" ? "重试" : "Retry"}</button>}
+          </p> }
           <label className="label">{t.qty}({effectiveMinBuy} ~ {p.maxBuy})</label>
           <div className="mb-4 flex items-center gap-2">
             <button aria-label={t.qty + " −"} disabled={qty <= effectiveMinBuy} className="btn-ghost !px-3.5 !py-2.5" onClick={() => setQty(Math.max(effectiveMinBuy, qty - 1))}><Minus size={14} /></button>
@@ -272,7 +319,7 @@ export default function ProductPage() {
           <div className="mb-1 flex gap-2">
             <input className="input flex-1 uppercase" aria-label={t.coupon} placeholder="COUPON" value={couponCode}
               onChange={(e) => setCouponCode(e.target.value)} />
-            <button className="btn-ghost shrink-0" disabled={!couponCode.trim()} onClick={checkCoupon}>
+            <button className="btn-ghost shrink-0" disabled={!quoteReady || !couponCode.trim()} onClick={checkCoupon}>
               <BadgePercent size={14} /> {copy.common.verify}
             </button>
           </div>
@@ -303,7 +350,7 @@ export default function ProductPage() {
             onEnabledChange={handleCaptchaEnabled}
             resetKey={captchaResetKey}
           />
-          <button className="btn-primary w-full !py-3.5" disabled={submitting || presaleEnded || !meetsMinimumOrderAmount || (!isManual && !isPresale && p.stock <= 0)} onClick={submit}>
+          <button className="btn-primary w-full !py-3.5" disabled={!quoteReady || submitting || presaleEnded || !meetsMinimumOrderAmount || (!isManual && !isPresale && p.stock <= 0)} onClick={submit}>
             {submitting ? t.creating : presaleEnded ? copy.common.presaleEnded : t.buyNow}
           </button>
           <p className="mt-3 flex items-center justify-center gap-1 text-[11px] text-ink/35">

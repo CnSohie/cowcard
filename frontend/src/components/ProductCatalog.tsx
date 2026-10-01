@@ -176,7 +176,7 @@ export default function ProductCatalog({ products, categories, loading, error, o
 }
 
 function CatalogCard({ product: p, now }: { product: ProductCard; now: number }) {
-  const { copy } = useI18n();
+  const { copy, lang } = useI18n();
   const ended = saleEnded(p, now);
   const canBuy = available(p, now);
   const delivery = p.deliveryMode === "PRESALE_VOUCHER" ? copy.common.presale
@@ -194,6 +194,7 @@ function CatalogCard({ product: p, now }: { product: ProductCard; now: number })
         <span className={canBuy ? "text-primary" : "text-ink/45"}>{stock}</span>
         {p.deliveryMode === "AUTO_CARD" && <><span className="text-ink/20">·</span><span className="text-ink/55">{delivery}</span></>}
       </div>
+      {p.soldQuantity != null && <p className="mt-2 text-xs text-ink/55">{lang === "zh" ? `已售 ${p.soldQuantity.toLocaleString()} 件` : `${p.soldQuantity.toLocaleString()} sold`}</p>}
       <div className="catalog-product-footer">
         <span className="min-w-0 break-all font-semibold tabular-nums tracking-tight text-ink"><span className="mr-0.5 text-xs font-normal text-ink/50">{currencySymbol()}</span><span className="text-xl">{p.price}</span></span>
         <span className="catalog-card-action">{copy.common.viewDetails}<ArrowRight size={13} /></span>
