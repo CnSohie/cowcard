@@ -1,0 +1,1 @@
+ALTER TABLE coupon ADD COLUMN product_id BIGINT NULL;

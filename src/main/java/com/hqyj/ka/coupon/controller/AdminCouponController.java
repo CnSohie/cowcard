@@ -37,6 +37,7 @@ public class AdminCouponController {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final CouponRepository couponRepository;
+    private final com.hqyj.ka.coupon.service.CouponScopeService couponScopeService;
     private final AuthService authService;
     private final AuditService auditService;
 
@@ -48,6 +49,7 @@ public class AdminCouponController {
             @DecimalMin("0") BigDecimal minAmount,
             @Min(0) int totalLimit,
             LocalDateTime expireAt,
+            @Positive Long productId,
             boolean enabled) {}
 
     public record BatchCreateCouponRequest(
@@ -61,11 +63,18 @@ public class AdminCouponController {
             @DecimalMin("0") BigDecimal minAmount,
             @Min(0) int totalLimit,
             LocalDateTime expireAt,
+            @Positive Long productId,
             boolean enabled,
             String password,
             String totpCode) {}
 
     public record BatchCreateCouponResponse(int created, List<String> codes) {}
+
+    @GetMapping("/products")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('coupon:manage','product:write')")
+    public ApiResponse<List<com.hqyj.ka.coupon.service.CouponScopeService.ProductOption>> products() {
+        return ApiResponse.ok(couponScopeService.options());
+    }
 
     @GetMapping
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('coupon:read','coupon:manage','product:read')")
@@ -77,15 +86,17 @@ public class AdminCouponController {
     @PreAuthorize("hasRole('SUPER_ADMIN') or hasAnyAuthority('coupon:manage','product:write')")
     @Transactional
     public ApiResponse<Coupon> save(@Valid @RequestBody SaveCouponRequest req, HttpServletRequest http) {
+        couponScopeService.validate(req.productId());
         String ip = RateLimitFilter.clientIp(http);
         Coupon coupon = req.id() == null ? new Coupon()
                 : couponRepository.findById(req.id()).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
         applyCoupon(coupon, req.code().trim().toUpperCase(), req.type(), req.value(), req.minAmount(),
                 req.totalLimit(), req.expireAt(), req.enabled(), req.id());
+        coupon.setProductId(req.productId());
         Coupon saved = couponRepository.save(coupon);
         auditService.record((String) http.getAttribute("uname"),
                 req.id() == null ? "COUPON_CREATE" : "COUPON_UPDATE",
-                "coupon:" + saved.getCode(), ip, "type=" + saved.getType() + ",value=" + saved.getValue());
+                "coupon:" + saved.getCode(), ip, "type=" + saved.getType() + ",value=" + saved.getValue() + ",productId=" + saved.getProductId());
         return ApiResponse.ok(saved);
     }
 
@@ -94,6 +105,7 @@ public class AdminCouponController {
     @Transactional
     public ApiResponse<BatchCreateCouponResponse> batchCreate(@Valid @RequestBody BatchCreateCouponRequest req,
                                                               HttpServletRequest http) {
+        couponScopeService.validate(req.productId());
         String ip = RateLimitFilter.clientIp(http);
         authService.verifySensitive((Long) http.getAttribute("uid"), req.password(), req.totpCode(),
                 "coupon-batch-create:" + req.count(), ip);
@@ -111,12 +123,13 @@ public class AdminCouponController {
             Coupon coupon = new Coupon();
             applyCoupon(coupon, code, req.type(), req.value(), req.minAmount(), req.totalLimit(),
                     req.expireAt(), req.enabled(), null);
+            coupon.setProductId(req.productId());
             coupons.add(coupon);
         }
         couponRepository.saveAll(coupons);
         auditService.record((String) http.getAttribute("uname"), "COUPON_BATCH_CREATE", "coupon",
                 ip, "count=" + coupons.size() + ",prefix=" + prefix + ",suffix=" + suffix + ",type=" + req.type()
-                        + ",value=" + req.value());
+                        + ",value=" + req.value() + ",productId=" + req.productId());
         return ApiResponse.ok(new BatchCreateCouponResponse(coupons.size(), new ArrayList<>(codes)));
     }
 

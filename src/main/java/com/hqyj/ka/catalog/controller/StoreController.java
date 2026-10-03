@@ -3,6 +3,7 @@ package com.hqyj.ka.catalog.controller;
 import com.hqyj.ka.catalog.dto.CatalogDtos.*;
 import com.hqyj.ka.catalog.repo.ProductRepository;
 import com.hqyj.ka.catalog.service.CatalogService;
+import com.hqyj.ka.sysconfig.service.SiteAvailabilityService;
 import com.hqyj.ka.common.BusinessException;
 import com.hqyj.ka.common.ErrorCode;
 import com.hqyj.ka.coupon.service.CouponService;
@@ -27,6 +28,7 @@ import java.util.Map;
 @RequestMapping("/api/store")
 @RequiredArgsConstructor
 public class StoreController {
+    private final SiteAvailabilityService siteAvailabilityService;
 
     private final CatalogService catalogService;
     private final ConfigService configService;
@@ -34,6 +36,12 @@ public class StoreController {
     private final ProductRepository productRepository;
     private final MemberLevelService memberLevelService;
     private final CaptchaService captchaService;
+
+    @GetMapping("/availability")
+    public ApiResponse<SiteAvailabilityService.Status> availability(jakarta.servlet.http.HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store");
+        return ApiResponse.ok(siteAvailabilityService.status());
+    }
 
     @GetMapping("/categories")
     public ApiResponse<List<CategoryView>> categories() {
@@ -70,7 +78,7 @@ public class StoreController {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_OFF_SHELF));
         var price = memberLevelService.priceFor((Long) http.getAttribute("mid"), product, req.quantity());
         var base = price.unitPrice().multiply(java.math.BigDecimal.valueOf(req.quantity()));
-        var discount = couponService.preview(req.code(), base);
+        var discount = couponService.preview(req.code(), base, req.productId());
         return ApiResponse.ok(Map.of("discount", discount, "finalAmount", base.subtract(discount)));
     }
 

@@ -1,3 +1,4 @@
+import AvailabilityPanel from "../../components/AvailabilityPanel";
 import { refreshSite } from "../../lib/site";
 import { useEffect, useState } from "react";
 import {
@@ -112,6 +113,7 @@ const PRESALE_BODY = `你好,你的预售订单付款已确认。
 
 export default function SettingsAdmin() {
   const [cfg, setCfg] = useState<Record<string, string>>({});
+  const [availabilityPreview, setAvailabilityPreview] = useState<"MAINTENANCE" | "OFF_HOURS">("MAINTENANCE");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [testTo, setTestTo] = useState("");
@@ -238,6 +240,35 @@ export default function SettingsAdmin() {
   return (
     <div className="max-w-5xl animate-fade-up">
       <h1 className="mb-6 text-xl font-extrabold tracking-tight">站点设置</h1>
+
+      <div className="card mb-5 p-6">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div><p className="mb-2 text-[10px] font-bold tracking-[0.2em] text-primary">STORE AVAILABILITY</p><h2 className="flex items-center gap-2 text-lg font-bold"><Timer size={18} /> 维护与下班时段</h2></div>
+          <span className="rounded-full bg-accent-soft px-4 py-2 text-xs font-bold text-primary">{cfg["site.maintenance.enabled"] === "1" ? "待保存配置：维护开启" : cfg["site.off_hours.enabled"] === "1" ? "待保存配置：定时营业" : "待保存配置：全天营业"}</span>
+        </div>
+        <p className="mb-5 text-xs leading-6 text-ink/50">维护模式优先于下班时段。暂停新订单、余额充值与文章购买；已有订单付款、查单、自动发货及后台管理保持可用。保存后生效。</p>
+        <label className="mb-3 flex items-center gap-3 text-sm font-bold">
+          <input type="checkbox" checked={cfg["site.maintenance.enabled"] === "1"} onChange={(e) => set("site.maintenance.enabled", e.target.checked ? "1" : "0")} />开启维护模式
+        </label>
+        <label className="label" htmlFor="maintenance-message">维护提示</label>
+        <textarea id="maintenance-message" className="input mb-5" maxLength={500} value={cfg["site.maintenance.message"] ?? ""} placeholder="网站维护中，请稍后再来。" onChange={(e) => set("site.maintenance.message", e.target.value)} />
+        <label className="mb-3 flex items-center gap-3 text-sm font-bold">
+          <input type="checkbox" checked={cfg["site.off_hours.enabled"] === "1"} onChange={(e) => set("site.off_hours.enabled", e.target.checked ? "1" : "0")} />每天自动进入下班状态
+        </label>
+        <div className="mb-3 grid gap-4 sm:grid-cols-2">
+          <div><label className="label" htmlFor="off-start">下班时间（北京时间）</label><input id="off-start" className="input" type="time" value={cfg["site.off_hours.start"] ?? "22:00"} onChange={(e) => set("site.off_hours.start", e.target.value)} /></div>
+          <div><label className="label" htmlFor="off-end">恢复营业时间（北京时间）</label><input id="off-end" className="input" type="time" value={cfg["site.off_hours.end"] ?? "09:00"} onChange={(e) => set("site.off_hours.end", e.target.value)} /></div>
+        </div>
+        <p className="mb-4 text-xs text-ink/45">支持跨午夜，例如 22:00 至次日 09:00；开始与结束时间不能相同。关闭维护后仍按每日时段判断营业状态。</p>
+        <label className="label" htmlFor="off-message">下班提示</label>
+        <textarea id="off-message" className="input" maxLength={500} value={cfg["site.off_hours.message"] ?? ""} placeholder="已经下班啦，营业后欢迎再来。" onChange={(e) => set("site.off_hours.message", e.target.value)} />
+        <div className="mb-5 mt-7 flex flex-wrap items-center justify-between gap-3 border-t border-ink/10 pt-5">
+          <div><h3 className="text-sm font-bold">买家页面预览</h3><p className="mt-1 text-xs text-ink/45">与商城共用设计，修改文案即可预览，保存后才会生效。</p></div>
+          <div className="flex gap-2">{(["MAINTENANCE", "OFF_HOURS"] as const).map((state) => <button key={state} type="button" className={`chip ${availabilityPreview === state ? "chip-on" : ""}`} aria-pressed={availabilityPreview === state} onClick={() => setAvailabilityPreview(state)}>{state === "MAINTENANCE" ? "维护页面" : "下班页面"}</button>)}</div>
+        </div>
+        <AvailabilityPanel preview status={{ state: availabilityPreview, message: cfg[availabilityPreview === "MAINTENANCE" ? "site.maintenance.message" : "site.off_hours.message"] ?? "", timezone: "Asia/Shanghai", offStart: cfg["site.off_hours.start"] || "22:00", offEnd: cfg["site.off_hours.end"] || "09:00", resumesAt: null }} />
+        <button type="button" className="btn-primary" disabled={busy} onClick={() => setSensitive("save")}><Save size={15} />保存站点设置</button>
+      </div>
 
       <div className="card mb-5 p-6">
         <h2 className="mb-4 font-bold">基本信息</h2>

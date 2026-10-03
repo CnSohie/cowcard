@@ -26,6 +26,22 @@ public class AuthController {
         return ApiResponse.ok(authService.refresh(req.refreshToken()));
     }
 
+    @GetMapping("/profile")
+    public ApiResponse<ProfileResponse> profile(HttpServletRequest http) {
+        return ApiResponse.ok(new ProfileResponse(authService.currentUsername((Long) http.getAttribute("uid"))));
+    }
+
+    @PostMapping("/change-username")
+    public ApiResponse<Void> changeUsername(@Valid @RequestBody ChangeUsernameRequest req, HttpServletRequest http) {
+        try {
+            authService.changeUsername((Long) http.getAttribute("uid"), req.username(), req.password(),
+                    req.totpCode(), RateLimitFilter.clientIp(http));
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            throw new com.hqyj.ka.common.BusinessException(com.hqyj.ka.common.ErrorCode.BAD_REQUEST, "该用户名不可用，请换一个重试");
+        }
+        return ApiResponse.ok();
+    }
+
     @PostMapping("/change-password")
     public ApiResponse<Void> changePassword(@Valid @RequestBody ChangePasswordRequest req, HttpServletRequest http) {
         Long uid = (Long) http.getAttribute("uid");

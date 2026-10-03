@@ -112,6 +112,44 @@ public class AuthService {
                 user.getUsername(), user.getNickname(), authorities);
     }
 
+    @Transactional(readOnly = true)
+    public String currentUsername(Long userId) {
+        return userRepository.findById(userId).filter(User::isEnabled)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED)).getUsername();
+    }
+
+    /** 自助修改登录名：始终复核密码，已启用 2FA 时复核动态码，不复用敏感验证宽限。 */
+    @Transactional(noRollbackFor = BusinessException.class)
+    public void changeUsername(Long userId, String username, String password, String code, String ip) {
+        User user = requirePassword(userId, password, "change-username", ip);
+        if (!user.isEnabled()) throw new BusinessException(ErrorCode.ACCOUNT_DISABLED);
+        if (user.isTotpEnabled()) {
+            String secret = AesGcmUtil.decrypt(user.getTotpSecret(), props.getSecurity().aesKeyBytes());
+            if (code == null || !totpService.verify(secret, code.trim())) {
+                auditService.record(user.getUsername(), "USERNAME_TOTP_FAILED", "auth", ip, null);
+                throw new BusinessException(ErrorCode.TOTP_INVALID);
+            }
+        }
+        if (username == null || !username.matches("[A-Za-z][A-Za-z0-9_-]{3,31}")) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "用户名须为 4–32 位，以字母开头，仅含字母、数字、下划线或短横线");
+        }
+        if ("admin".equalsIgnoreCase(username)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请使用非默认 admin 的用户名");
+        }
+        if (username.equalsIgnoreCase(user.getUsername())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "请输入与当前不同的新用户名");
+        }
+        if (userRepository.existsByUsernameIgnoreCase(username)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "该用户名已被使用");
+        }
+        String previous = user.getUsername();
+        user.setUsername(username);
+        user.setTokenVersion(UUID.randomUUID().toString());
+        userRepository.saveAndFlush(user); // 数据库唯一约束兜底并发重名，失败时回滚。
+        sensitiveVerifiedAt.remove(userId);
+        auditService.record(previous, "CHANGE_USERNAME", "auth", ip, "newUsername=" + username);
+    }
+
     @Transactional
     public void changePassword(Long userId, String oldPassword, String newPassword, String ip) {
         User user = userRepository.findById(userId)

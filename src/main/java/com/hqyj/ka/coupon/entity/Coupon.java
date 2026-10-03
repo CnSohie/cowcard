@@ -46,6 +46,9 @@ public class Coupon {
 
     private LocalDateTime expireAt;
 
+    /** null 表示全商品通用，否则仅适用指定商品。 */
+    private Long productId;
+
     @Column(nullable = false)
     private boolean enabled = true;
 

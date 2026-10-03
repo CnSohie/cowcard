@@ -9,6 +9,7 @@ public enum ErrorCode {
     FORBIDDEN(403, "无权限执行该操作"),
     NOT_FOUND(404, "资源不存在"),
     RATE_LIMITED(429, "请求过于频繁,请稍后再试"),
+    SITE_UNAVAILABLE(9001, "网站暂时停止接单"),
     INTERNAL_ERROR(500, "系统繁忙,请稍后再试"),
 
     // 认证 10xx

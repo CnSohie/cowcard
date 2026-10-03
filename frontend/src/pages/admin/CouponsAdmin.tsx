@@ -1,22 +1,22 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { BadgePercent, Copy, Hash, Pencil, Plus, Sparkles, X } from "lucide-react";
-import { ApiError, get, post } from "../../lib/api";
+import { get, post } from "../../lib/api";
 import SensitiveConfirm from "../../components/SensitiveConfirm";
 import { money } from "../../lib/currency";
 
 interface Coupon {
   id: number | null; code: string; type: "FIXED" | "PERCENT"; value: string;
-  minAmount: string; totalLimit: number; usedCount?: number; expireAt: string | null; enabled: boolean;
+  minAmount: string; totalLimit: number; usedCount?: number; expireAt: string | null; productId: number | null; enabled: boolean;
 }
 
 interface BatchForm {
   prefix: string; suffix: string; count: number; randomLength: number; charset: "SAFE" | "ALNUM" | "NUMERIC"; type: "FIXED" | "PERCENT"; value: string;
-  minAmount: string; totalLimit: number; expireAt: string | null; enabled: boolean;
+  minAmount: string; totalLimit: number; expireAt: string | null; productId: number | null; enabled: boolean;
 }
 
-const EMPTY: Coupon = { id: null, code: "", type: "FIXED", value: "", minAmount: "0", totalLimit: 0, expireAt: null, enabled: true };
-const EMPTY_BATCH: BatchForm = { prefix: "", suffix: "", count: 20, randomLength: 8, charset: "SAFE", type: "FIXED", value: "", minAmount: "0", totalLimit: 1, expireAt: null, enabled: true };
+const EMPTY: Coupon = { id: null, code: "", type: "FIXED", value: "", minAmount: "0", totalLimit: 0, expireAt: null, productId: null, enabled: true };
+const EMPTY_BATCH: BatchForm = { prefix: "", suffix: "", count: 20, randomLength: 8, charset: "SAFE", type: "FIXED", value: "", minAmount: "0", totalLimit: 1, expireAt: null, productId: null, enabled: true };
 
 const CHARSETS = [
   { value: "SAFE", label: "易读字符", hint: "去掉 0/O/1/I" },
@@ -106,7 +106,40 @@ function FieldShell({ label, children, hint }: { label: string; children: ReactN
   );
 }
 
+function ExpiryPicker({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  function preset(days: number) {
+    const now = new Date();
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+    const date = new Date(`${today}T00:00:00+08:00`);
+    date.setTime(date.getTime() + days * 86400000);
+    const end = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+    onChange(`${end}T23:59:59`);
+  }
+  return <FieldShell label="有效期至（北京时间）" hint="直接选择日期和时间，自动补齐格式；留空表示长期有效。快捷日期填至当天 23:59:59。">
+    <input aria-label="有效期至（北京时间）" className="input" type="datetime-local" step="1" value={value ?? ""} onChange={(e) => onChange(e.target.value || null)} />
+    <div className="mt-3 flex flex-wrap gap-2">{[[0, "今天到期"], [7, "7 天"], [30, "30 天"]].map(([days, label]) => <button key={days} type="button" className="chip !py-1.5 text-xs" onClick={() => preset(Number(days))}>{label}</button>)}<button type="button" className={`chip !py-1.5 text-xs ${!value ? "chip-on" : ""}`} onClick={() => onChange(null)}>长期有效</button></div>
+  </FieldShell>;
+}
+
+type ProductOption = { id: number; name: string };
+function ScopePicker({ value, onChange, products, error }: { value: number | null; onChange: (v: number | null) => void; products: ProductOption[]; error: string }) {
+  return <FieldShell label="适用范围" hint="通用券可用于所有商品；指定商品券只对选中的商品生效。">
+    <div className="mb-3 flex gap-2"><button type="button" className={`chip ${value == null ? "chip-on" : ""}`} onClick={() => onChange(null)}>全商品通用</button><button type="button" className={`chip ${value != null ? "chip-on" : ""}`} onClick={() => onChange(value ?? 0)}>指定商品</button></div>
+    {value != null && <select aria-label="适用商品" className="input" value={value} onChange={(e) => onChange(Number(e.target.value))}><option value={0}>请选择商品</option>{value > 0 && !products.some(p => p.id === value) && <option value={value}>商品 #{value}（未加载或已删除）</option>}{products.map(p => <option key={p.id} value={p.id}>{p.name} · #{p.id}</option>)}</select>}
+    {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+  </FieldShell>;
+}
+
+function expiryPayload(value: string | null) {
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(value) || Number.isNaN(Date.parse(`${value}+08:00`))) throw new Error("请通过日期时间选择器填写完整有效期");
+  return value.length === 16 ? `${value}:00` : value;
+}
+
 export default function CouponsAdmin() {
+  const [products, setProducts] = useState<ProductOption[]>([]);
+  const [productError, setProductError] = useState("");
+  useEffect(() => { get<ProductOption[]>("/admin/coupons/products").then(setProducts).catch(() => setProductError("商品列表加载失败，请刷新页面重试")); }, []);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [editing, setEditing] = useState<Coupon | null>(null);
   const [batch, setBatch] = useState<BatchForm | null>(null);
@@ -123,12 +156,12 @@ export default function CouponsAdmin() {
     if (!editing) return;
     setError("");
     try {
-      await post("/admin/coupons", { ...editing, expireAt: editing.expireAt || null });
+      await post("/admin/coupons", { ...editing, expireAt: expiryPayload(editing.expireAt) });
       setMsg(editing.id ? "优惠券已更新" : "优惠券已创建");
       setEditing(null);
       load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "保存失败");
+      setError(e instanceof Error ? e.message : "保存失败");
     }
   }
 
@@ -138,7 +171,7 @@ export default function CouponsAdmin() {
     const r = await post<{ created: number; codes: string[] }>("/admin/coupons/batch", {
       ...batch,
       prefix: batch.prefix.trim() || undefined,
-      expireAt: batch.expireAt || null,
+      expireAt: expiryPayload(batch.expireAt),
       ...auth,
     });
     setMsg(`已批量创建 ${r.created} 张: ${r.codes.slice(0, 5).join(" / ")}${r.codes.length > 5 ? " …" : ""}`);
@@ -151,6 +184,7 @@ export default function CouponsAdmin() {
     if (!batch) return;
     setError("");
     setMsg("");
+    try { expiryPayload(batch.expireAt); } catch (e) { setError((e as Error).message); return; }
     setPendingBatch(true);
   }
 
@@ -172,7 +206,7 @@ export default function CouponsAdmin() {
         <table className="w-full min-w-[640px]">
           <thead><tr>
             <th className="th">券码</th><th className="th">类型</th><th className="th">面额/折扣</th>
-            <th className="th">门槛</th><th className="th">用量</th><th className="th">有效期至</th>
+            <th className="th">适用范围</th><th className="th">门槛</th><th className="th">用量</th><th className="th">有效期至</th>
             <th className="th">状态</th><th className="th"></th>
           </tr></thead>
           <tbody>
@@ -181,9 +215,10 @@ export default function CouponsAdmin() {
                 <td className="td font-mono font-bold">{c.code}</td>
                 <td className="td">{c.type === "FIXED" ? "立减" : "折扣"}</td>
                 <td className="td">{c.type === "FIXED" ? money(c.value) : `减 ${c.value}%`}</td>
+                <td className="td text-xs">{c.productId == null ? "全商品通用" : products.find(p => p.id === c.productId)?.name ?? `商品 #${c.productId}`}</td>
                 <td className="td">{Number(c.minAmount) > 0 ? `满 ${money(c.minAmount)}` : "无"}</td>
                 <td className="td">{c.usedCount ?? 0}{c.totalLimit > 0 ? ` / ${c.totalLimit}` : " / ∞"}</td>
-                <td className="td text-xs">{c.expireAt ? new Date(c.expireAt).toLocaleString() : "长期"}</td>
+                <td className="td text-xs">{c.expireAt ? c.expireAt.replace("T", " ") + " 北京时间" : "长期"}</td>
                 <td className="td">
                   <span className={`text-xs font-medium ${c.enabled ? "text-emerald-600 dark:text-emerald-400" : "text-ink/40"}`}>
                     {c.enabled ? "启用" : "停用"}
@@ -194,7 +229,7 @@ export default function CouponsAdmin() {
                 </td>
               </tr>
             ))}
-            {coupons.length === 0 && <tr><td className="td text-center text-ink/40" colSpan={8}>暂无优惠券</td></tr>}
+            {coupons.length === 0 && <tr><td className="td text-center text-ink/40" colSpan={9}>暂无优惠券</td></tr>}
           </tbody>
         </table>
       </div>
@@ -208,7 +243,7 @@ export default function CouponsAdmin() {
           footer={(
             <>
               {error && <p className="mb-3 text-xs text-red-500">{error}</p>}
-              <button className="btn-primary w-full" disabled={!editing.code || !editing.value} onClick={save}>保存优惠券</button>
+              <button className="btn-primary w-full" disabled={!editing.code || !editing.value || editing.productId === 0} onClick={save}>保存优惠券</button>
             </>
           )}
         >
@@ -240,10 +275,8 @@ export default function CouponsAdmin() {
                     onChange={(e) => setEditing({ ...editing, totalLimit: Number(e.target.value.replace(/\D/g, "") || 0) })} />
                 </FieldShell>
               </div>
-              <FieldShell label="有效期至" hint="格式示例: 2026-08-01T23:59:00;留空表示长期有效。">
-                <input className="input font-mono text-xs" placeholder="2026-08-01T23:59:00" value={editing.expireAt ?? ""}
-                  onChange={(e) => setEditing({ ...editing, expireAt: e.target.value || null })} />
-              </FieldShell>
+              <ScopePicker value={editing.productId ?? null} onChange={(productId) => setEditing({ ...editing, productId })} products={products} error={productError} />
+              <ExpiryPicker value={editing.expireAt} onChange={(expireAt) => setEditing({ ...editing, expireAt })} />
               <Toggle checked={editing.enabled} onChange={(enabled) => setEditing({ ...editing, enabled })} label="启用优惠券" />
             </div>
         </Drawer>
@@ -259,7 +292,7 @@ export default function CouponsAdmin() {
             <>
               {error && <p className="mb-3 text-xs text-red-500">{error}</p>}
               <button className="btn-primary w-full"
-                disabled={!batch.value || batch.count < 1 || batch.count > 500 || batch.randomLength < 4}
+                disabled={batch.productId === 0 || !batch.value || batch.count < 1 || batch.count > 500 || batch.randomLength < 4}
                 onClick={confirmBatch}>
                 下一步:双因子确认
               </button>
@@ -342,10 +375,8 @@ export default function CouponsAdmin() {
 
               <section className="rounded-3xl border border-ink/[0.07] p-4">
                 <p className="section-label"><Sparkles size={13} /> 生效方式</p>
-                <FieldShell label="有效期至" hint="格式示例: 2026-08-01T23:59:00;留空表示长期有效。">
-                <input className="input font-mono text-xs" placeholder="2026-08-01T23:59:00" value={batch.expireAt ?? ""}
-                  onChange={(e) => setBatch({ ...batch, expireAt: e.target.value || null })} />
-                </FieldShell>
+                <ScopePicker value={batch.productId ?? null} onChange={(productId) => setBatch({ ...batch, productId })} products={products} error={productError} />
+              <ExpiryPicker value={batch.expireAt} onChange={(expireAt) => setBatch({ ...batch, expireAt })} />
                 <div className="mt-4">
               <Toggle checked={batch.enabled} onChange={(enabled) => setBatch({ ...batch, enabled })} label="创建后启用" />
                 </div>

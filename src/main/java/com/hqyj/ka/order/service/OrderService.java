@@ -3,6 +3,7 @@ package com.hqyj.ka.order.service;
 import com.hqyj.ka.card.service.CardService;
 import com.hqyj.ka.catalog.entity.Product;
 import com.hqyj.ka.catalog.repo.ProductRepository;
+import com.hqyj.ka.sysconfig.service.SiteAvailabilityService;
 import com.hqyj.ka.common.BusinessException;
 import com.hqyj.ka.common.ErrorCode;
 import com.hqyj.ka.common.util.OrderNoGenerator;
@@ -48,6 +49,7 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class OrderService {
+    private final SiteAvailabilityService siteAvailabilityService;
     private static final SecureRandom TOKEN_RANDOM = new SecureRandom();
 
     private final OrderRepository orderRepository;
@@ -90,6 +92,7 @@ public class OrderService {
     /** 下单:校验 → 自动卡密商品原子预占库存 → 建单。memberId 可空(游客单)。 */
     @Transactional
     public CreatedOrder create(CreateOrderRequest req, String buyerIp, Long memberId) {
+        siteAvailabilityService.requireOpen();
         Product product = productRepository.findByIdAndVisibleTrue(req.productId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_OFF_SHELF));
         boolean autoCard = product.getDeliveryMode() == Product.DeliveryMode.AUTO_CARD;
@@ -155,7 +158,7 @@ public class OrderService {
         order.setMemberDiscountAmount(memberDiscount);
         if (memberDiscount.signum() > 0) order.setDiscountAmount(memberDiscount);
         if (req.couponCode() != null && !req.couponCode().isBlank()) {
-            BigDecimal discount = couponService.redeem(req.couponCode(), baseAmount);
+            BigDecimal discount = couponService.redeem(req.couponCode(), baseAmount, product.getId());
             order.setCouponCode(req.couponCode().trim().toUpperCase());
             order.setDiscountAmount(order.getDiscountAmount().add(discount));
             baseAmount = baseAmount.subtract(discount);
@@ -199,6 +202,7 @@ public class OrderService {
      */
     @Transactional
     public Order createRecharge(Long memberId, BigDecimal amount, String ip, String email) {
+        siteAvailabilityService.requireOpen();
         if (amount == null || amount.scale() > 2
                 || amount.compareTo(BigDecimal.ONE) < 0
                 || amount.compareTo(new BigDecimal("50000")) > 0) {

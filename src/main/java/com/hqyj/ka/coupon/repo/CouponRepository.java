@@ -19,8 +19,10 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
     /** 原子核销:限量券并发下不超发 */
     @Modifying
     @Query("update Coupon c set c.usedCount = c.usedCount + 1 " +
-           "where c.id = :id and (c.totalLimit = 0 or c.usedCount < c.totalLimit)")
-    int redeem(@Param("id") Long id);
+           "where c.id = :id and c.enabled = true and (c.expireAt is null or c.expireAt > :now) " +
+           "and (c.productId is null or c.productId = :productId) and (c.totalLimit = 0 or c.usedCount < c.totalLimit)")
+    int redeem(@Param("id") Long id, @Param("productId") Long productId,
+               @Param("now") java.time.LocalDateTime now);
 
     /** 释放待支付订单占用的优惠券次数:订单未完成支付时回滚资源占用。 */
     @Modifying

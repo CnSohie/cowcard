@@ -1,11 +1,33 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
-import { KeyRound, ShieldCheck, ShieldOff } from "lucide-react";
+import { KeyRound, ShieldCheck, ShieldOff, UserRound } from "lucide-react";
 import { ApiError, get, post, setTokens } from "../../lib/api";
 
 export default function SecurityAdmin() {
   const nav = useNavigate();
+  const [currentUsername, setCurrentUsername] = useState("");
+  const [username, setUsername] = useState("");
+  const [usernamePassword, setUsernamePassword] = useState("");
+  const [usernameCode, setUsernameCode] = useState("");
+  const [usernameMessage, setUsernameMessage] = useState("");
+  const [usernameBusy, setUsernameBusy] = useState(false);
+  useEffect(() => {
+    get<{ username: string }>("/auth/profile").then((r) => setCurrentUsername(r.username))
+      .catch(() => setUsernameMessage("无法加载当前用户名，请刷新后重试"));
+  }, []);
+
+  async function changeUsername() {
+    setUsernameBusy(true);
+    setUsernameMessage("");
+    try {
+      await post("/auth/change-username", { username: username.trim(), password: usernamePassword, totpCode: usernameCode });
+      setTokens(null, null);
+      nav("/admin/login", { replace: true, state: { username: username.trim(), message: "用户名已修改，请使用新用户名重新登录。" } });
+    } catch (e) {
+      setUsernameMessage(e instanceof ApiError ? e.message : "修改失败，请稍后重试");
+    } finally { setUsernameBusy(false); }
+  }
   // 修改密码
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -74,6 +96,25 @@ export default function SecurityAdmin() {
   return (
     <div className="max-w-2xl animate-fade-up">
       <h1 className="mb-6 text-xl font-bold">安全设置</h1>
+
+      <form className="card mb-5 overflow-hidden" onSubmit={(e) => { e.preventDefault(); void changeUsername(); }}>
+        <div className="flex items-center gap-4 border-b border-primary/10 bg-accent-soft p-6">
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-surface text-primary"><UserRound size={23} /></span>
+          <div><p className="mb-1 text-[10px] font-bold tracking-[0.18em] text-primary">YOUR ACCOUNT</p><h2 className="font-bold">修改登录用户名</h2></div>
+        </div>
+        <div className="p-6">
+          <p className="mb-5 text-sm leading-6 text-ink/55">当前用户名：<strong className="text-ink">{currentUsername || "加载中…"}</strong><br />为管理员账号换一个专属登录名。修改后所有设备需重新登录，权限和两步验证保持不变。</p>
+          <label className="label" htmlFor="new-username">新用户名</label>
+          <input id="new-username" className="input" autoComplete="username" required minLength={4} maxLength={32} pattern="[A-Za-z][A-Za-z0-9_\-]{3,31}" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="例如 shop_owner" />
+          <p className="mb-4 mt-2 text-xs leading-5 text-ink/45">4–32 位，以字母开头，可包含数字、下划线和短横线；不能使用默认的 admin。</p>
+          <label className="label" htmlFor="username-password">当前管理员密码</label>
+          <input id="username-password" className="input mb-4" type="password" autoComplete="current-password" required maxLength={128} value={usernamePassword} onChange={(e) => setUsernamePassword(e.target.value)} />
+          {enabled && <><label className="label" htmlFor="username-totp">两步验证动态码</label><input id="username-totp" className="input mb-4 max-w-xs font-mono" autoComplete="one-time-code" inputMode="numeric" required pattern="[0-9]{6}" maxLength={6} value={usernameCode} onChange={(e) => setUsernameCode(e.target.value.replace(/\D/g, ""))} /></>}
+          {usernameMessage && <p className="mb-4 text-sm text-red-600 dark:text-red-400" role="alert">{usernameMessage}</p>}
+          <button className="btn-primary" type="submit" disabled={usernameBusy || !currentUsername || enabled === null || !usernamePassword || !/^[A-Za-z][A-Za-z0-9_-]{3,31}$/.test(username) || username.toLowerCase() === "admin" || username.toLowerCase() === currentUsername.toLowerCase() || (enabled && usernameCode.length !== 6)}>{usernameBusy ? "正在修改…" : "修改用户名并重新登录"}</button>
+          <p className="mt-3 text-xs leading-5 text-ink/40">认证器可能仍显示旧用户名，原动态码继续有效。</p>
+        </div>
+      </form>
 
       <div className="card mb-5 p-6">
         <h2 className="mb-4 flex items-center gap-2 font-semibold"><KeyRound size={16} /> 修改密码</h2>

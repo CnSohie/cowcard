@@ -1,3 +1,4 @@
+import StoreAvailability from "./StoreAvailability";
 import { Suspense, useEffect, useLayoutEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { Languages, Moon, Newspaper, Search, ShoppingBag, Sun, TicketCheck, UserRound, ArrowUpRight, ArrowUp } from "lucide-react";
@@ -116,7 +117,7 @@ export default function StoreLayout() {
         )}
       </header>
       <main className="mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 sm:pt-8 md:pb-20">
-        <Suspense fallback={<div className="card min-h-64 animate-pulse p-8" role="status">{copy.common.loading}</div>}><Outlet /></Suspense>
+        <Suspense fallback={<div className="card min-h-64 animate-pulse p-8" role="status">{copy.common.loading}</div>}><StoreAvailability><Outlet /></StoreAvailability></Suspense>
       </main>
       <footer className="store-footer border-t border-ink/10 bg-surface">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">

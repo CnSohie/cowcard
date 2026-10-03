@@ -2,6 +2,7 @@ package com.hqyj.ka.sysconfig.controller;
 
 import com.hqyj.ka.audit.service.AuditService;
 import com.hqyj.ka.common.ApiResponse;
+import com.hqyj.ka.sysconfig.service.SiteAvailabilityService;
 import com.hqyj.ka.common.BusinessException;
 import com.hqyj.ka.common.ErrorCode;
 import com.hqyj.ka.order.dto.OrderDtos.SensitiveAuthRequest;
@@ -29,6 +30,7 @@ import java.util.Map;
 @RequestMapping("/api/admin/config")
 @RequiredArgsConstructor
 public class AdminConfigController {
+    private final SiteAvailabilityService siteAvailabilityService;
 
     private final ConfigService configService;
     private final RateLimitFilter rateLimitFilter;
@@ -72,6 +74,7 @@ public class AdminConfigController {
         Map<String, String> merged = new LinkedHashMap<>(configService.all());
         merged.putAll(incoming);
         captchaService.validateConfiguration(merged);
+        siteAvailabilityService.validateConfiguration(merged);
         if (incoming.containsKey(HeroSlideConfigValidator.CONFIG_KEY)) {
             heroSlideConfigValidator.validate(incoming.get(HeroSlideConfigValidator.CONFIG_KEY));
         }

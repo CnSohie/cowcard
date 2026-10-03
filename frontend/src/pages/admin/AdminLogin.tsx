@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Lock, Zap } from "lucide-react";
 import { ApiError, post, setTokens } from "../../lib/api";
 import { CaptchaBox, captchaHeaders } from "../../lib/captcha";
@@ -11,7 +11,9 @@ interface TokenResponse {
 
 export default function AdminLogin() {
   const nav = useNavigate();
-  const [username, setUsername] = useState("");
+  const location = useLocation();
+  const renamed = location.state as { username?: string; message?: string } | null;
+  const [username, setUsername] = useState(renamed?.username ?? "");
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [needTotp, setNeedTotp] = useState(false);
@@ -70,6 +72,7 @@ export default function AdminLogin() {
             <p className="text-xs text-ink/40">Merchant Console</p>
           </div>
         </div>
+        {renamed?.message && <p className="mb-4 rounded-2xl bg-accent-soft p-3 text-sm text-primary" role="status">{renamed.message}</p>}
         <label className="label">用户名</label>
         <input className="input mb-3" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
         <label className="label">密码</label>

@@ -22,15 +22,15 @@ public class CouponService {
 
     /** 只算不核销(前台预览)。返回折扣金额。 */
     @Transactional(readOnly = true)
-    public BigDecimal preview(String code, BigDecimal orderAmount) {
-        return calc(load(code, orderAmount), orderAmount);
+    public BigDecimal preview(String code, BigDecimal orderAmount, Long productId) {
+        return calc(load(code, orderAmount, productId), orderAmount);
     }
 
     /** 校验 + 原子核销(订单事务内调用)。返回折扣金额。 */
     @Transactional
-    public BigDecimal redeem(String code, BigDecimal orderAmount) {
-        Coupon coupon = load(code, orderAmount);
-        if (couponRepository.redeem(coupon.getId()) == 0) {
+    public BigDecimal redeem(String code, BigDecimal orderAmount, Long productId) {
+        Coupon coupon = load(code, orderAmount, productId);
+        if (couponRepository.redeem(coupon.getId(), productId, LocalDateTime.now()) == 0) {
             throw new BusinessException(ErrorCode.COUPON_INVALID);
         }
         return calc(coupon, orderAmount);
@@ -50,11 +50,14 @@ public class CouponService {
         couponRepository.restoreUsage(code.trim().toUpperCase());
     }
 
-    private Coupon load(String code, BigDecimal orderAmount) {
+    private Coupon load(String code, BigDecimal orderAmount, Long productId) {
         Coupon coupon = couponRepository.findByCodeAndEnabledTrue(code.trim().toUpperCase())
                 .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_INVALID));
-        if (coupon.getExpireAt() != null && coupon.getExpireAt().isBefore(LocalDateTime.now())) {
+        if (coupon.getExpireAt() != null && !coupon.getExpireAt().isAfter(LocalDateTime.now())) {
             throw new BusinessException(ErrorCode.COUPON_INVALID);
+        }
+        if (coupon.getProductId() != null && !coupon.getProductId().equals(productId)) {
+            throw new BusinessException(ErrorCode.COUPON_INVALID, "该优惠码不适用于此商品");
         }
         if (coupon.getTotalLimit() > 0 && coupon.getUsedCount() >= coupon.getTotalLimit()) {
             throw new BusinessException(ErrorCode.COUPON_INVALID);

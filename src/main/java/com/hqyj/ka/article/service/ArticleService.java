@@ -9,6 +9,7 @@ import com.hqyj.ka.article.entity.Article;
 import com.hqyj.ka.article.entity.ArticlePurchase;
 import com.hqyj.ka.article.repo.ArticlePurchaseRepository;
 import com.hqyj.ka.article.repo.ArticleRepository;
+import com.hqyj.ka.sysconfig.service.SiteAvailabilityService;
 import com.hqyj.ka.common.BusinessException;
 import com.hqyj.ka.common.ErrorCode;
 import com.hqyj.ka.wallet.entity.WalletTxn;
@@ -41,6 +42,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class ArticleService {
+    private final SiteAvailabilityService siteAvailabilityService;
 
     public static final String PAYWALL_MARKER = "<!--paywall-->";
     private static final Pattern SLUG_PATTERN = Pattern.compile("^[\\p{L}\\p{N}][\\p{L}\\p{N}-]{0,159}$");
@@ -99,6 +101,7 @@ public class ArticleService {
     /** 余额购买:先抢唯一购买记录,再扣款;重复点击在扣钱前失败。 */
     @Transactional
     public void purchase(Long memberId, Long articleId) {
+        siteAvailabilityService.requireOpen();
         Article a = articleRepository.findById(articleId)
                 .filter(x -> x.getStatus() == Article.Status.PUBLISHED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ARTICLE_NOT_FOUND));
