@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  Ban, ChevronLeft, ChevronRight, Gift, Mail, Search, ShieldCheck,
-  Snowflake, UserRound, UsersRound, Wallet, X,
+  Ban, ChevronLeft, ChevronRight, Crown, Gift, Mail, Search, ShieldCheck,
+  Snowflake, UsersRound, Wallet, X,
 } from "lucide-react";
 import { ApiError, get, post } from "../../lib/api";
 import { money } from "../../lib/currency";
@@ -16,7 +16,16 @@ interface AdminMember {
   balance: string; frozen: string;
   shoppingBalance: string; withdrawableBalance: string;
   shoppingFrozen: string; withdrawableFrozen: string; withdrawalFrozen: string;
+  levelId: number | null; levelName: string | null;
+  totalRecharge: string; totalSpend: string;
   lastLoginAt: string | null; createdAt: string;
+}
+interface MemberLevelOption {
+  id: number;
+  name: string;
+  manualOnly: boolean;
+  enabled: boolean;
+  defaultLevel: boolean;
 }
 interface PageResult<T> { items: T[]; total: number; page: number; size: number; }
 interface MemberStats { total: number; enabled: number; disabled: number; balance: string; frozen: string; }
@@ -57,8 +66,32 @@ export default function MembersAdmin() {
   const [freezeAmount, setFreezeAmount] = useState("");
   const [freezeNote, setFreezeNote] = useState("");
   const [actionErr, setActionErr] = useState("");
+  const [levels, setLevels] = useState<MemberLevelOption[]>([]);
+  const [levelsState, setLevelsState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [levelChoice, setLevelChoice] = useState("");
+  const [assignOpen, setAssignOpen] = useState(false);
   const canManageStatus = hasAdminAuth("member:status") || hasAdminAuth("member:manage");
   const canFreezeWallet = hasAdminAuth("wallet:freeze") || hasAdminAuth("member:manage");
+  const canAssignLevel = hasAdminAuth("member-level:manage") || hasAdminAuth("member:manage");
+
+  useEffect(() => {
+    if (!selected || !canAssignLevel) return;
+    let alive = true;
+    setLevelsState("loading");
+    get<MemberLevelOption[]>("/admin/member-levels")
+      .then((rows) => {
+        if (!alive) return;
+        setLevels(rows.filter((level) => level.id != null));
+        setLevelsState("ready");
+      })
+      .catch(() => { if (alive) setLevelsState("error"); });
+    return () => { alive = false; };
+  }, [selected?.id, canAssignLevel]);
+
+  useEffect(() => {
+    setLevelChoice(selected?.levelId ? String(selected.levelId) : "");
+    setAssignOpen(false);
+  }, [selected?.id, selected?.levelId]);
 
   useEffect(() => {
     setLoading(true);
@@ -106,14 +139,30 @@ export default function MembersAdmin() {
     }
   }
 
+  function levelLabel(member: Pick<AdminMember, "levelId" | "levelName">) {
+    return member.levelName || (member.levelId ? `等级 #${member.levelId}` : "未设置");
+  }
+
+  async function assignLevel(auth: { password: string; totpCode: string }) {
+    if (!selected || !levelChoice) throw new Error("请选择会员等级");
+    const levelId = Number(levelChoice);
+    const level = levels.find((item) => item.id === levelId);
+    await post(`/admin/member-levels/members/${selected.id}/assign`, { levelId, ...auth });
+    const next = { ...selected, levelId, levelName: level?.name ?? selected.levelName };
+    setData((d) => d && ({ ...d, items: d.items.map((x) => (x.id === selected.id ? next : x)) }));
+    setSelected(next);
+    setAssignOpen(false);
+  }
+
   const totalPages = data ? Math.max(1, Math.ceil(data.total / SIZE)) : 1;
+  const chosenLevel = levels.find((item) => String(item.id) === levelChoice);
 
   return (
     <div className="animate-fade-up">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-extrabold tracking-tight">用户中心管理</h1>
-          <p className="mt-1 text-xs text-ink/45">管理注册会员、余额钱包、邀请关系和账号状态。</p>
+          <p className="mt-1 text-xs text-ink/45">管理注册会员、余额钱包、会员等级、邀请关系和账号状态。</p>
         </div>
         <div className="relative w-full sm:w-72">
           <Search size={14} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/30" />
@@ -151,17 +200,17 @@ export default function MembersAdmin() {
       </div>
 
       <div className="card overflow-x-auto">
-        <table className="w-full min-w-[880px]">
+        <table className="w-full min-w-[980px]">
           <thead><tr>
-            <th className="th">会员</th><th className="th">钱包余额</th><th className="th">邀请码</th>
+            <th className="th">会员</th><th className="th">等级</th><th className="th">钱包余额</th><th className="th">邀请码</th>
             <th className="th">邀请人</th><th className="th">最近登录</th><th className="th">注册时间</th>
             <th className="th">状态</th>
           </tr></thead>
           <tbody>
             {loading ? (
-              <tr><td className="td py-14 text-center text-ink/40" colSpan={7}>加载中…</td></tr>
+              <tr><td className="td py-14 text-center text-ink/40" colSpan={8}>加载中…</td></tr>
             ) : !data || data.items.length === 0 ? (
-              <tr><td className="td py-14 text-center" colSpan={7}>
+              <tr><td className="td py-14 text-center" colSpan={8}>
                 <span className="mx-auto mb-2 grid h-12 w-12 place-items-center rounded-full bg-accent-soft">
                   <UsersRound size={18} className="text-primary" />
                 </span>
@@ -181,6 +230,7 @@ export default function MembersAdmin() {
                       </span>
                     </div>
                   </td>
+                  <td className="td whitespace-nowrap text-xs">{levelLabel(m)}</td>
                   <td className="td">
                     <div className="text-xs text-ink/70">购物 {money(m.shoppingBalance, "CNY")}<br />可提现 {money(m.withdrawableBalance, "CNY")}</div>
                     {Number(m.frozen) > 0 && <div className="text-xs text-amber-600 dark:text-amber-400">冻结 {money(m.frozen)}</div>}
@@ -281,6 +331,44 @@ export default function MembersAdmin() {
 
               <section className="rounded-3xl border border-ink/[0.07] p-5">
                 <div className="mb-4 flex items-center justify-between gap-3">
+                  <p className="section-label !mb-0"><span className="h-1 w-4 rounded-full bg-accent" /> 会员等级</p>
+                  <span className="rounded-full bg-accent-soft px-2.5 py-1 text-[10px] font-bold text-primary">{levelLabel(selected)}</span>
+                </div>
+                <p className="mb-4 text-xs leading-6 text-ink/45">
+                  累计充值 {money(selected.totalRecharge)} · 累计消费 {money(selected.totalSpend)}
+                </p>
+                {canAssignLevel ? (
+                  <>
+                    <label className="label" htmlFor="member-level">授予等级</label>
+                    <select id="member-level" className="input mb-3" value={levelChoice}
+                      disabled={levelsState !== "ready"}
+                      onChange={(e) => setLevelChoice(e.target.value)}>
+                      <option value="">{levelsState === "loading" ? "正在加载等级…" : levelsState === "error" ? "等级加载失败" : "选择等级"}</option>
+                      {levels.map((level) => (
+                        <option key={level.id} value={level.id}>
+                          {level.name}{level.manualOnly ? " · 仅人工" : ""}{level.defaultLevel ? " · 默认" : ""}{level.enabled ? "" : " · 已停用"}
+                        </option>
+                      ))}
+                      {selected.levelId != null && !levels.some((level) => level.id === selected.levelId) && (
+                        <option value={selected.levelId}>{levelLabel(selected)}</option>
+                      )}
+                    </select>
+                    <p className="mb-3 text-xs leading-6 text-ink/45">
+                      新建并保存的等级会立即出现在这里。授予后马上生效；仅人工授予的等级不会被充值或消费自动替换。
+                    </p>
+                    <button type="button" className="btn-primary w-full"
+                      disabled={levelsState !== "ready" || !levelChoice || Number(levelChoice) === selected.levelId}
+                      onClick={() => setAssignOpen(true)}>
+                      <Crown size={15} /> {levelChoice && Number(levelChoice) === selected.levelId ? "已是当前等级" : "授予此等级"}
+                    </button>
+                  </>
+                ) : (
+                  <p className="text-xs leading-6 text-ink/45">当前账号只能查看等级。授予等级需要会员等级管理权限。</p>
+                )}
+              </section>
+
+              <section className="rounded-3xl border border-ink/[0.07] p-5">
+                <div className="mb-4 flex items-center justify-between gap-3">
                   <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-ink/35">
                     <Snowflake size={13} /> 风控规则
                   </p>
@@ -373,6 +461,23 @@ export default function MembersAdmin() {
           <textarea className="input mb-4 min-h-16 resize-none text-sm" placeholder="例如: 风控核查 / 客诉冻结"
             value={freezeNote} onChange={(e) => setFreezeNote(e.target.value)} />
         </SensitiveConfirm>
+      )}
+      {assignOpen && selected && chosenLevel && (
+        <SensitiveConfirm
+          action={{
+            title: "授予会员等级",
+            confirmText: "确认授予",
+            summary: (
+              <div className="space-y-1">
+                <div className="flex justify-between gap-3"><span className="text-ink/45">会员</span><span className="break-all text-right">{selected.email}</span></div>
+                <div className="flex justify-between gap-3"><span className="text-ink/45">当前等级</span><span>{levelLabel(selected)}</span></div>
+                <div className="flex justify-between gap-3"><span className="text-ink/45">授予为</span><span>{chosenLevel.name}</span></div>
+              </div>
+            ),
+          }}
+          onClose={() => setAssignOpen(false)}
+          onConfirm={assignLevel}
+        />
       )}
       {statusTarget && (
         <SensitiveConfirm

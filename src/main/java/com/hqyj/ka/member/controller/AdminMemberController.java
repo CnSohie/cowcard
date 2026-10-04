@@ -6,6 +6,8 @@ import com.hqyj.ka.common.BusinessException;
 import com.hqyj.ka.common.ErrorCode;
 import com.hqyj.ka.common.PageResult;
 import com.hqyj.ka.member.entity.Member;
+import com.hqyj.ka.member.entity.MemberLevel;
+import com.hqyj.ka.member.repo.MemberLevelRepository;
 import com.hqyj.ka.member.repo.MemberRepository;
 import com.hqyj.ka.security.RateLimitFilter;
 import com.hqyj.ka.user.service.AuthService;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -35,6 +38,7 @@ import java.util.stream.Collectors;
 public class AdminMemberController {
 
     private final MemberRepository memberRepository;
+    private final MemberLevelRepository levelRepository;
     private final WalletAccountRepository accountRepository;
     private final AuditService auditService;
     private final AuthService authService;
@@ -44,7 +48,7 @@ public class AdminMemberController {
                                   String inviteCode, Long inviterId, BigDecimal balance,
                                   BigDecimal frozen, BigDecimal shoppingBalance, BigDecimal withdrawableBalance,
                                   BigDecimal shoppingFrozen, BigDecimal withdrawableFrozen, BigDecimal withdrawalFrozen,
-                                  Long levelId, BigDecimal totalRecharge,
+                                  Long levelId, String levelName, BigDecimal totalRecharge,
                                   BigDecimal totalSpend, LocalDateTime lastLoginAt, LocalDateTime createdAt) {}
 
     public record FreezeBalanceRequest(BigDecimal amount, String note, String password, String totpCode) {}
@@ -63,6 +67,11 @@ public class AdminMemberController {
         Set<Long> ids = result.getContent().stream().map(Member::getId).collect(Collectors.toSet());
         Map<Long, WalletAccount> wallets = accountRepository.findByMemberIdIn(ids).stream()
                 .collect(Collectors.toMap(WalletAccount::getMemberId, w -> w));
+        Set<Long> levelIds = result.getContent().stream().map(Member::getLevelId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, String> levelNames = levelIds.isEmpty() ? Map.of()
+                : levelRepository.findAllById(levelIds).stream()
+                .collect(Collectors.toMap(MemberLevel::getId, MemberLevel::getName));
         return ApiResponse.ok(PageResult.of(result, m -> {
             WalletAccount w = wallets.get(m.getId());
             return new AdminMemberView(m.getId(), m.getEmail(), m.getNickname(), m.isEnabled(),
@@ -74,7 +83,8 @@ public class AdminMemberController {
                     w != null ? w.getShoppingFrozen() : BigDecimal.ZERO,
                     w != null ? w.getWithdrawableFrozen() : BigDecimal.ZERO,
                     w != null ? w.getWithdrawalFrozen() : BigDecimal.ZERO,
-                    m.getLevelId(), m.getTotalRecharge(), m.getTotalSpend(),
+                    m.getLevelId(), m.getLevelId() == null ? null : levelNames.get(m.getLevelId()),
+                    m.getTotalRecharge(), m.getTotalSpend(),
                     m.getLastLoginAt(), m.getCreatedAt());
         }));
     }

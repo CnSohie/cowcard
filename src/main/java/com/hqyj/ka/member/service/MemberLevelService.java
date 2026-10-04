@@ -99,6 +99,7 @@ public class MemberLevelService {
 
     @Transactional
     public void assignLevel(Long memberId, Long levelId) {
+        if (levelId == null) throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择会员等级");
         Member member = memberRepository.findById(memberId).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
         MemberLevel level = levelRepository.findById(levelId).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
         member.setLevelId(level.getId());
