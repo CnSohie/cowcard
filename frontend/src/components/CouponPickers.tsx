@@ -16,42 +16,121 @@ export function ScopePicker({ value, onChange, products, error }: {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const root = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const id = useId();
-  const filtered = products.filter(p => `${p.name} ${p.id}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const specific = value != null;
   const selected = products.find(p => p.id === value);
+  const filtered = products.filter(p => `${p.name} ${p.id}`.toLowerCase().includes(query.trim().toLowerCase()));
+
   useEffect(() => {
     if (!open) return;
     search.current?.focus();
-    const close = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    const close = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
   }, [open]);
-  return <div ref={root} onKeyDown={e => { if (e.key === "Escape" && open) { e.stopPropagation(); setOpen(false); trigger.current?.focus(); } }} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false); }}>
-    <p className="label">适用范围</p>
-    <div className="grid grid-cols-2 gap-3">
-      {[{ all: true, icon: Globe2, title: "全店通用", desc: "所有商品均可使用" }, { all: false, icon: Package, title: "指定商品", desc: "为一款商品专属优惠" }].map(({ all, icon: Icon, title, desc }) => {
-        const active = all === (value == null);
-        return <button key={title} type="button" aria-pressed={active} className={`rounded-2xl border p-4 text-left transition ${focusStyle} ${active ? "border-primary/50 bg-accent-soft" : "border-ink/10 bg-surface hover:border-primary/30"}`} onClick={() => { onChange(all ? null : value ?? 0); setOpen(!all); setQuery(""); }}>
-          <span className="mb-3 flex items-center justify-between text-primary"><Icon size={20} strokeWidth={1.6} /><span className={`grid h-4 w-4 place-items-center rounded-full border ${active ? "border-primary bg-primary text-primary-contrast" : "border-ink/20"}`}>{active && <Check size={11} />}</span></span>
-          <span className="block text-sm font-bold">{title}</span><span className="mt-1 block text-[11px] leading-5 text-ink/45">{desc}</span>
-        </button>;
-      })}
+
+  function chooseAll() {
+    setOpen(false);
+    setQuery("");
+    onChange(null);
+  }
+
+  function chooseSpecific() {
+    setOpen(false);
+    setQuery("");
+    if (value == null) onChange(0);
+  }
+
+  return (
+    <div ref={root} onKeyDown={(e) => { if (e.key === "Escape" && open) { e.stopPropagation(); setOpen(false); } }}>
+      <p className="label">适用范围</p>
+      <div className="grid grid-cols-2 gap-3">
+        {([
+          { all: true, icon: Globe2, title: "全店通用", desc: "所有商品均可使用" },
+          { all: false, icon: Package, title: "指定商品", desc: selected ? `已选 ${selected.name}` : "只对一款商品生效" },
+        ] as const).map(({ all, icon: Icon, title, desc }) => {
+          const active = all ? !specific : specific;
+          return (
+            <button key={title} type="button" aria-pressed={active}
+              className={`rounded-2xl border p-4 text-left transition ${focusStyle} ${active ? "border-primary/50 bg-accent-soft" : "border-ink/10 bg-surface hover:border-primary/30"}`}
+              onClick={all ? chooseAll : chooseSpecific}>
+              <span className="mb-3 flex items-center justify-between text-primary">
+                <Icon size={20} strokeWidth={1.6} />
+                <span className={`grid h-4 w-4 place-items-center rounded-full border ${active ? "border-primary bg-primary text-primary-contrast" : "border-ink/20"}`}>
+                  {active && <Check size={11} />}
+                </span>
+              </span>
+              <span className="block text-sm font-bold">{title}</span>
+              <span className="mt-1 block truncate text-[11px] leading-5 text-ink/45">{desc}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {specific && (
+        <div className="mt-3 rounded-2xl border border-ink/10 bg-surface p-3">
+          {selected ? (
+            <div className="flex items-center gap-3 rounded-xl bg-accent-soft px-3 py-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-surface text-primary"><Package size={18} /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] font-semibold text-primary">已选商品</span>
+                <span className="mt-0.5 block truncate text-sm font-bold text-ink">{selected.name}</span>
+                <span className="mt-0.5 block text-[11px] text-ink/45">商品编号 #{selected.id}</span>
+              </span>
+              <button type="button" className="btn-ghost !px-3 !py-1.5 text-xs" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+                {open ? "收起" : "更换"}
+              </button>
+            </div>
+          ) : (
+            <button type="button" aria-expanded={open} className={`flex w-full items-center gap-3 rounded-xl border border-dashed border-ink/15 px-3 py-3 text-left ${focusStyle}`}
+              onClick={() => setOpen((v) => !v)}>
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-primary"><Package size={18} /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-bold">{value ? `商品 #${value}` : "选择商品"}</span>
+                <span className="mt-0.5 block text-[11px] text-ink/45">{value ? "商品列表里没有这款，可能已删除" : "从商品列表中选择一款"}</span>
+              </span>
+              <ChevronDown size={16} className={`shrink-0 text-ink/40 transition ${open ? "rotate-180" : ""}`} />
+            </button>
+          )}
+
+          {open && (
+            <div id={id} className="mt-3 border-t border-ink/[0.07] pt-3">
+              <div className="mb-2 flex items-center gap-2 rounded-xl bg-base px-3">
+                <Search size={16} className="text-ink/40" />
+                <input ref={search} aria-label="搜索适用商品" value={query} onChange={(e) => setQuery(e.target.value)}
+                  className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none" placeholder="搜索商品名称 / ID…" />
+              </div>
+              <p className="px-2 py-2 text-[10px] font-semibold tracking-wider text-ink/40">{filtered.length} 款商品 · 单选</p>
+              <div className="max-h-56 overflow-y-auto overscroll-contain" aria-label="商品列表">
+                {filtered.map((p) => (
+                  <button type="button" key={p.id} aria-pressed={p.id === value}
+                    className={`mb-1 flex w-full items-center gap-3 rounded-xl p-3 text-left ${focusStyle} ${p.id === value ? "bg-accent-soft text-primary" : "hover:bg-ink/[0.04]"}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => { onChange(p.id); setQuery(""); setOpen(false); }}>
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-words text-sm font-semibold">{p.name}</span>
+                      <span className="mt-1 block text-[10px] text-ink/45">#{p.id}</span>
+                    </span>
+                    {p.id === value && <Check size={16} className="shrink-0" />}
+                  </button>
+                ))}
+                {!filtered.length && (
+                  <p className="px-4 py-8 text-center text-sm text-ink/45">{query ? "没有匹配的商品，换个关键词试试" : "暂无可选商品"}</p>
+                )}
+              </div>
+            </div>
+          )}
+          {!selected && !open && (
+            <p className="mt-2 px-1 text-[11px] text-ink/45">还没有选定商品，保存前需要选一款。</p>
+          )}
+        </div>
+      )}
+      {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400" role="alert">{error}</p>}
     </div>
-    {value != null && <div className="mt-3 overflow-hidden rounded-2xl border border-ink/10 bg-surface">
-      <button ref={trigger} type="button" aria-expanded={open} aria-controls={id} className={`flex w-full items-center gap-3 p-4 text-left ${focusStyle}`} onClick={() => setOpen(!open)}>
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-primary"><Package size={19} /></span>
-        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{selected?.name ?? (value ? `商品 #${value}（未加载或已删除）` : "选择适用商品")}</span><span className="mt-1 block text-[11px] text-ink/45">{selected ? `商品编号 #${selected.id}` : "按名称或商品编号搜索"}</span></span><ChevronDown size={16} className={`text-ink/40 transition ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && <div id={id} className="border-t border-ink/[0.07] p-3">
-        <div className="mb-2 flex items-center gap-2 rounded-xl bg-base px-3"><Search size={16} className="text-ink/40" /><input ref={search} aria-label="搜索适用商品" value={query} onChange={e => setQuery(e.target.value)} className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none" placeholder="搜索商品名称 / ID…" /></div>
-        <p className="px-2 py-2 text-[10px] font-semibold tracking-wider text-ink/40">{filtered.length} 款商品 · 单选</p>
-        <div className="max-h-56 overflow-y-auto overscroll-contain" aria-label="商品列表">{filtered.map(p => <button type="button" key={p.id} aria-pressed={p.id === value} className={`mb-1 flex w-full items-center gap-3 rounded-xl p-3 text-left ${focusStyle} ${p.id === value ? "bg-accent-soft text-primary" : "hover:bg-ink/[0.04]"}`} onClick={() => { onChange(p.id); setOpen(false); trigger.current?.focus(); }}><span className="min-w-0 flex-1"><span className="block break-words text-sm font-semibold">{p.name}</span><span className="mt-1 block text-[10px] text-ink/45">#{p.id}</span></span>{p.id === value && <Check size={16} className="shrink-0" />}</button>)}{!filtered.length && <p className="px-4 py-8 text-center text-sm text-ink/45">{query ? "没有匹配的商品，换个关键词试试" : "暂无可选商品"}</p>}</div>
-      </div>}
-    </div>}
-    {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400" role="alert">{error}</p>}
-  </div>;
+  );
 }
 
 export function ExpiryPicker({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {

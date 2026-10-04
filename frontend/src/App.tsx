@@ -17,6 +17,7 @@ const RedeemPage = lazy(() => import("./pages/store/RedeemPage"));
 const AdminLogin = lazy(() => import("./pages/admin/AdminLogin"));
 const AdminLayout = lazy(() => import("./pages/admin/AdminLayout"));
 const Dashboard = lazy(() => import("./pages/admin/Dashboard"));
+const MonitorAdmin = lazy(() => import("./pages/admin/MonitorAdmin"));
 const ProductsAdmin = lazy(() => import("./pages/admin/ProductsAdmin"));
 const CardsAdmin = lazy(() => import("./pages/admin/CardsAdmin"));
 const OrdersAdmin = lazy(() => import("./pages/admin/OrdersAdmin"));
@@ -56,6 +57,7 @@ export default function App() {
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/admin" element={<AdminAuthGuard><AdminLayout /></AdminAuthGuard>}>
         <Route index element={<Dashboard />} />
+        <Route path="monitor" element={<MonitorAdmin />} />
         <Route path="products" element={<ProductsAdmin />} />
         <Route path="cards" element={<CardsAdmin />} />
         <Route path="orders" element={<OrdersAdmin />} />

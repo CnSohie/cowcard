@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CheckCircle2, RefreshCw, ShieldCheck } from "lucide-react";
 import { ApiError, get, post } from "./api";
 
@@ -74,6 +74,19 @@ function waitForProvider(provider: string) {
   });
 }
 
+function widgetHostReady(el: HTMLElement) {
+  return el.isConnected && el.closest("[hidden]") == null && el.getClientRects().length > 0;
+}
+
+function safeRemoveWidget(provider: string, widgetId: string | number) {
+  const api = providerApi(provider);
+  try {
+    // 路由提交阶段容器可能已经卸下，Turnstile 会抛 widget not found，不能让它打断下一页。
+    if (api?.remove) api.remove(widgetId);
+    else api?.reset?.(widgetId);
+  } catch { /* 组件已经不在页面上。 */ }
+}
+
 function ensureScript(provider: string) {
   const src = scriptSrc(provider);
   const cached = scriptPromises.get(src);
@@ -117,10 +130,13 @@ export function CaptchaBox({
   /** 仅用于后台配置测试，不受表单场景开关影响。 */
   force?: boolean;
 }) {
-  const reactId = useId().replace(/:/g, "");
-  const id = `captcha-${reactId}`;
-  const widgetId = useRef<string | number | null>(null);
-  const widgetProvider = useRef("");
+  const onTokenRef = useRef(onToken);
+  const onEnabledChangeRef = useRef(onEnabledChange);
+  onTokenRef.current = onToken;
+  onEnabledChangeRef.current = onEnabledChange;
+  const hostRef = useRef<HTMLDivElement>(null);
+  const widgetRef = useRef<{ id: string | number; provider: string } | null>(null);
+  const session = useRef(0);
   const [enabled, setEnabled] = useState(false);
   const [provider, setProvider] = useState("");
   const [error, setError] = useState("");
@@ -133,32 +149,44 @@ export function CaptchaBox({
     setError("");
     setAnswer("");
     setVerified(false);
-    onToken("");
+    onTokenRef.current("");
     try {
       setChallenge(await get<BuiltinChallenge>("/store/captcha/challenge", { action }));
     } catch (e) {
       setChallenge(null);
       setError(e instanceof ApiError ? e.message : "验证码加载失败，请稍后重试");
     }
-  }, [action, onToken]);
+  }, [action]);
+
+  // 布局阶段卸下组件：此时容器还在，且发生在微任务之前，避免过期的 render 写进下一页。
+  useLayoutEffect(() => {
+    return () => {
+      session.current += 1;
+      const current = widgetRef.current;
+      widgetRef.current = null;
+      if (current) safeRemoveWidget(current.provider, current.id);
+    };
+  }, [action, force, resetKey, loadBuiltin]);
 
   useEffect(() => {
-    let cancelled = false;
+    const token = session.current;
+    let waitTimer = 0;
+    const alive = () => session.current === token;
     setError("");
     setChallenge(null);
     setAnswer("");
     setVerified(false);
-    onToken("");
+    onTokenRef.current("");
     captchaConfig().then(async (cfg) => {
       const globallyEnabled = cfg.captchaEnabled === "1" || cfg.captchaEnabled === "true";
       const scopes = new Set((cfg.captchaScopes || "").split(",").map((x) => x.trim()).filter(Boolean));
       const isEnabled = globallyEnabled && (force || scopes.size === 0 || scopes.has(action));
       const selectedProvider = canonicalProvider((cfg.captchaProvider || "turnstile").toLowerCase());
       const siteKey = cfg.captchaSiteKey || "";
-      if (cancelled) return;
+      if (!alive()) return;
       setEnabled(isEnabled);
       setProvider(selectedProvider);
-      onEnabledChange?.(isEnabled);
+      onEnabledChangeRef.current?.(isEnabled);
       if (!isEnabled) return;
       if (selectedProvider === "builtin") {
         await loadBuiltin();
@@ -170,44 +198,63 @@ export function CaptchaBox({
       }
       try {
         await ensureScript(selectedProvider);
-        if (cancelled) return;
-        const el = document.getElementById(id);
-        const api = providerApi(selectedProvider);
-        if (!el || !api) throw new Error("captcha unavailable");
-        el.innerHTML = "";
-        const opts = {
-          sitekey: siteKey,
-          action,
-          theme: document.documentElement.dataset.mode === "dark" ? "dark" : "light",
-          callback: (token: string) => {
-            setError("");
-            onToken(token);
-          },
-          "expired-callback": () => onToken(""),
-          "error-callback": () => {
-            onToken("");
-            setError("人机验证失败，请刷新验证后重试");
-          },
+        if (!alive()) return;
+        const started = Date.now();
+        const tryRender = () => {
+          if (!alive()) return;
+          const el = hostRef.current;
+          const api = providerApi(selectedProvider);
+          if (!el?.isConnected || !api?.render) {
+            if (Date.now() - started > 8000) {
+              setError("人机验证加载失败，请检查网络或更换验证方式");
+              return;
+            }
+            waitTimer = window.setTimeout(tryRender, 50);
+            return;
+          }
+          // 营业状态遮罩会先把页面藏起来。0 尺寸下渲染的 Turnstile 会变成死组件。
+          if (!widgetHostReady(el)) {
+            waitTimer = window.setTimeout(tryRender, 200);
+            return;
+          }
+          if (widgetRef.current) return;
+          el.replaceChildren();
+          const clearToken = () => onTokenRef.current("");
+          try {
+            const widgetId = api.render(el, {
+              sitekey: siteKey,
+              action,
+              theme: document.documentElement.dataset.mode === "dark" ? "dark" : "light",
+              "response-field": false,
+              callback: (value: string) => {
+                setError("");
+                onTokenRef.current(value);
+              },
+              "expired-callback": clearToken,
+              "timeout-callback": clearToken,
+              "error-callback": () => {
+                clearToken();
+                setError("人机验证失败，请刷新验证后重试");
+              },
+            });
+            if (!alive()) {
+              safeRemoveWidget(selectedProvider, widgetId);
+              return;
+            }
+            widgetRef.current = { id: widgetId, provider: selectedProvider };
+          } catch {
+            if (alive()) setError("人机验证加载失败，请检查网络或更换验证方式");
+          }
         };
-        widgetId.current = api.render(el, opts);
-        widgetProvider.current = selectedProvider;
+        tryRender();
       } catch {
-        if (!cancelled) setError("人机验证加载失败，请检查网络或更换验证方式");
+        if (alive()) setError("人机验证加载失败，请检查网络或更换验证方式");
       }
     }).catch(() => {
-      if (!cancelled) setError("无法读取人机验证配置，请刷新页面重试");
+      if (alive()) setError("无法读取人机验证配置，请刷新页面重试");
     });
-    return () => {
-      cancelled = true;
-      const api = providerApi(widgetProvider.current);
-      if (widgetId.current != null) {
-        if (api?.remove) api.remove(widgetId.current);
-        else api?.reset?.(widgetId.current);
-      }
-      widgetId.current = null;
-      widgetProvider.current = "";
-    };
-  }, [action, force, id, loadBuiltin, onEnabledChange, onToken, resetKey]);
+    return () => { window.clearTimeout(waitTimer); };
+  }, [action, force, resetKey, loadBuiltin]);
 
   async function verifyBuiltin() {
     if (!challenge || answer.trim().length < 4) {
@@ -272,7 +319,7 @@ export function CaptchaBox({
 
   return (
     <div className="my-4 rounded-2xl border border-ink/[0.08] bg-surface px-4 py-3">
-      <div id={id} className="min-h-[65px] overflow-hidden" />
+      <div ref={hostRef} className="min-h-[65px] overflow-hidden" />
       {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
     </div>
   );

@@ -12,7 +12,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
 
-/** 管理端图片上传(商品封面 / 文章配图),返回可直接引用的 /files/** URL。 */
+/** 管理端图片上传(商品封面 / 文章配图 / 站点图标),返回可直接引用的 /files/** URL。 */
 @RestController
 @RequestMapping("/api/admin/files")
 @RequiredArgsConstructor
@@ -21,7 +21,7 @@ public class FileController {
     private final FileStorageService storage;
 
     @PostMapping
-    @PreAuthorize("hasAnyAuthority('product:write','article:write')")
+    @PreAuthorize("hasAnyAuthority('product:write','article:write','config:write')")
     public ApiResponse<Map<String, String>> upload(@RequestParam("file") MultipartFile file) {
         return ApiResponse.ok(Map.of("url", storage.storeImage(file)));
     }

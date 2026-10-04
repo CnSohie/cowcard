@@ -5,6 +5,7 @@ import { mGet, type ArticleCard, type PageResult } from "../../lib/memberApi";
 import { money } from "../../lib/currency";
 import { useSeo } from "../../lib/seo";
 import { useI18n } from "../../lib/i18n";
+import { useStorePageLoading } from "../../components/StoreAvailability";
 
 /** 文章列表:参考 handsome 主题的卡片流 + 分类筛选 + 搜索。 */
 
@@ -34,6 +35,7 @@ export default function PostsPage() {
   const [data, setData] = useState<PageResult<ArticleCard> | null>(null);
   const [input, setInput] = useState(kw);
   const [loading, setLoading] = useState(true);
+  useStorePageLoading(loading);
 
   useEffect(() => {
     mGet<string[]>("/posts/categories").then(setCats).catch(() => void 0);

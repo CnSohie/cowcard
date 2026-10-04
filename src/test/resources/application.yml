@@ -5,11 +5,40 @@ spring:
     username: sa
     password: ""
     driver-class-name: org.h2.Driver
+    hikari:
+      pool-name: ka
   flyway:
     enabled: false # 普通 H2 业务测试;迁移另有独立测试
   jpa:
     hibernate:
       ddl-auto: create-drop
+
+# 测试的 application.yml 会盖住 main 里的同名文件,这里要自己带上指标暴露,否则 /actuator/prometheus 不会注册。
+management:
+  endpoints:
+    web:
+      exposure:
+        include:
+          - health
+          - prometheus
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+      probes:
+        enabled: false
+      status:
+        order:
+          - DOWN
+          - OUT_OF_SERVICE
+          - DEGRADED
+          - UNKNOWN
+          - UP
+        http-mapping:
+          DEGRADED: 200
+  health:
+    mail:
+      enabled: false
 
 ka:
   security:

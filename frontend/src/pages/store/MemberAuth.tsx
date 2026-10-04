@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Gift, KeyRound, Loader2, Mail, UserRound, Zap } from "lucide-react";
+import { Gift, KeyRound, Loader2, Mail, UserRound } from "lucide-react";
+import SiteMark from "../../components/SiteMark";
 import { ApiError } from "../../lib/api";
 import { isMemberLoggedIn, memberLogin, memberRegister } from "../../lib/memberApi";
 import { useI18n } from "../../lib/i18n";
@@ -74,9 +75,7 @@ export default function MemberAuth() {
       <div className="card p-7 sm:p-9">
         {/* 品牌 */}
         <div className="mb-7 flex flex-col items-center gap-3 text-center">
-          <span className="grid h-12 w-12 place-items-center rounded-full bg-primary shadow-lg">
-            <Zap size={19} strokeWidth={2.5} className="text-accent dark:text-primary-contrast" />
-          </span>
+          <SiteMark alt="" className="h-12 w-12 rounded-2xl object-cover shadow-lg" />
           <div>
             <h1 className="text-xl font-extrabold tracking-tight">{mode === "login" ? t.welcome : t.createAccount}</h1>
             <p className="mt-1 text-xs text-ink/45">

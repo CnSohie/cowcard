@@ -1,6 +1,10 @@
 package com.hqyj.ka.payment.crypto;
 
 import com.hqyj.ka.config.AppProperties;
+import com.hqyj.ka.monitor.ChainCursorMonitor;
+import com.hqyj.ka.monitor.JobTracker;
+import com.hqyj.ka.observability.OpsRules;
+import com.hqyj.ka.observability.OpsSignals;
 import com.hqyj.ka.payment.crypto.entity.ChainCursor;
 import com.hqyj.ka.payment.crypto.entity.CryptoPaymentIntent;
 import com.hqyj.ka.payment.crypto.repo.ChainCursorRepository;
@@ -32,17 +36,29 @@ public class ChainScanJob {
     private final ChainCursorRepository cursorRepository;
     private final CryptoPaymentIntentRepository intentRepository;
     private final CryptoPaymentService cryptoPaymentService;
+    private final OpsSignals opsSignals;
+    private final JobTracker jobTracker;
+    private final ChainCursorMonitor cursorMonitor;
 
     @Scheduled(fixedDelayString = "${ka.crypto.scan-interval-ms:15000}")
     public void scan() {
         cryptoPaymentService.expireStaleIntents();
         for (AppProperties.Chain chain : props.getCrypto().getChains()) {
             if (!chain.isEnabled()) continue;
+            jobTracker.begin(JobTracker.chain(chain.getCode()));
             try {
                 scanChain(chain);
+                jobTracker.success(JobTracker.chain(chain.getCode()));
             } catch (Exception e) {
-                // e.toString() 而非 getMessage():NPE 等无消息异常也能看到类型,避免出现 err=null 的盲区
-                log.warn("chain scan failed, will retry next round. chain={} err={}", chain.getCode(), e.toString());
+                // 脱敏后的类型+摘要,避免异常里的 URL 把密钥打进日志;指标只记链名
+                log.warn("chain scan failed, will retry next round. chain={} err={}", chain.getCode(), OpsRules.sanitize(e));
+                opsSignals.scanFailed(chain.getCode(), e);
+                jobTracker.failure(JobTracker.chain(chain.getCode()), e);
+                try {
+                    cursorMonitor.markFailure(chain.getCode(), e);
+                } catch (RuntimeException ignored) {
+                    log.warn("chain failure state skipped chain={}", chain.getCode());
+                }
             }
         }
     }
@@ -60,6 +76,7 @@ public class ChainScanJob {
         List<CryptoPaymentIntent> confirming = intentRepository.findByChainCodeAndStatus(chain.getCode(),
                 CryptoPaymentIntent.Status.CONFIRMING);
 
+        long scanned;
         if (!scanTargets.isEmpty()) {
             ChainCursor cursor = cursorRepository.findById(chain.getCode())
                     .orElseGet(() -> new ChainCursor(chain.getCode(), latest - 1));
@@ -77,14 +94,28 @@ public class ChainScanJob {
                 }
                 cursor.setScannedBlock(to);
                 cursorRepository.save(cursor);
+                scanned = to;
+            } else {
+                scanned = cursor.getScannedBlock();
             }
         } else {
-            // 无等待意向:游标直接推进到最新,避免下次大区间补扫
-            cursorRepository.save(new ChainCursor(chain.getCode(), latest));
+            // 无等待意向:沿用已有游标推进到最新,避免把成功时间和连续失败清掉
+            ChainCursor cursor = cursorRepository.findById(chain.getCode())
+                    .orElseGet(() -> new ChainCursor(chain.getCode(), latest));
+            cursor.setScannedBlock(latest);
+            cursorRepository.save(cursor);
+            scanned = latest;
         }
 
         for (CryptoPaymentIntent intent : confirming) {
             cryptoPaymentService.settleIfConfirmed(intent.getId(), latest);
         }
+        // 确认数也处理完才记成功。页面和告警只读这里写下的时间和落后块数,刷新不再打 RPC。
+        ChainCursor saved = cursorRepository.findById(chain.getCode()).orElse(null);
+        if (saved != null) {
+            cursorMonitor.markSuccess(saved, Math.max(0L, latest - scanned));
+            cursorRepository.save(saved);
+        }
+        opsSignals.scanOk(chain.getCode(), Math.max(0L, latest - scanned));
     }
 }

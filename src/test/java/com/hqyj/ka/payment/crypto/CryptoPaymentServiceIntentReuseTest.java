@@ -42,7 +42,8 @@ class CryptoPaymentServiceIntentReuseTest {
         AppProperties props = new AppProperties();
         ConfigService config = mock(ConfigService.class);
         when(config.all()).thenReturn(Map.of("site.currency", "CNY"));
-        FxRateService fx = new FxRateService(props, config, JsonMapper.builder().build());
+        FxRateService fx = new FxRateService(props, config, JsonMapper.builder().build(),
+                new com.hqyj.ka.monitor.JobTracker());
         fx.init();
         props.getCrypto().setIntentExpireMinutes(15);
         var bsc = chain("BSC", 56, POLYGON_USDC);

@@ -42,7 +42,7 @@ class AuthServiceSensitiveGraceTest {
         when(passwords.matches("password", "hash")).thenReturn(true);
         when(totp.verify("secret", "123456")).thenReturn(true);
         auth = new AuthService(users, passwords, mock(JwtService.class), totp, props,
-                mock(AuditService.class), config);
+                mock(AuditService.class), config, new com.hqyj.ka.monitor.SecuritySignals());
         grace(5);
     }
 

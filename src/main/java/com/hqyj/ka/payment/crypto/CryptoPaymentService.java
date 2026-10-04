@@ -172,6 +172,7 @@ public class CryptoPaymentService {
         intent.setTxHash(txHash);
         intent.setBlockNumber(blockNumber);
         intent.setStatus(CryptoPaymentIntent.Status.CONFIRMING);
+        if (intent.getDetectedAt() == null) intent.setDetectedAt(LocalDateTime.now());
         log.info("crypto payment detected{}: order={} tx={}",
                 late ? " (late, intent revived)" : "", intent.getOrderNo(), txHash);
     }
@@ -229,6 +230,7 @@ public class CryptoPaymentService {
         matched.setTxHash(cleanTx);
         matched.setBlockNumber(blockNumber);
         matched.setStatus(CryptoPaymentIntent.Status.CONFIRMING);
+        if (matched.getDetectedAt() == null) matched.setDetectedAt(LocalDateTime.now());
         log.info("crypto tx self-submitted: order={} tx={} intent#{}", orderNo, cleanTx, matched.getId());
         return matched;
     }

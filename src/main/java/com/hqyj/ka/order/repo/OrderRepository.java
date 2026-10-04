@@ -64,7 +64,28 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     List<Order> findTop200ByStatusAndExpireAtBefore(Order.Status status, LocalDateTime time);
 
+    long countByStatusAndExpireAtBefore(Order.Status status, LocalDateTime time);
+
     long countByStatus(Order.Status status);
+
+    /** 已支付但未交付的商品单。orderType 为空的旧行按商品单计。 */
+    @Query("select count(o) from Order o where o.status = com.hqyj.ka.order.entity.Order.Status.PAID "
+            + "and o.deliveryMode = :mode "
+            + "and (o.orderType = com.hqyj.ka.order.entity.Order.OrderType.GOODS or o.orderType is null)")
+    long countPaidGoods(@Param("mode") Order.DeliveryMode mode);
+
+    @Query("select min(o.paidAt) from Order o where o.status = com.hqyj.ka.order.entity.Order.Status.PAID "
+            + "and o.deliveryMode = :mode "
+            + "and (o.orderType = com.hqyj.ka.order.entity.Order.OrderType.GOODS or o.orderType is null)")
+    LocalDateTime oldestPaidGoods(@Param("mode") Order.DeliveryMode mode);
+
+    @Query("select count(o) from Order o where o.status = com.hqyj.ka.order.entity.Order.Status.PAID "
+            + "and o.orderType = com.hqyj.ka.order.entity.Order.OrderType.RECHARGE")
+    long countPaidRecharge();
+
+    @Query("select min(o.paidAt) from Order o where o.status = com.hqyj.ka.order.entity.Order.Status.PAID "
+            + "and o.orderType = com.hqyj.ka.order.entity.Order.OrderType.RECHARGE")
+    LocalDateTime oldestPaidRecharge();
 
     // ── 反库存挤占:同邮箱 / 同 IP 的未支付订单计数 ──
     long countByStatusAndContact(Order.Status status, String contact);
@@ -83,22 +104,27 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
            "and exists (select 1 from PaymentTransaction t where t.orderId = o.id " +
            "and t.status = com.hqyj.ka.payment.entity.PaymentTransaction.Status.SUCCESS) " +
            "and (:kw is null or lower(o.orderNo) like lower(concat('%', :kw, '%')) " +
-           "or lower(o.contact) like lower(concat('%', :kw, '%')))")
+           "or lower(o.contact) like lower(concat('%', :kw, '%')) " +
+           "or exists (select 1 from PaymentTransaction t2 where t2.orderId = o.id and t2.channelTradeNo is not null " +
+           "and lower(t2.channelTradeNo) like lower(concat('%', :kw, '%'))) " +
+           "or exists (select 1 from CryptoPaymentIntent i where i.orderId = o.id and i.txHash is not null " +
+           "and lower(i.txHash) like lower(concat('%', :kw, '%'))))")
     Page<Order> findLatePaidOrders(@Param("statuses") List<Order.Status> statuses,
                                    @Param("kw") String keyword,
                                    Pageable pageable);
+
+    /** 管理端订单搜索:订单号、联系方式、支付宝/易支付交易号、链上 TxID。 */
+    @Query("select o from Order o where (:status is null or o.status = :status) and (" +
+           ":kw is null or lower(o.orderNo) like lower(concat('%', :kw, '%')) " +
+           "or lower(o.contact) like lower(concat('%', :kw, '%')) " +
+           "or exists (select 1 from PaymentTransaction t where t.orderId = o.id and t.channelTradeNo is not null " +
+           "and lower(t.channelTradeNo) like lower(concat('%', :kw, '%'))) " +
+           "or exists (select 1 from CryptoPaymentIntent i where i.orderId = o.id and i.txHash is not null " +
+           "and lower(i.txHash) like lower(concat('%', :kw, '%'))))")
+    Page<Order> searchAdmin(@Param("status") Order.Status status, @Param("kw") String keyword, Pageable pageable);
 
     /** 通用状态 CAS(人工关单等):只允许从 from 状态迁移,防止与支付回调竞态。 */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update Order o set o.status = :to where o.id = :id and o.status = :from")
     int casStatus(@Param("id") Long id, @Param("from") Order.Status from, @Param("to") Order.Status to);
-
-    // ── 管理端筛选(派生查询,And 优先级高于 Or:等价 (status AND 单号like) OR (status AND 联系人like))──
-    Page<Order> findByStatus(Order.Status status, Pageable pageable);
-
-    Page<Order> findByOrderNoContainingIgnoreCaseOrContactContainingIgnoreCase(
-            String orderNo, String contact, Pageable pageable);
-
-    Page<Order> findByStatusAndOrderNoContainingIgnoreCaseOrStatusAndContactContainingIgnoreCase(
-            Order.Status s1, String orderNo, Order.Status s2, String contact, Pageable pageable);
 }

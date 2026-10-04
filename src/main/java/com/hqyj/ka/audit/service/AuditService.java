@@ -2,6 +2,8 @@ package com.hqyj.ka.audit.service;
 
 import com.hqyj.ka.audit.entity.AuditLog;
 import com.hqyj.ka.audit.repo.AuditLogRepository;
+import com.hqyj.ka.monitor.SecuritySignals;
+import com.hqyj.ka.observability.OpsRules;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Service;
 public class AuditService {
 
     private final AuditLogRepository auditLogRepository;
+    private final SecuritySignals securitySignals;
 
     @Async("taskExecutor")
     public void record(String actor, String action, String resource, String ip, String detail) {
@@ -25,8 +28,10 @@ public class AuditService {
             auditLog.setIp(ip);
             auditLog.setDetail(detail);
             auditLogRepository.save(auditLog);
+            securitySignals.auditSucceeded();
         } catch (Exception e) {
-            log.warn("audit record failed: {}", e.getMessage());
+            securitySignals.auditFailed();
+            log.warn("audit record failed: {}", OpsRules.sanitize(e));
         }
     }
 }

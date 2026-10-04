@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Lock, Zap } from "lucide-react";
+import { Lock } from "lucide-react";
+import SiteMark from "../../components/SiteMark";
 import { ApiError, post, setTokens } from "../../lib/api";
 import { CaptchaBox, captchaHeaders } from "../../lib/captcha";
 
@@ -64,9 +65,7 @@ export default function AdminLogin() {
     <div className="grid min-h-screen place-items-center px-4">
       <div className="card w-full max-w-sm animate-fade-up p-8">
         <div className="mb-7 flex items-center gap-3">
-          <span className="grid h-11 w-11 place-items-center rounded-full bg-primary">
-            <Zap size={18} strokeWidth={2.5} className="text-accent dark:text-primary-contrast" />
-          </span>
+          <SiteMark alt="" className="h-11 w-11 rounded-2xl object-cover" />
           <div>
             <h1 className="font-extrabold tracking-tight">Ka 管理后台</h1>
             <p className="text-xs text-ink/40">Merchant Console</p>

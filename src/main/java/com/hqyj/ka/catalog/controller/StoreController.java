@@ -106,6 +106,7 @@ public class StoreController {
         CaptchaService.PublicConfig captcha = captchaService.publicConfig();
         return ApiResponse.ok(Map.ofEntries(
                 Map.entry("siteName", all.getOrDefault("site.name", "Ka 发卡")),
+                Map.entry("icon", all.getOrDefault("site.icon", "")),
                 Map.entry("announcement", all.getOrDefault("site.announcement", "")),
                 Map.entry("contact", all.getOrDefault("site.contact", "")),
                 Map.entry("currency", all.getOrDefault("site.currency", "CNY")),

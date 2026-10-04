@@ -57,6 +57,7 @@ export default function PayPage() {
   const [txBusy, setTxBusy] = useState(false);
   const [txMsg, setTxMsg] = useState("");
   const [summary, setSummary] = useState<PaySummary | null>(null);
+  const [credentialInvalid, setCredentialInvalid] = useState<"" | "timeout" | "rejected">("");
   const [memberLoggedIn, setMemberLoggedIn] = useState(() => isMemberLoggedIn());
   const [now, setNow] = useState(() => Date.now());
   const [presaleToken, setPresaleToken] = useState<string | null>(null);
@@ -107,19 +108,61 @@ export default function PayPage() {
     return () => { disposed = true; };
   }, [orderNo, channel, chain, token, isCrypto]);
 
-  // 订单摘要(金额 / 截止时间),倒计时数据源
+  // 凭证未就绪前不展示付款方式。15 秒仍未核对成功，或服务端拒绝凭证，进入无效反馈。
   useEffect(() => {
-    const local = findLocalOrder(orderNo);
-    const read = isMemberLoggedIn() ? mGet : get;
-    read<PaySummary>(`/pay/summary/${orderNo}`, {
-      contact: local?.contact,
-      queryToken: local?.queryToken,
-    })
-      .then((s) => {
-        setSummary(s);
-        setOrderStatus(s.status);
+    let disposed = false;
+    let settled = false;
+    let timer = 0;
+    let deadline = 0;
+    let attempt = 0;
+    const started = Date.now();
+    setCredentialInvalid("");
+    const giveUp = (reason: "timeout" | "rejected") => {
+      if (disposed || settled) return;
+      disposed = true;
+      window.clearTimeout(timer);
+      window.clearTimeout(deadline);
+      setCredentialInvalid(reason);
+    };
+    deadline = window.setTimeout(() => giveUp("timeout"), 15_000);
+    const load = () => {
+      if (disposed) return;
+      const local = findLocalOrder(orderNo);
+      const read = isMemberLoggedIn() ? mGet : get;
+      read<PaySummary>(`/pay/summary/${orderNo}`, {
+        contact: local?.contact,
+        queryToken: local?.queryToken,
       })
-      .catch((e) => setError(e instanceof ApiError ? e.message : t.loadFailed));
+        .then((s) => {
+          if (disposed) return;
+          settled = true;
+          window.clearTimeout(deadline);
+          setCredentialInvalid("");
+          setSummary(s);
+          setOrderStatus(s.status);
+        })
+        .catch((e) => {
+          if (disposed) return;
+          const rejected = e instanceof ApiError && (e.code === 3001 || e.code === 403 || e.code === 404);
+          if (rejected) {
+            giveUp("rejected");
+            return;
+          }
+          if (Date.now() - started >= 15_000) {
+            giveUp("timeout");
+            return;
+          }
+          attempt += 1;
+          const remaining = 15_000 - (Date.now() - started);
+          timer = window.setTimeout(load, Math.max(300, Math.min(2000 * attempt, remaining)));
+        });
+    };
+    load();
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+      window.clearTimeout(deadline);
+    };
   }, [orderNo]);
 
   // 秒级时钟(倒计时渲染)
@@ -468,6 +511,27 @@ export default function PayPage() {
     );
   }
 
+  if (credentialInvalid && !summary) {
+    const local = findLocalOrder(orderNo);
+    return (
+      <div className="card mx-auto w-full min-w-0 max-w-lg p-6 text-center sm:p-10" role="alert">
+        <span className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-full bg-amber-500/10">
+          <FileSearch size={26} className="text-amber-600 dark:text-amber-400" />
+        </span>
+        <h1 className="text-2xl font-extrabold tracking-tight">{t.credentialInvalidTitle}</h1>
+        <p className="mt-3 break-all font-mono text-xs text-ink/45">{orderNo}</p>
+        <p className="mt-3 text-sm leading-6 text-ink/60">
+          {credentialInvalid === "rejected" ? t.credentialInvalidRejected : t.credentialInvalidText}
+        </p>
+        <p className="mx-auto mt-4 max-w-sm rounded-2xl bg-accent-soft px-4 py-3 text-sm leading-6 text-ink/70">{t.credentialPaidHint}</p>
+        <Link to="/order" state={{ orderNo, contact: local?.contact, queryToken: local?.queryToken }}
+          className="btn-primary mt-7 inline-flex">
+          {t.credentialLookup}
+        </Link>
+      </div>
+    );
+  }
+
   // ── 剩余支付时间(过期即拦截,后端每分钟批量关单兜底)──
   const remainMs = summary ? new Date(summary.expireAt).getTime() - now : null;
   const expired = orderStatus === "EXPIRED" || orderStatus === "CLOSED"
@@ -525,6 +589,7 @@ export default function PayPage() {
           <button onClick={() => copyText(orderNo, "order")} className="inline-flex items-center gap-2 text-xs text-ink/55" aria-label={lang === "zh" ? "复制订单号" : "Copy order number"}><span className="font-mono">{orderNo}</span>{copied === "order" ? <CheckCircle2 size={13} /> : <Copy size={13} />}</button>
         </div>
 
+        {summary ? (<>
         {/* 订单摘要 + 剩余时间倒计时 */}
         {summary && (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-base px-5 py-5">
@@ -728,6 +793,15 @@ export default function PayPage() {
                 {txSection}
               </div>
             )}
+          </div>
+        )}
+        </>) : (
+          <div className="rounded-[1.75rem] border border-ink/[0.06] bg-base px-5 py-12 text-center sm:px-8 sm:py-16" role="status">
+            <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-accent-soft text-primary">
+              <Loader2 size={26} className="animate-spin" />
+            </span>
+            <h2 className="mt-6 text-2xl font-extrabold tracking-tight">{t.credentialLoading}</h2>
+            <p className="mx-auto mt-4 max-w-xs rounded-2xl bg-accent-soft px-4 py-3 text-sm leading-6 text-ink/70">{t.credentialPaidHint}</p>
           </div>
         )}
       </div>

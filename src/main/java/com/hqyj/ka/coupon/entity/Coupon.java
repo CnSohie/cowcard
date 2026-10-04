@@ -49,6 +49,10 @@ public class Coupon {
     /** null 表示全商品通用，否则仅适用指定商品。 */
     private Long productId;
 
+    /** 管理端列表回填，不落库。 */
+    @Transient
+    private String productName;
+
     @Column(nullable = false)
     private boolean enabled = true;
 

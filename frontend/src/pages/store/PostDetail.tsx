@@ -7,6 +7,7 @@ import { renderMarkdown } from "../../lib/markdown";
 import { currencySymbol, money } from "../../lib/currency";
 import { useSeo } from "../../lib/seo";
 import { CaptchaBox, captchaHeaders } from "../../lib/captcha";
+import { useStorePageLoading } from "../../components/StoreAvailability";
 
 /** 文章阅读页:handsome 风格排版(.prose-ka)+ 余额付费解锁。 */
 
@@ -47,6 +48,8 @@ export default function PostDetail() {
     () => (a?.tags ?? "").split(/[,,\s]+/).map((t) => t.trim()).filter(Boolean),
     [a?.tags],
   );
+  useStorePageLoading(!error && a?.slug !== slug);
+
   useSeo(a ? {
     title: a.title,
     description: a.summary || a.title,

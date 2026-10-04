@@ -1,8 +1,9 @@
-import StoreAvailability from "./StoreAvailability";
+import StoreAvailability, { StoreLoadingCard } from "./StoreAvailability";
 import { Suspense, useEffect, useLayoutEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { Languages, Moon, Newspaper, Search, ShoppingBag, Sun, TicketCheck, UserRound, ArrowUpRight, ArrowUp } from "lucide-react";
 import { loadSite, readSiteBranding } from "../lib/site";
+import SiteMark from "./SiteMark";
 import { isMemberLoggedIn, memberInfo } from "../lib/memberApi";
 import { applySiteTheme, isDark, toggleMode } from "../lib/theme";
 import { setCurrency } from "../lib/currency";
@@ -51,9 +52,7 @@ export default function StoreLayout() {
       <header className="sticky top-0 z-40 border-b border-ink/[0.06] bg-surface/95">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-5">
           <Link to="/" className="flex items-center gap-2.5">
-            <span className="brand-mark grid h-9 w-9 place-items-center rounded-full bg-primary">
-              <span className="text-sm font-bold text-primary-contrast">{site.siteName.slice(0, 1).toUpperCase()}</span>
-            </span>
+            <SiteMark alt={site.siteName || "Ka"} className="h-9 w-9 rounded-2xl object-cover" />
             <span className="hidden text-lg font-extrabold tracking-tight min-[400px]:block">{site.siteName}</span>
           </Link>
           <nav className="hidden items-center gap-1 md:flex lg:gap-2">
@@ -117,7 +116,11 @@ export default function StoreLayout() {
         )}
       </header>
       <main className="mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 sm:pt-8 md:pb-20">
-        <Suspense fallback={<div className="card min-h-64 animate-pulse p-8" role="status">{copy.common.loading}</div>}><StoreAvailability><Outlet /></StoreAvailability></Suspense>
+        <StoreAvailability>
+          <Suspense fallback={<StoreLoadingCard label={copy.common.loading} />}>
+            <Outlet />
+          </Suspense>
+        </StoreAvailability>
       </main>
       <footer className="store-footer border-t border-ink/10 bg-surface">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">

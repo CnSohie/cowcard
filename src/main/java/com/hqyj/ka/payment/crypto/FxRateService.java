@@ -1,6 +1,8 @@
 package com.hqyj.ka.payment.crypto;
 
 import com.hqyj.ka.config.AppProperties;
+import com.hqyj.ka.monitor.JobTracker;
+import com.hqyj.ka.observability.OpsRules;
 import com.hqyj.ka.sysconfig.service.ConfigService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +45,7 @@ public class FxRateService {
     private final AppProperties props;
     private final ConfigService configService;
     private final JsonMapper jsonMapper;
+    private final JobTracker jobTracker;
     private final RestClient restClient = RestClient.create();
 
     private volatile BigDecimal rate;
@@ -111,6 +114,7 @@ public class FxRateService {
     @Scheduled(initialDelayString = "15000", fixedDelayString = "${ka.crypto.fx-refresh-ms:3600000}")
     public void refresh() {
         if (!props.getCrypto().isFxAutoRefresh()) return;
+        jobTracker.begin(JobTracker.FX);
         try {
             String body = restClient.get().uri(props.getCrypto().getFxRateUrl())
                     .retrieve().body(String.class);
@@ -118,11 +122,13 @@ public class FxRateService {
             JsonNode cny = rates.path("CNY");
             if (!cny.isNumber()) {
                 log.warn("fx refresh: unexpected payload, keep rate {}", rate);
+                jobTracker.failure(JobTracker.FX, new IllegalStateException("unexpected fx payload"));
                 return;
             }
             BigDecimal fetched = new BigDecimal(cny.asText()).setScale(4, RoundingMode.HALF_UP);
             if (fetched.compareTo(MIN_SANE) < 0 || fetched.compareTo(MAX_SANE) > 0) {
                 log.warn("fx refresh: insane rate {} rejected, keep {}", fetched, rate);
+                jobTracker.failure(JobTracker.FX, new IllegalStateException("fx rate out of range"));
                 return;
             }
             rate = fetched;
@@ -135,8 +141,10 @@ public class FxRateService {
             }
             usdRates.put("CNY", fetched);
             log.info("fx rate refreshed: 1 USD = {} CNY, site currency={}", fetched, siteCurrency());
+            jobTracker.success(JobTracker.FX);
         } catch (Exception e) {
-            log.warn("fx refresh failed, keep rate {}: {}", rate, e.getMessage());
+            log.warn("fx refresh failed, keep rate {}: {}", rate, OpsRules.sanitize(e));
+            jobTracker.failure(JobTracker.FX, e);
         }
     }
 

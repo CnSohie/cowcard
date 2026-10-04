@@ -93,5 +93,8 @@ public class CryptoPaymentIntent {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
+    /** 进入 CONFIRMING 的时刻。用来判断确认是否拖太久,不用下单时间冒充。 */
+    private LocalDateTime detectedAt;
+
     private LocalDateTime confirmedAt;
 }

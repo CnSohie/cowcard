@@ -62,6 +62,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
+        <!-- 健康检查与 Prometheus 指标。管理端口与业务端口相同,避免测试上下文抢固定端口。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
         <!-- 进程内缓存(2C2G 用 Caffeine 代替 Redis;升级时切 spring.cache.type=redis) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

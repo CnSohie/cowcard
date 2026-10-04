@@ -3,6 +3,9 @@ package com.hqyj.ka.order.service;
 import com.hqyj.ka.card.service.CardService;
 import com.hqyj.ka.common.BusinessException;
 import com.hqyj.ka.common.ErrorCode;
+import com.hqyj.ka.monitor.JobTracker;
+import com.hqyj.ka.observability.OpsRules;
+import com.hqyj.ka.observability.OpsSignals;
 import com.hqyj.ka.order.entity.Order;
 import com.hqyj.ka.order.event.OrderPaidEvent;
 import com.hqyj.ka.order.repo.OrderRepository;
@@ -34,6 +37,8 @@ public class EmailNotifier {
     private final ConfigService configService;
     private final OrderRepository orderRepository;
     private final CardService cardService;
+    private final OpsSignals opsSignals;
+    private final JobTracker jobTracker;
 
     @Async("taskExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -50,8 +55,11 @@ public class EmailNotifier {
             } else {
                 sendGoods(order, cfg);
             }
+            jobTracker.success(JobTracker.EMAIL);
         } catch (Exception e) {
-            log.warn("order mail notify failed, orderId={}: {}", event.orderId(), e.getMessage());
+            log.warn("order mail notify failed, orderId={}: {}", event.orderId(), OpsRules.sanitize(e));
+            opsSignals.notifyFailed("email");
+            jobTracker.failure(JobTracker.EMAIL, e);
         }
     }
 

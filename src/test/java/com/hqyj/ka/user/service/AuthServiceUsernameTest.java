@@ -39,7 +39,8 @@ class AuthServiceUsernameTest {
         when(users.findById(1L)).thenReturn(Optional.of(user));
         when(passwords.matches("correct", "hash")).thenReturn(true);
         when(config.all()).thenReturn(Map.of());
-        auth = new AuthService(users, passwords, mock(JwtService.class), totp, props, audit, config);
+        auth = new AuthService(users, passwords, mock(JwtService.class), totp, props, audit, config,
+                new com.hqyj.ka.monitor.SecuritySignals());
     }
 
     @Test void renamesOwnAccountAndInvalidatesSessions() {

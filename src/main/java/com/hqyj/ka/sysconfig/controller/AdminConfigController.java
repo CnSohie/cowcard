@@ -11,6 +11,7 @@ import com.hqyj.ka.security.CaptchaService;
 import com.hqyj.ka.sysconfig.entity.SysConfig;
 import com.hqyj.ka.sysconfig.service.ConfigService;
 import com.hqyj.ka.sysconfig.service.HeroSlideConfigValidator;
+import com.hqyj.ka.sysconfig.service.SiteIconRules;
 import com.hqyj.ka.order.service.EmailNotifier;
 import com.hqyj.ka.user.service.AuthService;
 import com.hqyj.ka.wallet.service.WithdrawMethodService;
@@ -75,6 +76,9 @@ public class AdminConfigController {
         merged.putAll(incoming);
         captchaService.validateConfiguration(merged);
         siteAvailabilityService.validateConfiguration(merged);
+        if (incoming.containsKey(SiteIconRules.KEY)) {
+            incoming.put(SiteIconRules.KEY, SiteIconRules.normalize(incoming.get(SiteIconRules.KEY)));
+        }
         if (incoming.containsKey(HeroSlideConfigValidator.CONFIG_KEY)) {
             heroSlideConfigValidator.validate(incoming.get(HeroSlideConfigValidator.CONFIG_KEY));
         }

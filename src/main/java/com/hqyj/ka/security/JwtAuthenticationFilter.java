@@ -34,7 +34,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "audit:read", "config:write", "article:read", "article:write", "member:manage",
             "withdraw:review", "risk:review", "support:manage", "coupon:read", "coupon:manage",
             "gift-card:read", "gift-card:manage", "member:read", "member:status",
-            "member-level:manage", "wallet:freeze", "security:manage");
+            "member-level:manage", "wallet:freeze", "security:manage", "monitor:read");
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {

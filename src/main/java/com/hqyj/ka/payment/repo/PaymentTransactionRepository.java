@@ -14,6 +14,8 @@ import java.util.Optional;
 public interface PaymentTransactionRepository extends JpaRepository<PaymentTransaction, Long> {
     Optional<PaymentTransaction> findByChannelTradeNo(String channelTradeNo);
 
+    List<PaymentTransaction> findByOrderNoInAndStatus(Collection<String> orderNos, PaymentTransaction.Status status);
+
     Optional<PaymentTransaction> findFirstByOrderNoAndChannelCodeAndStatusOrderByIdDesc(
             String orderNo, String channelCode, PaymentTransaction.Status status);
 

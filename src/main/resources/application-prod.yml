@@ -8,6 +8,7 @@ spring:
     username: ${KA_DB_USER}
     password: ${KA_DB_PASSWORD}
     hikari:
+      pool-name: ka
       maximum-pool-size: 8      # 2 核经验值:cores*2 + 定时任务余量
       minimum-idle: 2
       connection-timeout: 5000

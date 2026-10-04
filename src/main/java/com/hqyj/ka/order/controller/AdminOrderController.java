@@ -5,12 +5,16 @@ import com.hqyj.ka.common.ApiResponse;
 import com.hqyj.ka.common.BusinessException;
 import com.hqyj.ka.common.ErrorCode;
 import com.hqyj.ka.common.PageResult;
+import com.hqyj.ka.order.OrderReconcile;
 import com.hqyj.ka.order.dto.OrderDtos.AdminOrderView;
 import com.hqyj.ka.order.dto.OrderDtos.OrderView;
+import com.hqyj.ka.order.dto.OrderDtos.PaymentReconcile;
 import com.hqyj.ka.order.dto.OrderDtos.SensitiveAuthRequest;
 import com.hqyj.ka.order.entity.Order;
 import com.hqyj.ka.order.repo.OrderRepository;
 import com.hqyj.ka.order.service.OrderService;
+import com.hqyj.ka.payment.crypto.entity.CryptoPaymentIntent;
+import com.hqyj.ka.payment.crypto.repo.CryptoPaymentIntentRepository;
 import com.hqyj.ka.payment.entity.PaymentTransaction;
 import com.hqyj.ka.payment.repo.PaymentTransactionRepository;
 import com.hqyj.ka.security.RateLimitFilter;
@@ -23,6 +27,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +44,7 @@ public class AdminOrderController {
     private final AuditService auditService;
     private final AuthService authService;
     private final PaymentTransactionRepository transactionRepository;
+    private final CryptoPaymentIntentRepository intentRepository;
 
     public record ManualDeliverRequest(String password, String totpCode, String content, String staffNote) {}
     public record RefundToWalletRequest(String password, String totpCode, BigDecimal amount, String note) {}
@@ -59,21 +66,11 @@ public class AdminOrderController {
         String kw = (q == null || q.isBlank()) ? null : q.trim();
         PageRequest pr = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 100),
                 Sort.by(Sort.Direction.DESC, "id"));
-        Page<Order> result;
-        if (latePaid) {
-            result = orderRepository.findLatePaidOrders(
-                    List.of(Order.Status.EXPIRED, Order.Status.CLOSED), kw, pr);
-        } else if (st != null && kw != null) {
-            result = orderRepository.findByStatusAndOrderNoContainingIgnoreCaseOrStatusAndContactContainingIgnoreCase(
-                    st, kw, st, kw, pr);
-        } else if (st != null) {
-            result = orderRepository.findByStatus(st, pr);
-        } else if (kw != null) {
-            result = orderRepository.findByOrderNoContainingIgnoreCaseOrContactContainingIgnoreCase(kw, kw, pr);
-        } else {
-            result = orderRepository.findAll(pr);
-        }
-        return ApiResponse.ok(PageResult.of(result.map(AdminOrderController::toView)));
+        Page<Order> result = latePaid
+                ? orderRepository.findLatePaidOrders(List.of(Order.Status.EXPIRED, Order.Status.CLOSED), kw, pr)
+                : orderRepository.searchAdmin(st, kw, pr);
+        return ApiResponse.ok(new PageResult<>(toViews(result.getContent()),
+                result.getTotalElements(), result.getNumber(), result.getSize()));
     }
 
     /** 各状态订单数(筛选栏计数;status,expireAt 复合索引左前缀覆盖,查询很轻)。 */
@@ -96,7 +93,7 @@ public class AdminOrderController {
     public ApiResponse<AdminOrderView> detail(@PathVariable String orderNo) {
         Order order = orderRepository.findByOrderNo(orderNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
-        return ApiResponse.ok(toView(order));
+        return ApiResponse.ok(toViews(List.of(order)).get(0));
     }
 
     /** 管理端查看订单卡密(高敏操作,独立权限 + 2FA 信任期 + 审计) */
@@ -213,12 +210,35 @@ public class AdminOrderController {
         return ApiResponse.ok();
     }
 
-    private static AdminOrderView toView(Order o) {
+    private List<AdminOrderView> toViews(List<Order> orders) {
+        if (orders.isEmpty()) return List.of();
+        List<String> orderNos = orders.stream().map(Order::getOrderNo).distinct().toList();
+        Map<String, List<PaymentTransaction>> transactions = new HashMap<>();
+        for (PaymentTransaction tx : transactionRepository.findByOrderNoInAndStatus(
+                orderNos, PaymentTransaction.Status.SUCCESS)) {
+            transactions.computeIfAbsent(tx.getOrderNo(), key -> new ArrayList<>()).add(tx);
+        }
+        Map<String, CryptoPaymentIntent> intents = new HashMap<>();
+        for (CryptoPaymentIntent intent : intentRepository.findByOrderNoInAndTxHashIsNotNull(orderNos)) {
+            intents.merge(intent.getOrderNo(), intent, OrderReconcile::preferIntent);
+        }
+        List<AdminOrderView> views = new ArrayList<>(orders.size());
+        for (Order order : orders) {
+            PaymentTransaction success = null;
+            for (PaymentTransaction tx : transactions.getOrDefault(order.getOrderNo(), List.of())) {
+                success = OrderReconcile.preferTransaction(success, tx, order.getPaidChannel());
+            }
+            views.add(toView(order, OrderReconcile.build(order.getPaidChannel(), success, intents.get(order.getOrderNo()))));
+        }
+        return views;
+    }
+
+    private static AdminOrderView toView(Order o, PaymentReconcile reconcile) {
         return new AdminOrderView(o.getId(), o.getOrderNo(), o.getOrderType().name(), o.getMemberId(),
                 o.getProductName(), o.getUnitPrice(), o.getQuantity(), o.getAmount(),
                 o.getDiscountAmount(), o.getWalletPaidAmount(), o.getCouponCode(), o.getContact(), o.getStatus().name(),
                 o.getPaidChannel(), o.getBuyerIp(), o.getCreatedAt(), o.getExpireAt(),
                 o.getPaidAt(), o.getDeliveredAt(), o.getDeliveryMode().name(),
-                o.getBuyerNote(), o.getManualDeliveryContent());
+                o.getBuyerNote(), o.getManualDeliveryContent(), reconcile);
     }
 }

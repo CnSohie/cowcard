@@ -1,4 +1,4 @@
-import { loadSite } from "./site";
+import { applySiteIcon, loadSite } from "./site";
 
 /**
  * 主题引擎:主题色系(mint/ocean/violet/cow)× 模式(light/dark/auto)。
@@ -69,6 +69,7 @@ export async function bootstrapSiteTheme(): Promise<void> {
   try {
     const site = await loadSite();
     applySiteTheme(site.theme, site.mode);
+    applySiteIcon(site.icon);
   } catch {
     // 离线时保留本地主题，商城提供独立的加载失败与重试状态。
   }

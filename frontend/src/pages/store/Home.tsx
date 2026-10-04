@@ -4,6 +4,7 @@ import { ArrowRight, Check, Search, TicketCheck, ChevronLeft, ChevronRight } fro
 import { get, type Category, type ProductCard } from "../../lib/api";
 import { loadSite } from "../../lib/site";
 import ProductCatalog from "../../components/ProductCatalog";
+import { useStorePageLoading } from "../../components/StoreAvailability";
 import { useSeo } from "../../lib/seo";
 import { useI18n } from "../../lib/i18n";
 import { defaultHeroSlides, localizeHeroSlide, parseHeroSlides, type HeroSlide } from "../../lib/hero";
@@ -19,6 +20,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
   const [heroSlides, setHeroSlides] = useState<HeroSlide[]>(defaultHeroSlides);
+  useStorePageLoading(loading);
 
   const visibleHeroSlides = useMemo(() => {
     const enabled = heroSlides.filter((slide) => slide.enabled);

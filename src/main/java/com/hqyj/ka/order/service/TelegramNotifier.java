@@ -1,5 +1,8 @@
 package com.hqyj.ka.order.service;
 
+import com.hqyj.ka.monitor.JobTracker;
+import com.hqyj.ka.observability.OpsRules;
+import com.hqyj.ka.observability.OpsSignals;
 import com.hqyj.ka.order.entity.Order;
 import com.hqyj.ka.order.event.OrderPaidEvent;
 import com.hqyj.ka.order.repo.OrderRepository;
@@ -26,6 +29,8 @@ public class TelegramNotifier {
 
     private final ConfigService configService;
     private final OrderRepository orderRepository;
+    private final OpsSignals opsSignals;
+    private final JobTracker jobTracker;
     private final RestClient restClient = RestClient.create();
 
     @Async("taskExecutor")
@@ -62,8 +67,12 @@ public class TelegramNotifier {
                     .header("Content-Type", "application/json")
                     .body(Map.of("chat_id", chatId, "text", text))
                     .retrieve().toBodilessEntity();
+            jobTracker.success(JobTracker.TELEGRAM);
         } catch (Exception e) {
-            log.warn("telegram notify failed: {}", e.getMessage());
+            // 不打印原始异常:RestClient 的消息里常带 bot token 的请求地址
+            log.warn("telegram notify failed: {}", OpsRules.sanitize(e));
+            opsSignals.notifyFailed("telegram");
+            jobTracker.failure(JobTracker.TELEGRAM, e);
         }
     }
 

@@ -9,6 +9,7 @@ import { currencySymbol, money } from "../../lib/currency";
 import { useSeo } from "../../lib/seo";
 import { useI18n } from "../../lib/i18n";
 import { CaptchaBox, captchaHeaders } from "../../lib/captcha";
+import { useStorePageLoading } from "../../components/StoreAvailability";
 
 interface PriceQuote {
   unitPrice: string; discountPerUnit: string; levelName: string | null; source: string;
@@ -100,6 +101,8 @@ export default function ProductPage() {
     setDiscount(null);
     setCouponMsg("");
   }, [id, qty, couponCode, memberPrice]);
+
+  useStorePageLoading(!error && String(p?.id ?? "") !== String(id ?? ""));
 
   useSeo(p ? {
     title: p.name,
@@ -239,22 +242,25 @@ export default function ProductPage() {
 
         <div className="card h-fit p-6 md:p-7 lg:sticky lg:top-24">
           <h2 className="mb-5 font-bold">{t.orderInfo}</h2>
-          {!quoteReady && <p role="status" className="mb-3 text-xs text-ink/60">{priceError || (lang === "zh" ? "正在更新价格…" : "Updating price…")}
-            {priceError && <button className="ml-2 underline" onClick={() => setPriceReload(v => v + 1)}>{lang === "zh" ? "重试" : "Retry"}</button>}
-          </p> }
-          <label className="label">{t.qty}({effectiveMinBuy} ~ {p.maxBuy})</label>
+          <div className="mb-1.5 flex h-5 items-center justify-between gap-3">
+            <label className="label !mb-0 shrink-0">{t.qty}({effectiveMinBuy} ~ {p.maxBuy})</label>
+            <p role="status" className="flex min-w-0 items-center justify-end gap-2 text-xs text-ink/50">
+              <span className="truncate">{priceError || (!quoteReady ? (lang === "zh" ? "正在更新价格…" : "Updating price…") : "")}</span>
+              {priceError && <button type="button" className="shrink-0 underline" onClick={() => setPriceReload(v => v + 1)}>{lang === "zh" ? "重试" : "Retry"}</button>}
+            </p>
+          </div>
           <div className="mb-4 flex items-center gap-2">
-            <button aria-label={t.qty + " −"} disabled={qty <= effectiveMinBuy} className="btn-ghost !px-3.5 !py-2.5" onClick={() => setQty(Math.max(effectiveMinBuy, qty - 1))}><Minus size={14} /></button>
+            <button aria-label={t.qty + " −"} disabled={qty <= effectiveMinBuy} className="btn-ghost shrink-0 !px-3.5 !py-2.5" onClick={() => setQty(Math.max(effectiveMinBuy, qty - 1))}><Minus size={14} /></button>
             <input
               inputMode="numeric" aria-label={t.qty}
-              className="input !w-20 text-center"
+              className="input !w-20 shrink-0 text-center"
               value={qty}
               onChange={(e) => {
                 const v = parseInt(e.target.value || "0", 10);
                 if (!Number.isNaN(v)) setQty(Math.min(p.maxBuy, Math.max(effectiveMinBuy, v)));
               }}
             />
-            <button aria-label={t.qty + " +"} disabled={qty >= p.maxBuy} className="btn-ghost !px-3.5 !py-2.5" onClick={() => setQty(Math.min(p.maxBuy, qty + 1))}><Plus size={14} /></button>
+            <button aria-label={t.qty + " +"} disabled={qty >= p.maxBuy} className="btn-ghost shrink-0 !px-3.5 !py-2.5" onClick={() => setQty(Math.min(p.maxBuy, qty + 1))}><Plus size={14} /></button>
           </div>
           {minimumOrderAmount > 0 && (
             <p className="-mt-2 mb-4 rounded-2xl bg-accent-soft/60 px-3.5 py-2.5 text-xs leading-relaxed text-ink/55">

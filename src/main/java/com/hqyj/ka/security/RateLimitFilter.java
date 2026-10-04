@@ -3,6 +3,7 @@ package com.hqyj.ka.security;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.hqyj.ka.config.AppProperties;
+import com.hqyj.ka.monitor.SecuritySignals;
 import com.hqyj.ka.sysconfig.service.ConfigService;
 import com.hqyj.ka.telegram.TelegramProperties;
 import jakarta.servlet.FilterChain;
@@ -44,6 +45,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final AppProperties props;
     private final ConfigService configService;
     private final TelegramProperties telegram;
+    private final SecuritySignals securitySignals;
 
     /** 令牌桶:key = 档位:IP */
     private final Cache<String, TokenBucket> buckets = Caffeine.newBuilder()
@@ -58,10 +60,21 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final Cache<String, AtomicInteger> banCount = Caffeine.newBuilder()
             .expireAfterWrite(Duration.ofHours(24)).maximumSize(200_000).build();
 
-    public RateLimitFilter(AppProperties props, ConfigService configService, TelegramProperties telegram) {
+    public RateLimitFilter(AppProperties props, ConfigService configService, TelegramProperties telegram,
+                           SecuritySignals securitySignals) {
         this.props = props;
         this.configService = configService;
         this.telegram = telegram;
+        this.securitySignals = securitySignals;
+    }
+
+    public int activeBanCount() {
+        int count = 0;
+        long now = System.currentTimeMillis();
+        for (Long until : banned.asMap().values()) {
+            if (until != null && until > now) count++;
+        }
+        return count;
     }
 
     @Override
@@ -69,6 +82,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String ip = resolveClientIp(req);
         req.setAttribute(CLIENT_IP_ATTR, ip);
+
+        // 本机抓 Prometheus / 健康检查不占买家令牌桶,也不因开发流量被封。只看 TCP 地址。
+        String uriEarly = req.getRequestURI();
+        if (uriEarly != null && (uriEarly.equals("/actuator") || uriEarly.startsWith("/actuator/"))
+                && Loopback.matches(req.getRemoteAddr())) {
+            chain.doFilter(req, resp);
+            return;
+        }
 
         // Verified Telegram traffic shares infrastructure IPs across buyers. Actor quotas live in the Bot adapter.
         if ("POST".equals(req.getMethod()) && "/api/telegram/webhook".equals(req.getRequestURI())
@@ -103,6 +124,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         }
 
         if (!bucket.tryConsume()) {
+            securitySignals.rateLimited();
             int v = violations.get(ip, k -> new AtomicInteger()).incrementAndGet();
             // 本机回环不递增封禁(开发/同机压测保护;生产走反代时务必 trust-forward-header=true 以取真实 IP)
             if (v >= cfgInt(db, "security.rl.ban_threshold", cfg.getBanThreshold()) && !isLoopback(ip)) {
@@ -121,6 +143,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         long minutes = Math.min((long) maxMinutes,
                 (long) baseMinutes * (1L << Math.min(count - 1, 20)));
         banned.put(ip, System.currentTimeMillis() + minutes * 60_000L);
+        securitySignals.banned();
         log.warn("IP {} 触发第 {} 次封禁,时长 {} 分钟", ip, count, minutes);
     }
 
@@ -185,7 +208,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private static boolean isLoopback(String ip) {
-        return "127.0.0.1".equals(ip) || "::1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip);
+        return Loopback.matches(ip);
     }
 
     private void reject(HttpServletResponse resp, String msg) throws IOException {

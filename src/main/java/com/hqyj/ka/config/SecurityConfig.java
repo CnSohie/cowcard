@@ -2,6 +2,7 @@ package com.hqyj.ka.config;
 
 import com.hqyj.ka.security.CaptchaFilter;
 import com.hqyj.ka.security.JwtAuthenticationFilter;
+import com.hqyj.ka.security.LoopbackAuthorizationManager;
 import com.hqyj.ka.security.RateLimitFilter;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -45,12 +46,16 @@ public class SecurityConfig {
                 .httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000))
                 .referrerPolicy(rp -> rp.policy(
                         org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
-                // 同一进程托管 React 商城与 API：允许本站资源及 Turnstile 脚本、验证框架，
-                // 继续禁止对象和本站页面被其他站点内嵌。
+                // 同一进程托管 React 商城与 API。CSRF 保持关闭（无 Cookie 会话）。
+                // Turnstile 的脚本、验证框架，以及它在父页面里创建的 blob worker 都要放行；
+                // 旧版 Safari 看 child-src 而不是 worker-src。继续禁止本站被其他站点内嵌。
                 .contentSecurityPolicy(csp -> csp.policyDirectives(
                         "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; "
                                 + "script-src 'self' https://challenges.cloudflare.com; "
-                                + "frame-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; "
+                                + "frame-src 'self' https://challenges.cloudflare.com; "
+                                + "worker-src 'self' blob: https://challenges.cloudflare.com; "
+                                + "child-src 'self' blob: https://challenges.cloudflare.com; "
+                                + "style-src 'self' 'unsafe-inline'; "
                                 + "img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https:"))
                 .permissionsPolicyHeader(pp -> pp.policy("geolocation=(), microphone=(), camera=(), payment=()"))
                 .addHeaderWriter((request, response) -> {
@@ -67,12 +72,18 @@ public class SecurityConfig {
                 // React 单页应用的入口与 Vite 构建产物必须在 JWT 认证前公开，
                 // 否则首页与其 JS/CSS 会被 anyRequest() 返回 401。
                 .requestMatchers(
-                        "/", "/index.html", "/assets/**", "/favicon.ico", "/manifest.webmanifest", "/site.webmanifest",
+                        "/", "/index.html", "/assets/**", "/favicon.ico", "/favicon.svg", "/apple-touch-icon.png",
+                        "/manifest.webmanifest", "/site.webmanifest",
                         "/product/**", "/pay/**", "/order", "/tg/**", "/redeem", "/posts/**", "/login", "/register", "/me", "/tos", "/about",
                         "/admin", "/admin/**").permitAll()
                 .requestMatchers("/robots.txt", "/sitemap.xml").permitAll()
                 .requestMatchers("/files/**").permitAll()
                 .requestMatchers("/error").permitAll()
+                // 健康检查只返回 UP/DOWN/DEGRADED,明细在配置里关掉。
+                // Prometheus 只认 TCP 回环,伪造 X-Forwarded-For 进不来。
+                .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                .requestMatchers("/actuator/prometheus").access(new LoopbackAuthorizationManager())
+                .requestMatchers("/actuator", "/actuator/**").denyAll()
                 // 会员区:仅会员令牌(kind=member)可进,与管理端令牌硬隔离
                 .requestMatchers("/api/member/**").hasAuthority("KIND_MEMBER")
                 // 管理端:仅管理令牌(kind=admin)可进,细粒度权限由 @PreAuthorize 控制

@@ -10,6 +10,7 @@ spring:
     username: ka
     password: ka_dev_password
     hikari:
+      pool-name: ka
       maximum-pool-size: 8
       minimum-idle: 2
       connection-timeout: 5000
@@ -126,6 +127,34 @@ ka:
           - symbol: USDT
             contract: "0x55d398326f99059fF775485246999027B3197955"
             decimals: 18        # 注意:BSC 上 USDT 为 18 位小数(与以太坊 6 位不同)
+
+# 与业务同端口。/actuator/health 公开且不带明细;/actuator/prometheus 只允许本机回环。
+# 抓取地址: http://127.0.0.1:8080/actuator/prometheus
+management:
+  endpoints:
+    web:
+      exposure:
+        include:
+          - health
+          - prometheus
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+      probes:
+        enabled: false
+      status:
+        order:
+          - DOWN
+          - OUT_OF_SERVICE
+          - DEGRADED
+          - UNKNOWN
+          - UP
+        http-mapping:
+          DEGRADED: 200
+  health:
+    mail:
+      enabled: false
 
 logging:
   level:

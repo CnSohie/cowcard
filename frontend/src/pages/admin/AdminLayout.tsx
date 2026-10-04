@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
-  BadgePercent, CreditCard, Gift, HandCoins, KeyRound, LayoutDashboard, LogOut, Menu, Moon,
-  MessageSquare, Newspaper, Package, ScrollText, Settings, ShieldAlert, ShieldCheck, ShoppingCart, Sun, Users, UsersRound, X, Zap,
+  Activity, BadgePercent, CreditCard, Gift, HandCoins, KeyRound, LayoutDashboard, LogOut, Menu, Moon,
+  MessageSquare, Newspaper, Package, ScrollText, Settings, ShieldAlert, ShieldCheck, ShoppingCart, Sun, Users, UsersRound, X,
 } from "lucide-react";
 import { get, isLoggedIn, setTokens } from "../../lib/api";
 import { isDark, toggleMode } from "../../lib/theme";
+import SiteMark from "../../components/SiteMark";
 
 const NAV = [
   { to: "/admin", label: "概览", icon: LayoutDashboard, end: true, perm: "dashboard:read" as string | null },
+  { to: "/admin/monitor", label: "运行监测", icon: Activity, perm: "monitor:read" as string | null },
   { to: "/admin/products", label: "商品管理", icon: Package, perm: "product:read" as string | null },
   { to: "/admin/cards", label: "卡密管理", icon: KeyRound, perm: "card:write" as string | null },
   { to: "/admin/orders", label: "订单管理", icon: ShoppingCart, perm: "order:read" as string | null },
@@ -80,9 +82,7 @@ export default function AdminLayout() {
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center justify-between border-b border-ink/[0.06] px-5">
         <div className="flex items-center gap-2.5">
-          <span className="brand-mark grid h-8 w-8 place-items-center rounded-full bg-primary">
-            <Zap size={14} strokeWidth={2.5} className="brand-mark-icon text-accent dark:text-primary-contrast" />
-          </span>
+          <SiteMark alt="" className="h-8 w-8 rounded-xl object-cover" />
           <span className="font-extrabold tracking-tight">Ka 后台</span>
         </div>
         <button className="md:hidden" onClick={() => setDrawer(false)}><X size={18} className="text-ink/50" /></button>

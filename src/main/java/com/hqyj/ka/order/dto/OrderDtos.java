@@ -67,7 +67,18 @@ public final class OrderDtos {
                                  String contact, String status, String paidChannel, String buyerIp,
                                  LocalDateTime createdAt, LocalDateTime expireAt,
                                  LocalDateTime paidAt, LocalDateTime deliveredAt,
-                                 String deliveryMode, String buyerNote, String deliveryContent) {}
+                                 String deliveryMode, String buyerNote, String deliveryContent,
+                                 PaymentReconcile reconcile) {}
+
+    /**
+     * 对账凭证。支付宝/易支付的 tradeNo 是渠道交易号，链上支付的 tradeNo 是 TxID。
+     * 链上额外带出网络、代币、精确金额和收款地址。
+     */
+    public record PaymentReconcile(String channelCode, String tradeNo,
+                                   BigDecimal paidAmount, BigDecimal feeAmount, LocalDateTime paidAt,
+                                   String chainCode, String tokenSymbol, String tokenAmount,
+                                   String receiveAddress, Integer confirmations, Integer requiredConfirmations,
+                                   Long blockNumber) {}
 
     /** 收银台摘要(公开,凭高熵订单号获取;仅含展示所需字段)。 */
     public record PaySummary(String orderNo, String orderType, String productName,

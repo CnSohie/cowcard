@@ -72,7 +72,8 @@ public class DataInitializer implements CommandLineRunner {
             new String[]{"member:status", "封禁/启用会员", "会员"},
             new String[]{"member-level:manage", "会员等级管理", "会员"},
             new String[]{"wallet:freeze", "冻结/解冻会员余额", "财务"},
-            new String[]{"security:manage", "安全设置", "系统"});
+            new String[]{"security:manage", "安全设置", "系统"},
+            new String[]{"monitor:read", "查看运行监测", "系统"});
 
     private static final Map<String, List<String>> ROLE_PERMS = Map.ofEntries(
             Map.entry("SUPER_ADMIN", List.of("*")),
@@ -89,7 +90,7 @@ public class DataInitializer implements CommandLineRunner {
             Map.entry("SUPPORT", List.of("dashboard:read", "order:read", "member:read", "support:manage")),
             Map.entry("CONTENT", List.of("dashboard:read", "article:read", "article:write", "config:write")),
             Map.entry("SECURITY_ADMIN", List.of("dashboard:read", "user:manage", "role:manage",
-                    "audit:read", "config:write", "security:manage")),
+                    "audit:read", "config:write", "security:manage", "monitor:read")),
             // 旧兼容角色:保留旧权限码,同时补少量新权限,避免升级后老账号菜单消失。
             Map.entry("LEGACY_MEMBER_MANAGER", List.of("member:manage", "member:read", "member:status", "member-level:manage")));
 

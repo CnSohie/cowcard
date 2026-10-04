@@ -4,6 +4,7 @@ import com.hqyj.ka.audit.service.AuditService;
 import com.hqyj.ka.common.BusinessException;
 import com.hqyj.ka.common.ErrorCode;
 import com.hqyj.ka.config.AppProperties;
+import com.hqyj.ka.monitor.SecuritySignals;
 import com.hqyj.ka.common.util.AesGcmUtil;
 import com.hqyj.ka.security.JwtService;
 import com.hqyj.ka.security.TotpService;
@@ -39,13 +40,17 @@ public class AuthService {
     private final AppProperties props;
     private final AuditService auditService;
     private final ConfigService configService;
+    private final SecuritySignals securitySignals;
     // 保存验证时间,避免修改免验证时长后仍沿用旧的到期时间。
     private final Map<Long, LocalDateTime> sensitiveVerifiedAt = new ConcurrentHashMap<>();
 
     @Transactional
     public TokenResponse login(LoginRequest req, String ip) {
         User user = userRepository.findByUsername(req.username())
-                .orElseThrow(() -> new BusinessException(ErrorCode.BAD_CREDENTIALS));
+                .orElseThrow(() -> {
+                    securitySignals.loginFailed();
+                    return new BusinessException(ErrorCode.BAD_CREDENTIALS);
+                });
 
         if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(LocalDateTime.now())) {
             throw new BusinessException(ErrorCode.ACCOUNT_LOCKED);
@@ -60,6 +65,7 @@ public class AuthService {
                 user.setLockedUntil(LocalDateTime.now().plusMinutes(props.getSecurity().getLoginLockMinutes()));
                 user.setFailedAttempts(0);
             }
+            securitySignals.loginFailed();
             auditService.record(user.getUsername(), "LOGIN_FAILED", "auth", ip, null);
             throw new BusinessException(ErrorCode.BAD_CREDENTIALS);
         }
@@ -71,6 +77,7 @@ public class AuthService {
             }
             String secret = AesGcmUtil.decrypt(user.getTotpSecret(), props.getSecurity().aesKeyBytes());
             if (!totpService.verify(secret, req.totpCode().trim())) {
+                securitySignals.loginFailed();
                 auditService.record(user.getUsername(), "LOGIN_TOTP_FAILED", "auth", ip, null);
                 throw new BusinessException(ErrorCode.TOTP_INVALID);
             }

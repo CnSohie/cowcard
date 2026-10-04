@@ -2,6 +2,8 @@ package com.hqyj.ka.payment.crypto.repo;
 
 import com.hqyj.ka.payment.crypto.entity.CryptoPaymentIntent;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -21,7 +23,19 @@ public interface CryptoPaymentIntentRepository extends JpaRepository<CryptoPayme
 
     Optional<CryptoPaymentIntent> findByTxHash(String txHash);
 
+    List<CryptoPaymentIntent> findByOrderNoInAndTxHashIsNotNull(Collection<String> orderNos);
+
     List<CryptoPaymentIntent> findByChainCodeAndStatus(String chainCode, CryptoPaymentIntent.Status status);
+
+    long countByStatus(CryptoPaymentIntent.Status status);
+
+    @Query("select count(i) from CryptoPaymentIntent i where i.status = com.hqyj.ka.payment.crypto.entity.CryptoPaymentIntent.Status.CONFIRMING "
+            + "and i.detectedAt is not null and i.detectedAt < :before")
+    long countConfirmingDetectedBefore(@Param("before") LocalDateTime before);
+
+    @Query("select min(i.detectedAt) from CryptoPaymentIntent i where i.status = com.hqyj.ka.payment.crypto.entity.CryptoPaymentIntent.Status.CONFIRMING "
+            + "and i.detectedAt is not null")
+    LocalDateTime oldestConfirmingDetectedAt();
 
     List<CryptoPaymentIntent> findTop200ByChainCodeAndStatusAndExpireAtAfterAndTxHashIsNullOrderByIdDesc(
             String chainCode, CryptoPaymentIntent.Status status, LocalDateTime time);

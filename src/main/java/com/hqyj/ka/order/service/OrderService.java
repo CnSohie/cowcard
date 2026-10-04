@@ -9,6 +9,7 @@ import com.hqyj.ka.common.ErrorCode;
 import com.hqyj.ka.common.util.OrderNoGenerator;
 import com.hqyj.ka.coupon.service.CouponService;
 import com.hqyj.ka.config.AppProperties;
+import com.hqyj.ka.monitor.JobTracker;
 import com.hqyj.ka.catalog.service.InventoryService;
 import com.hqyj.ka.catalog.service.ManualDeliveryFormService;
 import com.hqyj.ka.order.dto.OrderDtos.CreateOrderRequest;
@@ -59,6 +60,7 @@ public class OrderService {
     private final CardService cardService;
     private final InventoryService inventoryService;
     private final PasswordEncoder passwordEncoder;
+    private final JobTracker jobTracker;
     private final CouponService couponService;
     private final AppProperties props;
     private final ApplicationEventPublisher eventPublisher;
@@ -530,6 +532,17 @@ public class OrderService {
     @Scheduled(fixedDelay = 60_000)
     @Transactional
     public void expireStaleOrders() {
+        jobTracker.begin(JobTracker.EXPIRE);
+        try {
+            expireStaleOrdersOnce();
+            jobTracker.success(JobTracker.EXPIRE);
+        } catch (RuntimeException e) {
+            jobTracker.failure(JobTracker.EXPIRE, e);
+            throw e;
+        }
+    }
+
+    private void expireStaleOrdersOnce() {
         List<Order> stale = orderRepository.findTop200ByStatusAndExpireAtBefore(
                 Order.Status.PENDING, LocalDateTime.now());
         int expired = 0;

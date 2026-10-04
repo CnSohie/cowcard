@@ -10,6 +10,13 @@
           const brand = JSON.parse(localStorage.getItem("ka.site.branding") || "null");
           const title = brand && (brand.seoTitle || brand.siteName);
           if (typeof title === "string" && title.trim()) document.title = title;
+          const icon = brand && brand.icon;
+          if (typeof icon === "string" && icon.startsWith("/files/") && icon.indexOf("..") === -1 && icon.length <= 200) {
+            document.querySelectorAll("link[data-ka-icon]").forEach((node) => {
+              node.setAttribute("href", icon);
+              node.removeAttribute("type");
+            });
+          }
         } catch (_) { /* Invalid or unavailable cache: keep the neutral title. */ }
         try {
           const root = document.documentElement;
@@ -24,6 +31,9 @@
       })();
     </script>
     <meta name="description" content="自动发卡 · 极速到账" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" data-ka-icon="svg" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" data-ka-icon="ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" data-ka-icon="apple" />
   </head>
   <body>
     <div id="root"></div>

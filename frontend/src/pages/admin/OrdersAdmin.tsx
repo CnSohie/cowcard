@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import {
-  AlertTriangle, Ban, ChevronLeft, ChevronRight, HandCoins, KeyRound, Loader2,
+  AlertTriangle, Ban, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, HandCoins, KeyRound, Loader2,
   PackageCheck, RefreshCw, Search, TicketCheck, Wallet, X,
 } from "lucide-react";
 import { ApiError, get, post, type OrderView } from "../../lib/api";
@@ -18,6 +18,14 @@ interface AdminOrder {
   paidChannel: string | null; buyerIp: string | null; createdAt: string;
   expireAt: string; paidAt: string | null; deliveredAt: string | null;
   deliveryMode: "AUTO_CARD" | "MANUAL" | "PRESALE_VOUCHER"; buyerNote: string | null; deliveryContent: string | null;
+  reconcile: PaymentReconcile | null;
+}
+interface PaymentReconcile {
+  channelCode: string | null; tradeNo: string | null;
+  paidAmount: string | null; feeAmount: string | null; paidAt: string | null;
+  chainCode: string | null; tokenSymbol: string | null; tokenAmount: string | null;
+  receiveAddress: string | null; confirmations: number | null; requiredConfirmations: number | null;
+  blockNumber: number | null;
 }
 interface PageResult<T> { items: T[]; total: number; page: number; size: number; }
 
@@ -49,6 +57,26 @@ function fmt(s: string | null) {
   return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+function tradeLabel(channel: string | null) {
+  if (channel === "ALIPAY_OFFICIAL") return "支付宝交易号";
+  if (channel === "EPAY") return "渠道交易号";
+  if (channel?.startsWith("CRYPTO_")) return "链上 TxID";
+  if (channel === "BALANCE") return "余额流水号";
+  return "渠道交易号";
+}
+
+function explorerTx(chain: string | null, tx: string) {
+  const base = chain === "BASE" ? "https://basescan.org/tx/"
+    : chain === "POLYGON" ? "https://polygonscan.com/tx/"
+    : chain === "BSC" ? "https://bscscan.com/tx/"
+    : null;
+  return base ? base + tx : null;
+}
+
+function shortTrade(value: string) {
+  return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
+}
+
 function manualSubmission(value: string | null): [string, string][] {
   if (!value) return [];
   try {
@@ -56,6 +84,104 @@ function manualSubmission(value: string | null): [string, string][] {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return Object.entries(parsed).map(([k, v]) => [k, String(v)]);
   } catch { /* 兼容旧订单的纯文本资料 */ }
   return [["交付资料", value]];
+}
+
+function ReconcilePanel({ reconcile, orderNo, copied, onCopy }: {
+  reconcile: PaymentReconcile | null; orderNo: string; copied: string; onCopy: (key: string, value: string) => void;
+}) {
+  const channel = reconcile?.channelCode ?? null;
+  const crypto = !!channel?.startsWith("CRYPTO_") || !!reconcile?.chainCode;
+  const tradeNo = reconcile?.tradeNo ?? "";
+  const explorer = crypto && tradeNo ? explorerTx(reconcile?.chainCode ?? null, tradeNo) : null;
+  return (
+    <section>
+      <p className="section-label"><span className="h-1 w-4 rounded-full bg-accent" /> 对账信息</p>
+      {!tradeNo ? (
+        <p className="rounded-2xl bg-ink/[0.04] px-4 py-3 text-sm text-ink/45">这笔订单还没有渠道对账流水。</p>
+      ) : (
+        <dl className="space-y-3 text-sm">
+          <div>
+            <dt className="text-xs text-ink/45">{crypto ? "链上 TxID" : tradeLabel(channel)}</dt>
+            <dd className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2">
+              <code className="min-w-0 w-full break-all rounded-xl bg-ink/[0.05] px-3 py-2 font-mono text-xs leading-5 sm:w-auto sm:flex-1">{tradeNo}</code>
+              <button type="button" className="btn-ghost shrink-0 !px-3 !py-2 text-xs" onClick={() => onCopy("trade", tradeNo)}>
+                {copied === "trade" ? <Check size={13} /> : <Copy size={13} />}
+                {copied === "trade" ? "已复制" : "复制"}
+              </button>
+            </dd>
+            {explorer && (
+              <a className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary" href={explorer} target="_blank" rel="noreferrer">
+                在区块浏览器查看 <ExternalLink size={12} />
+              </a>
+            )}
+          </div>
+          {!crypto && (
+            <CopyRow label="商户订单号" value={orderNo} copied={copied === "order"} onCopy={() => onCopy("order", orderNo)} />
+          )}
+          {reconcile?.chainCode && (
+            <div className="flex justify-between gap-4">
+              <dt className="text-ink/45">网络 / 代币</dt>
+              <dd>{reconcile.chainCode}{reconcile.tokenSymbol ? ` · ${reconcile.tokenSymbol}` : ""}</dd>
+            </div>
+          )}
+          {reconcile?.tokenAmount && (
+            <div className="flex justify-between gap-4">
+              <dt className="text-ink/45">链上金额</dt>
+              <dd className="font-mono text-xs">{reconcile.tokenAmount} {reconcile.tokenSymbol}</dd>
+            </div>
+          )}
+          {reconcile?.receiveAddress && (
+            <CopyRow label="收款地址" value={reconcile.receiveAddress} copied={copied === "address"} onCopy={() => onCopy("address", reconcile.receiveAddress!)} />
+          )}
+          {reconcile?.confirmations != null && (
+            <div className="flex justify-between gap-4">
+              <dt className="text-ink/45">确认数</dt>
+              <dd className="font-mono text-xs">{reconcile.confirmations}{reconcile.requiredConfirmations != null ? ` / ${reconcile.requiredConfirmations}` : ""}</dd>
+            </div>
+          )}
+          {reconcile?.blockNumber != null && (
+            <div className="flex justify-between gap-4">
+              <dt className="text-ink/45">区块</dt>
+              <dd className="font-mono text-xs">{reconcile.blockNumber}</dd>
+            </div>
+          )}
+          {reconcile?.paidAmount != null && (
+            <div className="flex justify-between gap-4">
+              <dt className="text-ink/45">{crypto ? "入账金额" : "渠道实付"}</dt>
+              <dd>{money(reconcile.paidAmount)}</dd>
+            </div>
+          )}
+          {Number(reconcile?.feeAmount) > 0 && (
+            <div className="flex justify-between gap-4">
+              <dt className="text-ink/45">渠道手续费</dt>
+              <dd>{money(reconcile?.feeAmount)}</dd>
+            </div>
+          )}
+          {reconcile?.paidAt && (
+            <div className="flex justify-between gap-4">
+              <dt className="text-ink/45">渠道入账</dt>
+              <dd>{fmt(reconcile.paidAt)}</dd>
+            </div>
+          )}
+        </dl>
+      )}
+    </section>
+  );
+}
+
+function CopyRow({ label, value, copied, onCopy }: { label: string; value: string; copied: boolean; onCopy: () => void }) {
+  return (
+    <div>
+      <dt className="text-xs text-ink/45">{label}</dt>
+      <dd className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2">
+        <code className="min-w-0 w-full break-all rounded-xl bg-ink/[0.05] px-3 py-2 font-mono text-xs leading-5 sm:w-auto sm:flex-1">{value}</code>
+        <button type="button" className="btn-ghost shrink-0 !px-3 !py-2 text-xs" onClick={onCopy}>
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? "已复制" : "复制"}
+        </button>
+      </dd>
+    </div>
+  );
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -79,6 +205,7 @@ export default function OrdersAdmin() {
   const [stats, setStats] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState("");
 
   // 详情抽屉
   const [detail, setDetail] = useState<AdminOrder | null>(null);
@@ -136,6 +263,7 @@ export default function OrdersAdmin() {
     setActErr("");
   }
   function closeDrawer() {
+    setCopied("");
     setDetail(null);
   }
 
@@ -293,9 +421,9 @@ export default function OrdersAdmin() {
             )}
           </button>
         </div>
-        <div className="relative ml-auto w-full sm:w-64">
+        <div className="relative ml-auto w-full sm:w-80">
           <Search size={14} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink/30" />
-          <input className="input !py-2 !pl-10 text-xs" placeholder="订单号 / 联系邮箱,回车搜索" value={q}
+          <input className="input !py-2 !pl-10 text-xs" placeholder="订单号 / 邮箱 / 支付宝交易号 / TxID" value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && (setKw(q.trim()), setPage(1))} />
         </div>
@@ -352,7 +480,14 @@ export default function OrdersAdmin() {
                   {o.memberId && <p className="text-[11px] text-ink/40">会员 #{o.memberId}</p>}
                 </td>
                 <td className="td"><StatusPill status={o.status} /></td>
-                <td className="td text-xs">{o.paidChannel ? (CHANNEL_LABEL[o.paidChannel] ?? o.paidChannel) : "—"}</td>
+                <td className="td text-xs">
+                  <p>{o.paidChannel ? (CHANNEL_LABEL[o.paidChannel] ?? o.paidChannel) : "—"}</p>
+                  {o.reconcile?.tradeNo && (
+                    <p className="mt-1 max-w-[150px] truncate font-mono text-[10px] text-ink/45" title={o.reconcile.tradeNo}>
+                      {o.reconcile.chainCode ? `${o.reconcile.chainCode} · ` : ""}{shortTrade(o.reconcile.tradeNo)}
+                    </p>
+                  )}
+                </td>
                 <td className="td text-xs text-ink/50">{fmt(o.createdAt)}</td>
               </tr>
             ))}
@@ -395,7 +530,7 @@ export default function OrdersAdmin() {
               </button>
             </header>
 
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-6 py-5">
+            <div className="min-h-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto overscroll-contain px-6 py-5">
               {/* 金额 */}
               <div className="rounded-2xl border border-primary/10 bg-accent-soft/50 p-5">
                 <p className="text-sm font-semibold text-ink">{detail.productName}{detail.orderType === "GOODS" && ` × ${detail.quantity}`}</p>
@@ -419,6 +554,18 @@ export default function OrdersAdmin() {
                   <div className="flex justify-between gap-4"><dt className="text-ink/45">下单 IP</dt><dd className="font-mono text-xs">{detail.buyerIp ?? "—"}</dd></div>
                 </dl>
               </section>
+
+              <ReconcilePanel
+                reconcile={detail.reconcile}
+                orderNo={detail.orderNo}
+                copied={copied}
+                onCopy={(key, value) => {
+                  void navigator.clipboard.writeText(value).then(() => {
+                    setCopied(key);
+                    window.setTimeout(() => setCopied((current) => current === key ? "" : current), 1500);
+                  }).catch(() => setActErr("复制失败，请手动选择文本"));
+                }}
+              />
 
               {/* 时间线 */}
               <section>

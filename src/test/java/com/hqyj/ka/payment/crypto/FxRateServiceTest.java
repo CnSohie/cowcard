@@ -16,7 +16,8 @@ class FxRateServiceTest {
     void stablecoinCollectionAddsHalfPercentBeforeRoundingWithoutChangingOtherConversions() {
         ConfigService config = mock(ConfigService.class);
         when(config.all()).thenReturn(Map.of("site.currency", "CNY"));
-        var fx = new FxRateService(new AppProperties(), config, JsonMapper.builder().build());
+        var fx = new FxRateService(new AppProperties(), config, JsonMapper.builder().build(),
+                new com.hqyj.ka.monitor.JobTracker());
         fx.init();
 
         assertEquals(new BigDecimal("10.05"), fx.siteToUsd(new BigDecimal("72.00")));
