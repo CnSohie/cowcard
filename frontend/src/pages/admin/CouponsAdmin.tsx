@@ -1,3 +1,4 @@
+import { ExpiryPicker, ScopePicker, type ProductOption } from "../../components/CouponPickers";
 import { type ReactNode, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { BadgePercent, Copy, Hash, Pencil, Plus, Sparkles, X } from "lucide-react";
@@ -104,30 +105,6 @@ function FieldShell({ label, children, hint }: { label: string; children: ReactN
       {hint && <p className="mt-1.5 text-[11px] leading-relaxed text-ink/35">{hint}</p>}
     </div>
   );
-}
-
-function ExpiryPicker({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
-  function preset(days: number) {
-    const now = new Date();
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-    const date = new Date(`${today}T00:00:00+08:00`);
-    date.setTime(date.getTime() + days * 86400000);
-    const end = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
-    onChange(`${end}T23:59:59`);
-  }
-  return <FieldShell label="有效期至（北京时间）" hint="直接选择日期和时间，自动补齐格式；留空表示长期有效。快捷日期填至当天 23:59:59。">
-    <input aria-label="有效期至（北京时间）" className="input" type="datetime-local" step="1" value={value ?? ""} onChange={(e) => onChange(e.target.value || null)} />
-    <div className="mt-3 flex flex-wrap gap-2">{[[0, "今天到期"], [7, "7 天"], [30, "30 天"]].map(([days, label]) => <button key={days} type="button" className="chip !py-1.5 text-xs" onClick={() => preset(Number(days))}>{label}</button>)}<button type="button" className={`chip !py-1.5 text-xs ${!value ? "chip-on" : ""}`} onClick={() => onChange(null)}>长期有效</button></div>
-  </FieldShell>;
-}
-
-type ProductOption = { id: number; name: string };
-function ScopePicker({ value, onChange, products, error }: { value: number | null; onChange: (v: number | null) => void; products: ProductOption[]; error: string }) {
-  return <FieldShell label="适用范围" hint="通用券可用于所有商品；指定商品券只对选中的商品生效。">
-    <div className="mb-3 flex gap-2"><button type="button" className={`chip ${value == null ? "chip-on" : ""}`} onClick={() => onChange(null)}>全商品通用</button><button type="button" className={`chip ${value != null ? "chip-on" : ""}`} onClick={() => onChange(value ?? 0)}>指定商品</button></div>
-    {value != null && <select aria-label="适用商品" className="input" value={value} onChange={(e) => onChange(Number(e.target.value))}><option value={0}>请选择商品</option>{value > 0 && !products.some(p => p.id === value) && <option value={value}>商品 #{value}（未加载或已删除）</option>}{products.map(p => <option key={p.id} value={p.id}>{p.name} · #{p.id}</option>)}</select>}
-    {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
-  </FieldShell>;
 }
 
 function expiryPayload(value: string | null) {
