@@ -57,13 +57,15 @@
 - 首页横幅改为可选区块:后台「站点设置 → 首页横幅」逐屏启停;启用 1 屏=静态大标题(无轮播控件),启用 2 屏以上才出现进度/前后箭头,全部停用则首页不渲染横幅
 - 规格文案:横幅启用时每屏固定高度(hero-copy-stack 重叠网格),关闭时不留空白
 - 商品目录:分类改为顶部可横向滚动的药丸 chip(选中自动滚进视野),不再用侧边栏;搜索/排序/仅看可购买/每页收进一条工具行,手机隐藏「每页」
-- 商品卡:标题 + 副标题 → 大图 → 售价 + 整行药丸按钮;品牌图标仍走 productBrand
+- 商品卡:标题 + 副标题 → 大图(16:10)→ 售价 + 右侧药丸按钮(手机收成小圆箭头);品牌图标仍走 productBrand
 - CSS 收口:index.css 只保留买家端共用原子(.product-image/.product-brand-mark/.hero-admin-preview/.catalog-dropdown);其余买家端样式全部在 storefront.css。别再往 index.css 加 `.storefront`/`.catalog-*`/`.hero-*` 规则,那种双份定义曾让新旧规则互相覆盖(表现为横幅被 legacy transform 顶到视口外)
 - 中文导航文案:全部商品 / 我的订单 / 提货码
 - 白屏兜底:App.tsx 的 Routes 外层必须有 AppErrorBoundary(按 pathname+search 复位)。页面组件读分页响应一律写 `!data?.items?.length`,别再写 `data.items.length`——2026-10-07 曾因 `/api/posts` 返回体缺 items 导致整页白屏
 - 移动端(≤767px)专用规则,别退回双行顶栏:顶栏固定 3.5rem 单行 = 品牌 + 全部商品/我的订单 + 主题/登录/更多(MoreHorizontal);文章、提货码、语言、明暗的完整入口收进底部面板 `.store-sheet`(点「更多入口」打开,Esc/遮罩关闭,打开时锁 body 滚动)。`.store-mobile-secondary` 常驻一行会在滚动时盖住卡片内容,已改为 display:none
 - 移动端横幅只留文案 + 进度/箭头(配图 display:none);分类 chip 右侧渐隐 mask 提示可横滑;每页数量选择器移动端隐藏
 - 封面比例必须"上传画框 = 展示容器":商品封面统一 16:10(`CROP_RATIOS.wide` + `.catalog-product-art` 各断点同为 16/10),上传组件用 `aspect="wide"`。改渲染比例时必须同步改 `lib/cropImage.ts` 的 `CROP_RATIOS`,否则商家在 1:1 预览里看到的画面会被卡片二次裁掉(2026-10-07 的"自动裁切坏了"就是这个:上传存 1:1、卡片 2:1 展示)
+- 移动端商品卡不放整行按钮:「选择套餐」文字由 `.catalog-card-action-label` 承载,手机隐藏、只留价格右侧小圆箭头(≤767px 2rem);整行大按钮在双列卡里太抢眼,已被否掉
+- 商品详情页手机端不做悬浮购买栏:改为 `.product-order { order: -1 }` 把下单面板提到最前,商品名/价格独立成 `.product-head` 区块,首屏直接能下单。历史实现见 commit 6f54874 的 store-buybar(已移除,勿恢复)
 
 ## 待办(按优先级)
 1. 邮件发货通知(需加 spring-boot-starter-mail,订阅 OrderPaidEvent)
