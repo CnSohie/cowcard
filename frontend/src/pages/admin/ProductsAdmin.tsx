@@ -477,7 +477,7 @@ export default function ProductsAdmin() {
 
             <div className="card p-5">
               <p className="section-label"><span className="h-1 w-4 rounded-full bg-accent" /> 商品封面</p>
-              <ImageUpload aspect="square" value={editing.coverImage} onChange={(url) => setEditing({ ...editing, coverImage: url })} />
+              <ImageUpload aspect="wide" value={editing.coverImage} onChange={(url) => setEditing({ ...editing, coverImage: url })} />
               {!editing.coverImage && <div className="mt-3 flex items-center gap-3 rounded-xl bg-accent-soft p-3">
                 <ProductImage name={editing.name} className="h-12 w-12 rounded-xl" />
                 <p className="text-xs text-ink/75">{matchProductBrand(editing.name)

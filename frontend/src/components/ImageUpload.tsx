@@ -1,11 +1,11 @@
 import { useRef, useState, type DragEvent } from "react";
 import { ImagePlus, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { ApiError, uploadImage } from "../lib/api";
-import { cropImage } from "../lib/cropImage";
+import { cropImage, type CropAspect } from "../lib/cropImage";
 
 /**
  * 图片上传(拖拽 / 点选):上传至 /api/admin/files,返回 /files/** URL。
- * 用于商品封面与文章封面/配图。
+ * 用于商品封面与文章封面/配图。aspect 决定保存比例,要与前台展示容器一致。
  */
 export default function ImageUpload({
   value,
@@ -16,7 +16,7 @@ export default function ImageUpload({
   value: string;
   onChange: (url: string) => void;
   hint?: string;
-  aspect?: "video" | "square";
+  aspect?: CropAspect;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -47,7 +47,8 @@ export default function ImageUpload({
     handleFile(e.dataTransfer.files?.[0]);
   }
 
-  const ratio = aspect === "square" ? "aspect-square" : "aspect-video";
+  const frame = aspect === "square" ? "aspect-square" : aspect === "wide" ? "aspect-[16/10]" : "aspect-video";
+  const ratioText = aspect === "square" ? "1:1 正方形" : aspect === "wide" ? "16:10 商品封面" : "16:9 横图";
 
   return (
     <div>
@@ -55,7 +56,7 @@ export default function ImageUpload({
         onChange={(e) => handleFile(e.target.files?.[0])} />
 
       {value ? (
-        <div className={`group relative overflow-hidden rounded-2xl border border-ink/10 ${ratio}`}>
+        <div className={`group relative overflow-hidden rounded-2xl border border-ink/10 ${frame}`}>
           <img src={value} alt="" className="h-full w-full object-cover" />
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-ink/50 opacity-0 backdrop-blur-[2px] transition group-hover:opacity-100">
             <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}
@@ -73,7 +74,7 @@ export default function ImageUpload({
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
           onDragLeave={() => setDrag(false)}
           onDrop={onDrop}
-          className={`grid w-full place-items-center rounded-2xl border-2 border-dashed transition ${ratio} ${
+          className={`grid w-full place-items-center rounded-2xl border-2 border-dashed transition ${frame} ${
             drag ? "border-primary bg-accent-soft/60" : "border-ink/15 bg-ink/[0.02] hover:border-primary/60 hover:bg-accent-soft/30"
           }`}>
           <span className="flex flex-col items-center gap-2 px-4 py-6 text-center">
@@ -85,7 +86,7 @@ export default function ImageUpload({
           </span>
         </button>
       )}
-      <p className="mt-2 text-xs text-ink/45">上传时自动居中裁剪为 {aspect === "square" ? "1:1 正方形" : "16:9 横图"}，超出画框的边缘会被裁去。</p>
+      <p className="mt-2 text-xs text-ink/45">上传时自动居中裁剪为 {ratioText}，超出画框的边缘会被裁去（与前台展示比例一致）。</p>
       {error && <p role="alert" className="mt-2 text-xs text-red-500">{error}</p>}
     </div>
   );
