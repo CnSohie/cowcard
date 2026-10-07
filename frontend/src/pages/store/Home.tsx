@@ -77,7 +77,7 @@ export default function Home() {
               const active = index === bannerIndex;
               const copy = localizeHeroSlide(slide, lang);
               return (
-                <div key={slide.id} className="cow-hero-copy hero-slide" aria-hidden={!active}
+                <div key={slide.id} className="hero-slide" aria-hidden={!active}
                   style={{ visibility: active ? "visible" : "hidden" }}>
                   {copy.eyebrow && <p className="hero-eyebrow">{copy.eyebrow}</p>}
                   <h1 className="hero-title">
@@ -92,19 +92,23 @@ export default function Home() {
           </div>
           <HeroVisual slide={banner} lang={lang} />
           {animated && (
-            <div className="hero-controls" aria-label={`${bannerIndex + 1} / ${banners.length}`}>
-              <button type="button" className="hero-arrow" aria-label={lang === "zh" ? "上一张" : "Previous slide"}
-                onClick={() => setBannerIndex((index) => (index - 1 + banners.length) % banners.length)}><ChevronLeft size={16} /></button>
-              <span className="hero-progress" aria-hidden="true">{bannerIndex + 1} / {banners.length}</span>
-              {banners.map((slide, index) => (
-                <button key={slide.id} type="button"
-                  aria-label={lang === "zh" ? `第 ${index + 1} 屏` : `Slide ${index + 1}`}
-                  aria-current={index === bannerIndex ? "true" : undefined}
-                  className={`hero-dot${index === bannerIndex ? " is-active" : ""}`}
-                  onClick={() => setBannerIndex(index)} />
-              ))}
-              <button type="button" className="hero-arrow" aria-label={lang === "zh" ? "下一张" : "Next slide"}
-                onClick={() => setBannerIndex((index) => (index + 1) % banners.length)}><ChevronRight size={16} /></button>
+            <div className="hero-controls" role="group" aria-label={lang === "zh" ? "横幅切换" : "Banner navigation"}>
+              <div className="hero-pagination">
+                {banners.map((slide, index) => (
+                  <button key={slide.id} type="button"
+                    aria-label={lang === "zh" ? `第 ${index + 1} 屏` : `Slide ${index + 1}`}
+                    aria-current={index === bannerIndex ? "true" : undefined}
+                    className={`hero-dot${index === bannerIndex ? " is-active" : ""}`}
+                    onClick={() => setBannerIndex(index)} />
+                ))}
+              </div>
+              <div className="hero-navigation">
+                <span className="hero-progress" aria-hidden="true">{bannerIndex + 1} / {banners.length}</span>
+                <button type="button" className="hero-arrow" aria-label={lang === "zh" ? "上一张" : "Previous slide"}
+                  onClick={() => setBannerIndex((index) => (index - 1 + banners.length) % banners.length)}><ChevronLeft size={16} /></button>
+                <button type="button" className="hero-arrow" aria-label={lang === "zh" ? "下一张" : "Next slide"}
+                  onClick={() => setBannerIndex((index) => (index + 1) % banners.length)}><ChevronRight size={16} /></button>
+              </div>
             </div>
           )}
         </section>

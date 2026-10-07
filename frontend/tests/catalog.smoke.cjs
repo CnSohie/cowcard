@@ -42,20 +42,27 @@ products[3].deliveryMode = 'PRESALE_VOUCHER'; products[3].presaleSaleEndAt = '20
     });
     await page.goto(base + '/');
     const cards = page.locator('.catalog-product');
+    const expectCards = async (count, message) => {
+      await page.waitForFunction((count) => !document.querySelector('.catalog-grid[aria-busy="true"]') && document.querySelectorAll('.catalog-product').length === count, count);
+      assert.equal(await cards.count(), count, message);
+    };
     await cards.first().waitFor();
-    assert.equal(await cards.count(), 12, 'render only one page');
+    await expectCards(12, 'render only one page');
     assert.equal(await page.locator('.catalog-category').count(), 41);
     const sortBox = page.getByRole('combobox', { name: '商品排序' });
     await sortBox.focus(); await sortBox.press('Enter'); await sortBox.press('ArrowDown'); await sortBox.press('Enter');
     assert.equal(new URL(page.url()).searchParams.get('sort'), 'price-asc', 'keyboard selection');
     await sortBox.press('Enter'); await sortBox.press('Home'); await sortBox.press('Enter');
     await sortBox.click(); await sortBox.press('Escape'); assert.equal(await page.getByRole('listbox').count(), 0);
-    await sortBox.click(); await page.getByRole('heading', { name: '全部商品' }).click(); assert.equal(await page.getByRole('listbox').count(), 0);
-    for (const width of [320, 390, 1440]) {
+    await sortBox.click(); await page.locator('.catalog-title').click(); assert.equal(await page.getByRole('listbox').count(), 0);
+    for (const width of [320, 390, 640, 767, 1024, 1440]) {
       await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => scrollTo(0, 0));
       const next = page.getByRole('button', { name: '下一张', exact: true });
       const initial = await next.boundingBox(); const hero = await page.locator('.store-hero').boundingBox();
       for (let i = 0; i < 3; i++) {
+        const copy = await page.locator('.hero-copy-stack').boundingBox();
+        const controls = await page.locator('.hero-controls').boundingBox();
+        assert(controls.y >= copy.y + copy.height + 8, `${width}: controls occupy their own row below all slide content`);
         await next.click(); const current = await next.boundingBox(); const box = await page.locator('.store-hero').boundingBox();
         assert(Math.abs(current.x - initial.x) < 1 && Math.abs(current.y - initial.y) < 1, 'carousel controls stay fixed');
         assert(Math.abs(box.height - hero.height) < 1, 'carousel height stays fixed');
@@ -72,21 +79,21 @@ products[3].deliveryMode = 'PRESALE_VOUCHER'; products[3].presaleSaleEndAt = '20
     assert.equal(new URL(page.url()).searchParams.get('page'), null);
     assert((await cards.first().getAttribute('href')).endsWith('/157'), 'numeric price sort');
     await page.getByRole('combobox', { name: '每页商品数量' }).click(); await page.getByRole('option', { name: '48', exact: true }).click();
-    assert.equal(await cards.count(), 48);
+    await expectCards(48);
     await page.getByRole('button', { name: '第 4 页', exact: true }).click();
-    assert.equal(await cards.count(), 13, 'partial last page');
-    await page.getByRole('searchbox').fill('商品 001'); assert.equal(await cards.count(), 1);
+    await expectCards(13, 'partial last page');
+    await page.getByRole('searchbox').fill('商品 001'); await expectCards(1);
     await page.getByRole('checkbox', { name: '仅看可购买' }).check();
     await page.getByText('没有找到匹配的商品', { exact: true }).waitFor();
     await page.getByRole('button', { name: '查看全部商品', exact: true }).click();
     await page.getByRole('checkbox', { name: '仅看可购买' }).check();
-    await page.getByRole('searchbox').fill('商品 002'); assert.equal(await cards.count(), 1, 'manual without stock');
-    await page.getByRole('searchbox').fill('商品 003'); assert.equal(await cards.count(), 1, 'active presale');
-    await page.getByRole('searchbox').fill('商品 004'); assert.equal(await cards.count(), 0, 'expired presale');
+    await page.getByRole('searchbox').fill('商品 002'); await expectCards(1, 'manual without stock');
+    await page.getByRole('searchbox').fill('商品 003'); await expectCards(1, 'active presale');
+    await page.getByRole('searchbox').fill('商品 004'); await expectCards(0, 'expired presale');
     await page.getByRole('button', { name: '查看全部商品', exact: true }).click();
     await page.getByRole('combobox', { name: '每页商品数量' }).click(); await page.getByRole('option', { name: '12', exact: true }).click();
     await page.getByRole('combobox', { name: '商品排序' }).click(); await page.getByRole('option', { name: '默认排序', exact: true }).click();
-    for (const width of [320, 390, 768, 1024, 1440]) {
+    for (const width of [320, 390, 640, 767, 768, 1024, 1200, 1440]) {
       await page.setViewportSize({ width, height: 1000 });
       await page.locator('#products').evaluate((el) => el.scrollIntoView());
       for (const mode of ['light', 'dark']) {
@@ -97,11 +104,18 @@ products[3].deliveryMode = 'PRESALE_VOUCHER'; products[3].presaleSaleEndAt = '20
         assert(await page.locator('.catalog-grid').evaluate(el => el.scrollWidth <= el.clientWidth), `${width}: product grid fits`);
         const actions = await page.locator('.catalog-card-action').evaluateAll(els => els.map(el => {
           const action = el.getBoundingClientRect(), card = el.closest('.catalog-product').getBoundingClientRect();
-          // 手机上是裸箭头(不再撑满整行),桌面上仍是可点的药丸按钮。
-          const bigEnough = innerWidth <= 767 ? action.width >= 12 : action.height >= 40;
-          return bigEnough && action.left >= card.left && action.right <= card.right;
+          // 整卡是点击区,桌面按钮只是紧凑提示,手机为无背景裸箭头。
+          const compact = innerWidth <= 767 ? action.width >= 12 && action.width <= 20 : action.height >= 28 && action.height <= 34;
+          const price = el.previousElementSibling.getBoundingClientRect();
+          return compact && action.left >= price.right && action.right <= card.right
+            && action.top >= card.top && action.bottom <= card.bottom;
         }));
         assert(actions.every(Boolean), `${width}: card actions stay inside cards`);
+        const art = await page.locator('.catalog-product-art').first().boundingBox();
+        assert(Math.abs(art.width / art.height - 1.6) < 0.01, `${width}: uploaded covers retain 16:10 aspect ratio`);
+        const card = await cards.first().boundingBox();
+        if (width >= 1200) assert(card.width < 310 && card.height < 390, `${width}: desktop cards are compact`);
+        if (width <= 767) assert.equal(await page.locator('.catalog-card-action-label').first().isVisible(), false, `${width}: no mobile CTA label`);
         const boxes = await cards.evaluateAll((els) => els.map((el) => ({ top: el.offsetTop, height: el.getBoundingClientRect().height })));
         for (const box of boxes) assert(boxes.filter((b) => b.top === box.top).every((b) => Math.abs(b.height - box.height) < 1), 'aligned rows');
         if ([390, 1440].includes(width)) {
@@ -112,15 +126,15 @@ products[3].deliveryMode = 'PRESALE_VOUCHER'; products[3].presaleSaleEndAt = '20
       }
       if (width === 390) {
         await page.getByRole('combobox', { name: '商品分类', exact: true }).click(); await page.getByRole('option', { name: '商品分类 40 (3)', exact: true }).click();
-        assert.equal(await cards.count(), 3, 'last category reachable on mobile');
+        await expectCards(3, 'last category reachable on mobile');
         await page.getByRole('combobox', { name: '商品分类', exact: true }).click(); await page.getByRole('option', { name: '全部分类 (157)', exact: true }).click();
       }
     }
     await page.goto(base + '/?page=999999&size=12'); await cards.first().waitFor();
-    assert.equal(await cards.count(), 1, 'out-of-range page clamps');
+    await expectCards(1, 'out-of-range page clamps');
     assert.equal(await page.getByRole('button', { name: '下一页', exact: true }).isDisabled(), true);
     await page.goto(base + '/?page=-1&size=999'); await cards.first().waitFor();
-    assert.equal(await cards.count(), 12, 'invalid params use bounded defaults');
+    await expectCards(12, 'invalid params use bounded defaults');
     for (const count of [1, 6]) {
       heroSlides = JSON.stringify(Array.from({ length: count }, (_, i) => ({
         id: `custom-${i}`, enabled: true, layout: 'illustration', tone: 'accent',
@@ -129,7 +143,7 @@ products[3].deliveryMode = 'PRESALE_VOUCHER'; products[3].presaleSaleEndAt = '20
         ctaLabelZh: '查看商品', ctaUrl: '#products',
       })));
       await page.reload(); await cards.first().waitFor();
-      for (const width of [320, 390]) {
+      for (const width of [320, 390, 640, 767, 1440]) {
         await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => scrollTo(0, 0));
         const hero = await page.locator('.store-hero').boundingBox();
         const cta = await page.locator('.hero-slide[aria-hidden="false"] .btn-primary').boundingBox();
@@ -177,7 +191,7 @@ products[3].deliveryMode = 'PRESALE_VOUCHER'; products[3].presaleSaleEndAt = '20
     assert(mobileHeader.height < 70, '移动端顶栏保持单行');
     assert.equal(await page.locator('.store-mobile-secondary').isVisible(), false, '辅助导航行不再常驻');
     const cardWidth = await cards.first().boundingBox();
-    assert(cardWidth.width > 300, '手机单列卡片占满内容宽');
+    assert(cardWidth.width > 150 && cardWidth.width < 190, '手机双列紧凑卡片');
     await page.getByRole('button', { name: '更多入口' }).click();
     await page.getByRole('dialog').waitFor();
     assert(await page.getByRole('button', { name: '语言', exact: true }).isVisible(), '语言入口在底部面板内可用');
@@ -186,7 +200,7 @@ products[3].deliveryMode = 'PRESALE_VOUCHER'; products[3].presaleSaleEndAt = '20
     assert.equal(await page.getByRole('dialog').count(), 0, 'Esc 关闭面板');
     await page.setViewportSize({ width: 1440, height: 1000 });
     assert.deepEqual(errors, []);
-    console.log('PASS: 157 products, 40 categories, paging/back, sort, availability, 5 widths, both modes, aligned rows, navigation/action bounds, URL bounds, single/six-slide custom banners.');
+    console.log('PASS: 157 products, 40 categories, paging/back, sort, availability, 8 widths, both modes, compact cards/actions, 16:10 covers, carousel separation, aligned rows, navigation/action bounds, URL bounds, single/six-slide custom banners.');
     console.log('Screenshots:', output);
   } finally { await browser.close(); }
 })().catch((e) => { console.error(e); process.exitCode = 1; });

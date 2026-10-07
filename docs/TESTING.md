@@ -38,3 +38,7 @@
 此前 `MySqlMigrationTest` 保留为外部一次性 MySQL 库的手动诊断入口，新集成套件不依赖它的环境变量，也不会因其被跳过而省略容器测试。
 
 参考：[Testcontainers MySQL 模块](https://java.testcontainers.org/modules/databases/mysql/)。
+
+## 2026-10-07 首页紧凑布局与轮播控件
+
+`frontend/tests/storefront-layout.smoke.cjs` 覆盖九种屏宽、四主题、深浅模式，校验轮播控件独占内容下方一行、六屏长短文案切换与自动播放、桌面四列紧凑卡片、32px 描边操作提示、16:10 封面与移动端裸箭头。另用触摸设备配置模拟进入商品后返回、滚动、主题切换，确认不触发旧 CoW 圆形装饰与粘滞悬停背景。`catalog.smoke.cjs` 保留 157 商品/40 分类筛选分页，并补充 640/767/1200px 断点和异步加载等待。布局、目录、商城查单/模拟支付三套浏览器回归、TypeScript 与 Vite 构建已通过；真实 iPhone Safari 未执行。

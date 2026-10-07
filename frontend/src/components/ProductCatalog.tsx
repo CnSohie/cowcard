@@ -204,7 +204,7 @@ function CatalogCard({ product: p, now }: { product: ProductCard; now: number })
   const badge = ended ? copy.common.presaleEnded : !canBuy ? copy.common.soldOut : delivery;
   const soldOut = ended || !canBuy;
   return (
-    <Link to={`/product/${p.id}`} className="card cow-product-card catalog-product group" aria-label={`${p.name} ${badge}`}>
+    <Link to={`/product/${p.id}`} className="card catalog-product group" aria-label={`${p.name} ${badge}`}>
       <div className="catalog-product-heading">
         <h3 className="catalog-product-title" title={p.name}>{p.name}</h3>
         <span className={`catalog-delivery-label${soldOut ? " is-muted" : ""}`}>{badge}</span>

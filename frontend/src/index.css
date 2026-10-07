@@ -746,57 +746,6 @@ body {
   transform: scale(0.78);
 }
 
-[data-theme="cow"] .cow-product-card {
-  position: relative;
-  overflow: hidden;
-  border-radius: 2rem;
-  border-color: rgb(var(--c-ink) / 0.09);
-  box-shadow: 0 1rem 2.5rem rgb(22 169 224 / 0.06);
-}
-
-[data-theme="cow"] .cow-product-card::before {
-  content: "";
-  position: absolute;
-  right: -1.9rem;
-  top: -1.9rem;
-  width: 7rem;
-  height: 7rem;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 35% 42%, rgb(var(--c-ink)) 0 14%, transparent 15%),
-    radial-gradient(circle at 66% 61%, rgb(var(--c-ink)) 0 10%, transparent 11%),
-    rgb(var(--c-surface));
-  border: 2px solid rgb(var(--c-ink) / 0.12);
-  opacity: 0.08;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-[data-theme="cow"] .cow-product-card::after {
-  content: "";
-  position: absolute;
-  left: 1.35rem;
-  bottom: 1.05rem;
-  width: 3rem;
-  height: 0.45rem;
-  border-radius: 999px;
-  background:
-    radial-gradient(circle at 12% 50%, rgb(var(--c-accent)) 0 16%, transparent 17%),
-    radial-gradient(circle at 42% 50%, rgb(var(--c-primary) / 0.52) 0 12%, transparent 13%),
-    radial-gradient(circle at 72% 50%, rgb(var(--c-accent)) 0 13%, transparent 14%);
-  opacity: 0;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-[data-theme="cow"] .cow-product-card:hover::before {
-  opacity: 0.15;
-  transform: scale(1.05) rotate(5deg);
-}
-
-[data-theme="cow"] .cow-product-card:hover::after {
-  opacity: 0.55;
-  transform: translateY(-0.12rem);
-}
-
 @media (max-width: 760px) {
   .hero-layout-image-cover .cow-hero-copy {
     margin: 0.75rem;

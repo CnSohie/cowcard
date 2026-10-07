@@ -55,3 +55,15 @@ Catalog pagination currently limits browser rendering. The existing public API s
 移动端不再沿用双行顶栏：≤767px 顶栏固定 3.5rem 单行（品牌 + 全部商品/我的订单 + 主题/登录/更多），`MoreHorizontal` 打开底部面板 `.store-sheet`（`role="dialog"`，Esc 与遮罩关闭、打开时 `body.overflow=hidden`、链接点击后自动关闭）；文章、提货码、语言、明暗的完整入口都在面板里。原先常驻的 `.store-mobile-secondary` 会在滚动时压在卡片内容上，已改为 `display:none`。
 
 横幅在手机上只保留文案与进度/箭头，配图 `display:none`；分类 chip rail 右侧用渐隐 mask 提示可横滑；每页数量选择器移动端隐藏。`catalog.smoke.cjs` 新增断言：移动端顶栏高度 < 70px、辅助导航行不可见、手机单列卡片宽度 > 300px、面板可开且锁滚动、Esc 可关。`storefront.smoke.cjs` 切语言前先打开「更多入口」面板。已在 390×844 逐个跑通 `/`、`/posts`、`/posts/:slug`、`/product/:id`、`/order`、`/redeem`、`/about`、`/tos`、`/pay/:orderNo`、`/login`、`/me`，页面级无横向溢出。Playwright 未安装，浏览器回归待有环境时执行。
+
+## 2026-10-07 紧凑卡片与轮播遮挡修复
+
+新增 `node frontend/tests/storefront-layout.smoke.cjs`，沿用 `PLAYWRIGHT_MODULE` / `UI_BASE_URL` 配置，不增加应用依赖。所有接口与封面均为本地模拟：
+
+- 320/390/640/767/768/1024/1200/1440/1920px × 四主题 × 深浅模式，无横向溢出。
+- 轮播文案与控件分处两个网格行；六张长短不一、自定义配图、含/不含 CTA 的幻灯片，切屏高度保持稳定，自动轮播仍工作。
+- ≥1200px 四列紧凑商品卡，1024–1199px 三列，其他区间双列（≤340px 单列）；桌面操作提示高度 32px，价格与箭头不重叠，封面保持 16:10。
+- ≤767px 操作提示为无背景/边框/圆角的裸箭头，覆盖 640–767px；CoW 旧圆形伪元素已移除，模拟鼠标悬停、真实触摸设备配置、进入商品再返回、滚动与主题切换均不产生圆圈。
+- `catalog.smoke.cjs` 更新紧凑卡片断言与异步加载等待；`storefront.smoke.cjs` 改用 `.catalog-product` 与真实分类文案，避免依赖移除的装饰类。
+
+已通过 TypeScript 检查、Vite 构建、布局专项、157 商品/40 分类目录回归，以及商城查单/模拟支付回归。浏览器为本地 Google Chrome，触摸使用 Playwright 模拟；不等同真实 iPhone Safari 验证。截图保存在测试输出的临时目录。本次仅前端，无数据库迁移。
