@@ -1,16 +1,24 @@
 import { Component, type ReactNode } from "react";
 
-/**
- * 顶层渲染兜底:任何页面组件抛错时给出可恢复的提示,而不是整页白屏。
- * 切换路由会重置错误状态(见 App.tsx 的 key)。
- */
-export default class AppErrorBoundary extends Component<{
+interface Props {
   children: ReactNode;
+  resetKey: string;
   title?: string;
   hint?: string;
   retryLabel?: string;
-}, { error: Error | null }> {
-  state = { error: null as Error | null };
+}
+interface State { error: Error | null; resetKey: string }
+
+/**
+ * 顶层渲染兜底:任何页面组件抛错时给出可恢复的提示,而不是整页白屏。
+ * URL 变化只重置错误状态,不能用 React key 重建正常页面与布局。
+ */
+export default class AppErrorBoundary extends Component<Props, State> {
+  state: State = { error: null, resetKey: this.props.resetKey };
+
+  static getDerivedStateFromProps(props: Props, state: State) {
+    return props.resetKey !== state.resetKey ? { error: null, resetKey: props.resetKey } : null;
+  }
 
   static getDerivedStateFromError(error: Error) {
     return { error };

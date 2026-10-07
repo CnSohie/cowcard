@@ -43,16 +43,21 @@ export default function StoreLayout() {
       .catch(() => void 0);
   }, []);
 
-  // 移动端入口面板:锁背景滚动 + Esc 关闭。
+  // 移动端入口面板:锁背景滚动 + Esc 关闭;横屏/放大到桌面断点时释放滚动锁。
   useEffect(() => {
     if (!menuOpen) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setMenuOpen(false); };
+    const desktop = window.matchMedia("(min-width: 768px)");
+    const onResize = () => { if (desktop.matches) setMenuOpen(false); };
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKey);
+    desktop.addEventListener("change", onResize);
+    onResize();
     return () => {
       document.body.style.overflow = previous;
       window.removeEventListener("keydown", onKey);
+      desktop.removeEventListener("change", onResize);
     };
   }, [menuOpen]);
 
@@ -184,7 +189,8 @@ export default function StoreLayout() {
       <main className="mx-auto max-w-7xl px-4 pb-12 pt-6 sm:px-6 sm:pt-8 md:pb-20">
         <StoreAvailability>
           <Suspense fallback={<StoreLoadingCard label={copy.common.loading} />}>
-            <Outlet />
+            {/* 只在真正切换页面/商品/订单时重置页面状态,查询参数变化保留当前页面。 */}
+            <Outlet key={location.pathname} />
           </Suspense>
         </StoreAvailability>
       </main>

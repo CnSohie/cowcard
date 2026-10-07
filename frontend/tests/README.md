@@ -67,3 +67,15 @@ Catalog pagination currently limits browser rendering. The existing public API s
 - `catalog.smoke.cjs` 更新紧凑卡片断言与异步加载等待；`storefront.smoke.cjs` 改用 `.catalog-product` 与真实分类文案，避免依赖移除的装饰类。
 
 已通过 TypeScript 检查、Vite 构建、布局专项、157 商品/40 分类目录回归，以及商城查单/模拟支付回归。浏览器为本地 Google Chrome，触摸使用 Playwright 模拟；不等同真实 iPhone Safari 验证。截图保存在测试输出的临时目录。本次仅前端，无数据库迁移。
+
+## 2026-10-07 同页操作不重载与响应式状态保持
+
+运行 `node frontend/tests/navigation.smoke.cjs`（相同的 `PLAYWRIGHT_MODULE` / `UI_BASE_URL` 配置）。接口故意延迟 400ms：旧代码点击分类会重建首页和顶栏、闪一次加载并调用两次滚动，新增测试在旧代码上实际失败；修复后已通过。
+
+- 分类、排序、搜索连续输入、可购买筛选、每页数量、分页、查询参数历史、语言/明暗切换：页面与顶栏 DOM 实例保留，不再出现加载状态、不重复请求商品/分类，连续输入不丢字符或焦点。
+- 分类只横向滚动 chip rail，不拉动页面；点击当前页不跳顶，翻页允许必要的目录定位。
+- 九种宽度在线缩放，列数与导航即时响应，不重挂首页或重新请求数据。手机仅保留分类 chip；390×844 打开更多面板后切到 844×390，面板关闭并解除 body 滚动锁。
+- 真正从一个商品切到另一个商品仍重置页面级状态并显示正确商品，共享顶栏不重建。
+- 模拟异常商品响应，验证错误页仍能出现，并通过同路径的查询参数变化恢复，不需要整页刷新。
+
+本次 TypeScript/Vite 构建、同页交互专项、目录、布局和商城模拟流程四套浏览器回归已通过。数据均为本地模拟；真实 iPhone Safari 未测试。

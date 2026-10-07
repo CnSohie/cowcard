@@ -125,9 +125,12 @@ products[3].deliveryMode = 'PRESALE_VOUCHER'; products[3].presaleSaleEndAt = '20
         }
       }
       if (width === 390) {
-        await page.getByRole('combobox', { name: '商品分类', exact: true }).click(); await page.getByRole('option', { name: '商品分类 40 (3)', exact: true }).click();
+        assert.equal(await page.getByRole('combobox', { name: '商品分类', exact: true }).isVisible(), false, 'mobile uses category chips, not a duplicated dropdown');
+        await page.locator('.catalog-chip-rail').evaluate(el => { el.scrollLeft = el.scrollWidth; });
+        await page.getByRole('button', { name: '商品分类 40 3', exact: true }).click();
         await expectCards(3, 'last category reachable on mobile');
-        await page.getByRole('combobox', { name: '商品分类', exact: true }).click(); await page.getByRole('option', { name: '全部分类 (157)', exact: true }).click();
+        await page.locator('.catalog-chip-rail').evaluate(el => { el.scrollLeft = 0; });
+        await page.getByRole('button', { name: '全部商品 157', exact: true }).click();
       }
     }
     await page.goto(base + '/?page=999999&size=12'); await cards.first().waitFor();

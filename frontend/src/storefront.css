@@ -361,6 +361,7 @@
   .catalog-search-clear { top: 0.2rem; }
   .catalog-toolbar { gap: 0.45rem; margin-bottom: 1rem; padding-bottom: 0.75rem; }
   .storefront .catalog-toolbar > .catalog-dropdown { flex: 1 1 8rem; }
+  .storefront .catalog-toolbar > .catalog-category-select { display: none; }
   .storefront .catalog-size-control { display: none; }
   .storefront .catalog-product { padding: 1rem; }
   /* 覆盖整个手机区间(含 640–767px),不是只在窄手机上隐藏按钮文案。 */

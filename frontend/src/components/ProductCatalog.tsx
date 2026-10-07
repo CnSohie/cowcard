@@ -90,6 +90,7 @@ export default function ProductCatalog({ products, categories, loading, error, o
     return next;
   }, { replace: true });
   const goToPage = (nextPage: number) => {
+    if (nextPage === page) return;
     setParams((previous) => {
       const next = new URLSearchParams(previous);
       if (nextPage === 1) next.delete("page"); else next.set("page", String(nextPage));
@@ -100,10 +101,14 @@ export default function ProductCatalog({ products, categories, loading, error, o
   };
   const pageNumbers = [...new Set([1, pageCount, page - 1, page, page + 1])]
     .filter((n) => n >= 1 && n <= pageCount).sort((a, b) => a - b);
-  // 选中的分类始终滚进可视区,长分类列表(40+)在手机上也能看见当前项。
+  // 只移动分类横向滚动容器,不能用 scrollIntoView 把整个页面向上拉。
   useEffect(() => {
-    const selected = chipRail.current?.querySelector<HTMLElement>("[aria-pressed='true']");
-    selected?.scrollIntoView({ block: "nearest", inline: "center", behavior: "instant" });
+    const rail = chipRail.current;
+    const selected = rail?.querySelector<HTMLElement>("[aria-pressed='true']");
+    if (!rail || !selected) return;
+    const itemBox = selected.getBoundingClientRect();
+    const railBox = rail.getBoundingClientRect();
+    rail.scrollBy({ left: itemBox.left - railBox.left - (railBox.width - itemBox.width) / 2, behavior: "instant" });
   }, [category]);
 
   return (
@@ -144,7 +149,7 @@ export default function ProductCatalog({ products, categories, loading, error, o
 
       <div className="catalog-toolbar">
         {categories.length > 6 && (
-          <CatalogSelect label={zh ? "商品分类" : "Product category"} value={category}
+          <CatalogSelect label={zh ? "商品分类" : "Product category"} value={category} className="catalog-category-select"
             icon={<Grid2X2 size={16} aria-hidden="true" className="shrink-0" />}
             options={[{ value: "", label: `${zh ? "全部分类" : "All categories"} (${products.length})` },
               ...categories.map((c) => ({ value: String(c.id), label: `${c.name} (${categoryCounts.get(c.id) ?? 0})` }))]}

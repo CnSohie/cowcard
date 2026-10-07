@@ -47,6 +47,7 @@
 - 前端:React 18 + Vite + TypeScript + Tailwind CSS,构建为纯静态文件由 Nginx 托管(**不占后端内存**)。
 - 前台商城(买家,免注册游客下单)与管理后台(员工,JWT 登录)同一个 React 工程、两个路由域(`/` 与 `/admin`)。
 - 钱包支付使用 wagmi + viem 在浏览器端连接钱包(MetaMask / WalletConnect / OKX 等),链上交互全部发生在买家浏览器,后端只做验证,零私钥风险。
+- 前台同页操作（首页筛选、排序、搜索、分页、语言/明暗）不重建页面、不重复请求整份商品目录。顶层 `AppErrorBoundary` 使用 `resetKey=pathname+search` 仅复位错误；`StoreLayout` 的 `Outlet` 仅以 `pathname` 作 key，真正切换商品/订单/页面时才重置页面级状态，共享导航保持挂载。手机分类仅横向滚动 chip rail；底部面板跨到桌面断点时关闭并释放滚动锁。
 
 ---
 

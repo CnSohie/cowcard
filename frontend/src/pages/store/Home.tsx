@@ -23,10 +23,11 @@ export default function Home() {
   const [products, setProducts] = useState<ProductCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [bannerIndex, setBannerIndex] = useState(0);
-  const [error, setError] = useState("");
+  const [failed, setFailed] = useState(false);
   const [reload, setReload] = useState(0);
   const [heroSlides, setHeroSlides] = useState<HeroSlide[]>(() => defaultHeroSlides());
   useStorePageLoading(loading);
+  const error = failed ? (lang === "zh" ? "商品加载失败,请重试。" : "Could not load products. Please retry.") : "";
 
   const banners = useMemo(() => heroSlides.filter((slide) => slide.enabled), [heroSlides]);
   const bannerKey = banners.map((slide) => slide.id).join("|");
@@ -45,16 +46,19 @@ export default function Home() {
   }, [heroSlides, lang]);
 
   useEffect(() => {
+    let disposed = false;
     setLoading(true);
-    setError("");
+    setFailed(false);
     Promise.all([get<Category[]>("/store/categories"), get<ProductCard[]>("/store/products")])
       .then(([c, p]) => {
+        if (disposed) return;
         setCategories(c);
         setProducts(p);
       })
-      .catch(() => setError(lang === "zh" ? "商品加载失败,请重试。" : "Could not load products. Please retry."))
-      .finally(() => setLoading(false));
-  }, [reload, lang]);
+      .catch(() => { if (!disposed) setFailed(true); })
+      .finally(() => { if (!disposed) setLoading(false); });
+    return () => { disposed = true; };
+  }, [reload]);
 
   useEffect(() => {
     loadSite()
