@@ -55,8 +55,6 @@ export default function ProductPage() {
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaEnabled, setCaptchaEnabled] = useState(false);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
-  const orderPanel = useRef<HTMLDivElement>(null);
-  const [mobileBarVisible, setMobileBarVisible] = useState(false);
   const handleCaptchaToken = useCallback((token: string) => {
     setCaptchaToken(token);
     if (token) {
@@ -105,16 +103,6 @@ export default function ProductPage() {
   }, [id, qty, couponCode, memberPrice]);
 
   useStorePageLoading(!error && String(p?.id ?? "") !== String(id ?? ""));
-
-  // 手机端悬浮购买栏:只在页面内真正的「立即购买」按钮不可见时出现,避免遮挡数量/邮箱等输入。
-  useEffect(() => {
-    if (!p) return;
-    const node = orderPanel.current?.querySelector("button.btn-primary:not(.store-buybar-action)");
-    if (!node || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(([entry]) => setMobileBarVisible(!entry.isIntersecting), { rootMargin: "0px 0px -140px 0px", threshold: 0 });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [p]);
 
   useSeo(p ? {
     title: p.name,
@@ -219,40 +207,45 @@ export default function ProductPage() {
       <button onClick={() => nav(-1)} className="mb-6 flex items-center gap-1.5 text-sm text-ink/50 hover:text-ink">
         <ArrowLeft size={15} /> {copy.common.back}
       </button>
-      <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
-        <div className="card p-7 md:p-9">
-          <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">{p.name}</h1>
-          {p.brief && <p className="mt-2.5 text-sm leading-relaxed text-ink/55">{p.brief}</p>}
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <span className="text-4xl font-extrabold tracking-tight">
-              <span className="text-[1rem] font-semibold text-ink/40">{currencySymbol()}</span>
-              {shownUnitPrice}
+      {/* 商品身份区:手机上下单面板在前,所以标题/价格独立成块,桌面上则回到左栏顶部。 */}
+      <div className="product-head mb-5 md:mb-6">
+        <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">{p.name}</h1>
+        {p.brief && <p className="mt-2 text-sm leading-relaxed text-ink/55">{p.brief}</p>}
+        <div className="mt-4 flex flex-wrap items-center gap-2.5">
+          <span className="product-head-price text-3xl font-extrabold tracking-tight">
+            <span className="text-[0.95rem] font-semibold text-ink/40">{currencySymbol()}</span>
+            {shownUnitPrice}
+          </span>
+          {memberPrice && Number(memberPrice.discountPerUnit) > 0 && (
+            <span className="chip !text-sky-600 dark:!text-sky-400">
+              {memberPrice.source === "WHOLESALE" ? (lang === "zh" ? "批发价" : "Wholesale") : `${memberPrice.levelName ?? "Member"} ${t.memberPrice}`} · {t.saved} {money((Number(memberPrice.discountPerUnit) * qty).toFixed(2))}
             </span>
-            {memberPrice && Number(memberPrice.discountPerUnit) > 0 && (
-              <span className="chip !text-sky-600 dark:!text-sky-400">
-                {memberPrice.source === "WHOLESALE" ? (lang === "zh" ? "批发价" : "Wholesale") : `${memberPrice.levelName ?? "Member"} ${t.memberPrice}`} · {t.saved} {money((Number(memberPrice.discountPerUnit) * qty).toFixed(2))}
-              </span>
-            )}
-            {p.soldQuantity != null && <span className="chip">{lang === "zh" ? `已售 ${p.soldQuantity.toLocaleString()} 件` : `${p.soldQuantity.toLocaleString()} sold`}</span>}
-            <span className={`chip ${isManual || isPresale || p.stock > 0 ? "!text-primary" : "!text-red-500"}`}>
-              {presaleEnded ? copy.common.presaleEnded : isPresale ? t.presaleVoucher : isManual ? copy.common.manualDelivery : p.stock > 0 ? `${t.inStock} · ${p.stock}` : copy.common.soldOut}
-            </span>
-          </div>
-          {!!memberPrice?.wholesaleTiers?.length && <div className="mt-5 rounded-2xl bg-accent-soft p-4">
+          )}
+          {p.soldQuantity != null && <span className="chip">{lang === "zh" ? `已售 ${p.soldQuantity.toLocaleString()} 件` : `${p.soldQuantity.toLocaleString()} sold`}</span>}
+          <span className={`chip ${isManual || isPresale || p.stock > 0 ? "!text-primary" : "!text-red-500"}`}>
+            {presaleEnded ? copy.common.presaleEnded : isPresale ? t.presaleVoucher : isManual ? copy.common.manualDelivery : p.stock > 0 ? `${t.inStock} · ${p.stock}` : copy.common.soldOut}
+          </span>
+        </div>
+      </div>
+      <div className="product-layout grid gap-6 lg:grid-cols-[1fr_400px]">
+        <div className="product-facts card p-7 md:p-9">
+          {!!memberPrice?.wholesaleTiers?.length && <div className="rounded-2xl bg-accent-soft p-4">
             <h3 className="text-sm font-bold">{lang === "zh" ? "可享批发价" : "Volume pricing"}</h3>
             <div className="mt-2 flex flex-wrap gap-2">{memberPrice.wholesaleTiers.map((tier, i) => <span key={i} className="rounded-xl bg-surface px-3 py-2 text-xs text-ink/70">
               {lang === "zh" ? `${tier.minQuantity} 件起` : `${tier.minQuantity}+ units`} · {money(tier.unitPrice)} / {lang === "zh" ? "件" : "unit"}
             </span>)}</div>
             <p className="mt-2 text-xs text-ink/55">{lang === "zh" ? "按购买数量自动取适用最低单价，与会员价不重复打折。" : "The lowest eligible unit price applies; member discounts are not stacked."}</p>
           </div>}
-          {p.description && (
-            <div className="mt-7 whitespace-pre-wrap border-t border-ink/[0.06] pt-6 text-sm leading-relaxed text-ink/60">
+          {p.description ? (
+            <div className={`whitespace-pre-wrap text-sm leading-relaxed text-ink/60 ${memberPrice?.wholesaleTiers?.length ? "mt-7 border-t border-ink/[0.06] pt-6" : ""}`}>
               {p.description}
             </div>
-          )}
+          ) : !memberPrice?.wholesaleTiers?.length ? (
+            <p className="text-sm text-ink/45">{lang === "zh" ? "该商品暂无更多描述,下单前如有疑问可先联系客服。" : "No further description. Contact support if you have questions before ordering."}</p>
+          ) : null}
         </div>
 
-        <div ref={orderPanel} className="card h-fit scroll-mt-24 p-6 md:p-7 lg:sticky lg:top-24">
+        <div className="product-order card h-fit p-6 md:p-7 lg:sticky lg:top-24">
           <h2 className="mb-5 font-bold">{t.orderInfo}</h2>
           <div className="mb-1.5 flex h-5 items-center justify-between gap-3">
             <label className="label !mb-0 shrink-0">{t.qty}({effectiveMinBuy} ~ {p.maxBuy})</label>
@@ -374,29 +367,6 @@ export default function ProductPage() {
           <p className="mt-3 flex items-center justify-center gap-1 text-[11px] text-ink/35">
             <ShieldCheck size={12} /> {isPresale ? t.presaleHint : isManual ? t.manualHint : t.autoHint}
           </p>
-        </div>
-      </div>
-
-      {/* 手机端悬浮购买栏:只做跳转,提交仍走右侧面板(校验/验证码/优惠码都在那里)。 */}
-      <div className={`store-buybar ${mobileBarVisible ? "is-visible" : ""}`} aria-hidden={!mobileBarVisible}>
-        <div className="store-buybar-inner">
-          <div className="min-w-0">
-            <p className="store-buybar-price">{money(total)}</p>
-            <p className="store-buybar-meta">
-              {presaleEnded ? copy.common.presaleEnded
-                : !quoteReady ? (lang === "zh" ? "正在更新价格…" : "Updating price…")
-                : !meetsMinimumOrderAmount ? `${lang === "zh" ? "起购" : "Min"} ${money(p.minOrderAmount)}`
-                : `${qty} ${lang === "zh" ? "件" : "×"}`}
-            </p>
-          </div>
-          <button type="button" className="btn-primary store-buybar-action"
-            disabled={!quoteReady || presaleEnded || !meetsMinimumOrderAmount || (!isManual && !isPresale && p.stock <= 0)}
-            onClick={() => {
-              orderPanel.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
-              window.setTimeout(() => orderPanel.current?.querySelector<HTMLButtonElement>("button.btn-primary:not(.store-buybar-action)")?.focus({ preventScroll: true }), 320);
-            }}>
-            {presaleEnded ? copy.common.presaleEnded : !meetsMinimumOrderAmount ? (lang === "zh" ? "未达起购" : "Below minimum") : t.choosePlan}
-          </button>
         </div>
       </div>
     </div>

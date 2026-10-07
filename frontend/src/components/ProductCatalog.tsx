@@ -217,7 +217,10 @@ function CatalogCard({ product: p, now }: { product: ProductCard; now: number })
       </div>
       <div className="catalog-product-footer">
         <span className="catalog-product-price"><span>{currencySymbol()}</span>{p.price}</span>
-        <span className="catalog-card-action">{zh ? "选择套餐" : "Choose plan"}<ArrowRight size={15} /></span>
+        <span className="catalog-card-action" aria-hidden="true">
+          <span className="catalog-card-action-label">{zh ? "选择套餐" : "Choose plan"}</span>
+          <ArrowRight size={15} />
+        </span>
       </div>
     </Link>
   );
