@@ -42,9 +42,9 @@ const DEFAULT_SLIDES: HeroSlide[] = [
   {
     id: "instant-delivery", enabled: true, layout: "illustration", tone: "accent",
     eyebrowZh: "数字商品商店", eyebrowEn: "Digital goods store",
-    titleZh: "选好所需，", titleEn: "Find your next",
-    highlightZh: "即刻下单。", highlightEn: "digital essential.",
-    descriptionZh: "无需注册，填写邮箱即可购买。交付方式与使用说明，请查看商品详情。",
+    titleZh: "商店。", titleEn: "The store.",
+    highlightZh: "找到适合你的服务。", highlightEn: "Find your digital essentials.",
+    descriptionZh: "数字订阅与工具服务，在这里按需选择。无需注册，也能轻松下单。",
     descriptionEn: "Shop with your email, no account needed. See each product for delivery details and instructions.",
     chipsZh: [], chipsEn: [],
     ctaLabelZh: "开始选购", ctaLabelEn: "Shop now", ctaUrl: "#products", imageUrl: "",

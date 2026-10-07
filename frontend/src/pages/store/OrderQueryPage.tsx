@@ -2,7 +2,7 @@ import SecretBlock from "../../components/SecretBlock";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
-import { CheckCircle2, Copy, Loader2, History, KeyRound, Search, ShieldCheck, TicketCheck, X } from "lucide-react";
+import { CheckCircle2, Copy, Loader2, History, KeyRound, Search, ShieldCheck, ShoppingBag, TicketCheck, X } from "lucide-react";
 import { ApiError, post, type OrderView } from "../../lib/api";
 import { consumePresaleVoucherToken, findLocalOrder, forgetOrder, localOrders, rememberOrder, type LocalOrder } from "../../lib/orderHistory";
 import { recalledContact } from "../../lib/contactMemory";
@@ -202,7 +202,7 @@ export default function OrderQueryPage() {
   </>);
 
   return (
-    <div className="mx-auto max-w-2xl animate-fade-up">
+    <div className="order-query-page mx-auto max-w-2xl animate-fade-up">
       <div className="mb-6">
         <h1 className="text-2xl font-extrabold tracking-tight">{t.title}</h1>
       </div>
@@ -236,7 +236,7 @@ export default function OrderQueryPage() {
           </div>
         </> : <div className="my-4 rounded-2xl bg-base p-5 text-sm leading-relaxed text-ink/55">{t.empty}</div>}
       </section>
-      <div className="card p-7 md:p-8">
+      <div className="card p-5 sm:p-7 md:p-8">
         <button type="button" className="flex w-full items-center justify-between gap-3 text-left" aria-expanded={manualOpen} aria-controls="manual-order-query" onClick={() => setManualOpen((open) => !open)}>
           <span className="flex items-center gap-2 font-bold"><Search size={17} />{t.manual}</span>
           <span className="text-xs text-primary">{manualOpen ? t.collapse : t.credentials}</span>
@@ -264,15 +264,20 @@ export default function OrderQueryPage() {
           </div>
         </div>}
       {order && statusInfo && (
-        <div className="min-w-0" data-order-result>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-bold">{order.productName} × {order.quantity}</h2>
-            <span className={`text-sm font-semibold ${statusInfo[1]}`}>{statusInfo[0]}</span>
-          </div>
-          <p className="mt-1 text-xs text-ink/40">{t.order} {order.orderNo} · {money(order.amount)}
-            {Number(order.discountAmount) > 0 && ` ${t.discount} ${money(order.discountAmount)}`}
-            {" · "}{new Date(order.createdAt).toLocaleString(lang === "en" ? "en-US" : "zh-CN")}
-          </p>
+        <div className="order-query-result min-w-0 max-w-full" data-order-result>
+          <section className="order-result-summary">
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+              <h2 className="min-w-0 flex-1 text-lg font-bold leading-snug [overflow-wrap:anywhere]">{order.productName} × {order.quantity}</h2>
+              <span className={`rounded-full bg-surface px-3 py-1 text-xs font-semibold ${statusInfo[1]}`}>{statusInfo[0]}</span>
+            </div>
+            <dl className="order-result-meta">
+              <div className="order-result-number"><dt>{t.number}</dt><dd className="font-mono">{order.orderNo}</dd></div>
+              <div><dt>{lang === "zh" ? "订单金额" : "Amount"}</dt><dd className="text-xl font-bold text-ink">{money(order.amount)}</dd>
+                {Number(order.discountAmount) > 0 && <dd className="text-primary">{t.discount.replace(/^·\s*/, "")} {money(order.discountAmount)}</dd>}
+              </div>
+              <div><dt>{lang === "zh" ? "创建时间" : "Created"}</dt><dd>{new Date(order.createdAt).toLocaleString(lang === "en" ? "en-US" : "zh-CN")}</dd></div>
+            </dl>
+          </section>
 
           {order.cards.length > 0 && (
             <div className="mt-6">
@@ -327,9 +332,10 @@ export default function OrderQueryPage() {
             </div>
           )}
           {order.usageNote && (
-            <div className="mt-4 whitespace-pre-wrap rounded-2xl border border-ink/[0.06] p-4 text-xs leading-relaxed text-ink/60">
-              {order.usageNote}
-            </div>
+            <section className="mt-5 min-w-0 rounded-2xl border border-ink/[0.08] p-4">
+              <h3 className="mb-2 text-xs font-semibold text-ink/70">{lang === "zh" ? "使用说明" : "Instructions"}</h3>
+              <p className="whitespace-pre-wrap text-xs leading-relaxed text-ink/60 [overflow-wrap:anywhere]">{order.usageNote}</p>
+            </section>
           )}
           {order.status === "PENDING" && (
             <Link to={`/pay/${order.orderNo}`} className="btn-primary mt-5 w-full !py-3">{t.pay}</Link>
@@ -359,13 +365,16 @@ function OrderQueryDialog({ title, closeLabel, onClose, children, returnFocus }:
   }, []);
   return createPortal(
     <dialog ref={dialog} aria-labelledby="order-dialog-title" onCancel={(event) => { event.preventDefault(); onClose(); }}
-      className="order-query-dialog m-auto w-[calc(100%_-_2rem)] max-w-2xl overflow-hidden rounded-2xl border border-ink/10 bg-surface p-0 text-ink shadow-xl">
-      <div className="flex max-h-[85dvh] flex-col">
-        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-ink/10 px-5 py-4 sm:px-7">
-          <h2 id="order-dialog-title" className="font-bold">{title}</h2>
-          <button autoFocus type="button" aria-label={closeLabel} onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full text-ink/60 hover:bg-ink/5"><X size={20} /></button>
+      className="order-query-dialog border border-ink/10 bg-surface text-ink">
+      <div className="order-query-dialog-frame">
+        <header className="order-query-dialog-header">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent-soft text-primary" aria-hidden="true"><ShoppingBag size={18} /></span>
+            <h2 id="order-dialog-title" className="min-w-0 font-bold">{title}</h2>
+          </div>
+          <button autoFocus type="button" aria-label={closeLabel} onClick={onClose} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-ink/[0.04] text-ink/60 hover:bg-ink/10"><X size={19} /></button>
         </header>
-        <div className="overflow-y-auto overscroll-contain p-5 sm:p-7">{children}</div>
+        <div className="order-query-dialog-body">{children}</div>
       </div>
     </dialog>, document.body,
   );

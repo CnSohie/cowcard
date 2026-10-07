@@ -18,8 +18,8 @@ export default function SecretBlock({ value, label }: { value: string; label?: s
       timer.current = setTimeout(() => setCopied(false), 1800);
     } catch { setError(true); }
   }
-  return <div className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-primary/10 bg-accent-soft text-left">
-    <div className="flex items-center justify-between gap-3 border-b border-primary/10 px-4 py-2">
+  return <div className="secret-block w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-primary/10 bg-accent-soft/50 text-left">
+    <div className="secret-block-toolbar flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-primary/10 px-4 py-2">
       <span className="min-w-0 truncate text-xs font-semibold text-ink/55">{label || (lang === "zh" ? "交付内容" : "Delivery content")}</span>
       <button type="button" className="btn-ghost shrink-0 !px-3 !py-2 text-xs" onClick={copy}>
         {copied ? <Check size={14} /> : <Copy size={14} />}{copied ? (lang === "zh" ? "已复制" : "Copied") : (lang === "zh" ? "复制完整内容" : "Copy all")}

@@ -12,7 +12,7 @@ export default function ProductImage({ name, coverImage, className = "" }: {
   const brand = matchProductBrand(name);
   const hasCover = !!coverImage && failedUrl !== coverImage;
   return (
-    <span className={`product-image${!hasCover && brand ? " product-image-brand" : ""} ${className}`}>
+    <span className={`product-image${hasCover ? " product-image-cover" : brand ? " product-image-brand" : ""} ${className}`}>
       {hasCover
         ? <img src={coverImage} alt="" loading="lazy" decoding="async" onError={() => setFailedUrl(coverImage)} />
         : brand

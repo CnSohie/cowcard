@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  Ban, ChevronLeft, ChevronRight, Crown, Gift, Mail, Search, ShieldCheck,
+  Ban, Check, ChevronLeft, ChevronRight, Crown, Gift, Mail, Search, ShieldCheck,
   Snowflake, UsersRound, Wallet, X,
 } from "lucide-react";
 import { ApiError, get, post } from "../../lib/api";
@@ -26,6 +26,7 @@ interface MemberLevelOption {
   manualOnly: boolean;
   enabled: boolean;
   defaultLevel: boolean;
+  discountRate?: string;
 }
 interface PageResult<T> { items: T[]; total: number; page: number; size: number; }
 interface MemberStats { total: number; enabled: number; disabled: number; balance: string; frozen: string; }
@@ -46,6 +47,51 @@ const UNFREEZE_REASONS = [
 
 function fmt(s: string | null) {
   return s ? new Date(s).toLocaleString() : "—";
+}
+
+function levelPriceLabel(level: MemberLevelOption) {
+  if (level.discountRate == null || level.discountRate === "") return null;
+  const rate = Number(level.discountRate);
+  if (!Number.isFinite(rate)) return null;
+  return rate >= 100 ? "无折扣" : `计价 ${Number.isInteger(rate) ? rate.toFixed(0) : rate}%`;
+}
+
+function LevelChoice({
+  level, picked, current, onPick,
+}: {
+  level: MemberLevelOption;
+  picked: boolean;
+  current: boolean;
+  onPick: () => void;
+}) {
+  const price = levelPriceLabel(level);
+  return (
+    <button type="button" role="radio" aria-checked={picked} onClick={onPick}
+      className={`flex w-full min-w-0 items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition ${
+        picked ? "border-primary/40 bg-accent-soft" : "border-ink/10 bg-surface hover:border-primary/25"
+      }`}>
+      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-2xl ${
+        picked ? "bg-primary text-primary-contrast" : "bg-ink/[0.04] text-ink/50"
+      }`}>
+        <Crown size={16} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-bold text-ink">{level.name}</span>
+        <span className="mt-1.5 flex flex-wrap gap-1.5">
+          {current && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">当前</span>}
+          {level.manualOnly && <span className="rounded-full bg-ink/[0.05] px-2 py-0.5 text-[10px] font-bold text-ink/55">仅人工</span>}
+          {level.defaultLevel && <span className="rounded-full bg-ink/[0.05] px-2 py-0.5 text-[10px] font-bold text-ink/55">默认</span>}
+          {!level.enabled && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">已停用</span>}
+          {price && <span className="rounded-full bg-ink/[0.05] px-2 py-0.5 text-[10px] font-bold text-ink/55">{price}</span>}
+        </span>
+      </span>
+      <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${
+        picked ? "border-primary bg-primary text-primary-contrast" : "border-ink/15"
+      }`} aria-hidden="true">
+        {picked && <Check size={12} />}
+      </span>
+    </button>
+  );
 }
 
 function hasAdminAuth(code: string) {
@@ -339,20 +385,36 @@ export default function MembersAdmin() {
                 </p>
                 {canAssignLevel ? (
                   <>
-                    <label className="label" htmlFor="member-level">授予等级</label>
-                    <select id="member-level" className="input mb-3" value={levelChoice}
-                      disabled={levelsState !== "ready"}
-                      onChange={(e) => setLevelChoice(e.target.value)}>
-                      <option value="">{levelsState === "loading" ? "正在加载等级…" : levelsState === "error" ? "等级加载失败" : "选择等级"}</option>
-                      {levels.map((level) => (
-                        <option key={level.id} value={level.id}>
-                          {level.name}{level.manualOnly ? " · 仅人工" : ""}{level.defaultLevel ? " · 默认" : ""}{level.enabled ? "" : " · 已停用"}
-                        </option>
-                      ))}
-                      {selected.levelId != null && !levels.some((level) => level.id === selected.levelId) && (
-                        <option value={selected.levelId}>{levelLabel(selected)}</option>
-                      )}
-                    </select>
+                    <p className="label">授予等级</p>
+                    {levelsState === "loading" && (
+                      <div className="mb-3 space-y-2" role="status" aria-label="正在加载等级">
+                        <div className="h-16 animate-pulse rounded-2xl bg-ink/[0.04]" />
+                        <div className="h-16 animate-pulse rounded-2xl bg-ink/[0.04]" />
+                      </div>
+                    )}
+                    {levelsState === "error" && (
+                      <p className="mb-3 text-xs leading-6 text-ink/45">等级加载失败，关闭后重新打开会员即可重试。</p>
+                    )}
+                    {levelsState === "ready" && (
+                      <div role="radiogroup" aria-label="授予等级" className="mb-3 space-y-2">
+                        {levels.map((level) => (
+                          <LevelChoice key={level.id} level={level}
+                            picked={String(level.id) === levelChoice}
+                            current={level.id === selected.levelId}
+                            onPick={() => setLevelChoice(String(level.id))} />
+                        ))}
+                        {selected.levelId != null && !levels.some((level) => level.id === selected.levelId) && (
+                          <LevelChoice
+                            level={{ id: selected.levelId, name: levelLabel(selected), manualOnly: false, enabled: true, defaultLevel: false }}
+                            picked={String(selected.levelId) === levelChoice}
+                            current
+                            onPick={() => setLevelChoice(String(selected.levelId))} />
+                        )}
+                        {levels.length === 0 && selected.levelId == null && (
+                          <p className="rounded-2xl bg-ink/[0.03] px-4 py-3 text-xs leading-6 text-ink/45">还没有可授予的等级。</p>
+                        )}
+                      </div>
+                    )}
                     <p className="mb-3 text-xs leading-6 text-ink/45">
                       新建并保存的等级会立即出现在这里。授予后马上生效；仅人工授予的等级不会被充值或消费自动替换。
                     </p>
