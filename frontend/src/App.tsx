@@ -1,7 +1,8 @@
 import { lazy, Suspense } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
 import StoreLayout from "./components/StoreLayout";
 import AdminAuthGuard from "./components/AdminAuthGuard";
+import AppErrorBoundary from "./components/AppErrorBoundary";
 const Home = lazy(() => import("./pages/store/Home"));
 const ProductPage = lazy(() => import("./pages/store/ProductPage"));
 const PayPage = lazy(() => import("./pages/store/PayPage"));
@@ -36,7 +37,9 @@ const RiskReviewsAdmin = lazy(() => import("./pages/admin/RiskReviewsAdmin"));
 const SupportTicketsAdmin = lazy(() => import("./pages/admin/SupportTicketsAdmin"));
 
 export default function App() {
+  const location = useLocation();
   return (
+    <AppErrorBoundary key={`${location.pathname}${location.search}`}>
     <Suspense fallback={<div className="mx-auto max-w-6xl px-5 py-16" role="status"><div className="h-5 w-32 animate-pulse rounded bg-ink/10" /><div className="mt-5 h-48 animate-pulse rounded-2xl bg-ink/[0.04]" /><span className="sr-only">Loading…</span></div>}>
     <Routes>
       <Route element={<StoreLayout />}>
@@ -77,5 +80,6 @@ export default function App() {
       </Route>
     </Routes>
     </Suspense>
+    </AppErrorBoundary>
   );
 }

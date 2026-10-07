@@ -104,7 +104,7 @@ export default function PostsPage() {
       {/* 列表 */}
       {loading ? (
         <div className="card grid place-items-center py-24 text-ink/40">{copy.common.loading}</div>
-      ) : !data || data.items.length === 0 ? (
+      ) : !data?.items?.length ? (
         <div className="card grid place-items-center gap-3 py-24 text-ink/40">
           <span className="grid h-14 w-14 place-items-center rounded-full bg-accent-soft"><BookOpen size={22} className="text-primary" /></span>
           <p className="text-sm">{kw || category ? t.noMatch : t.empty}</p>
