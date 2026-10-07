@@ -23,6 +23,8 @@ products[3].deliveryMode = 'PRESALE_VOUCHER'; products[3].presaleSaleEndAt = '20
   const browser = await chromium.launch({ headless: true, channel: 'chrome' });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    let siteName = 'Ka Store';
+    let heroSlides;
     page.setDefaultTimeout(10000);
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -32,7 +34,8 @@ products[3].deliveryMode = 'PRESALE_VOUCHER'; products[3].presaleSaleEndAt = '20
     });
     await page.route('**/api/**', (route) => {
       const path = new URL(route.request().url()).pathname;
-      const data = path === '/api/store/site' ? { siteName: 'Ka Store', theme: 'mint', mode: 'light', currency: 'CNY' }
+      const data = path === '/api/store/availability' ? { state: 'OPEN' }
+        : path === '/api/store/site' ? { siteName, heroSlides, theme: 'mint', mode: 'light', currency: 'CNY' }
         : path === '/api/store/categories' ? categories : path === '/api/store/products' ? products
         : path.startsWith('/api/store/products/') ? { ...products[Number(path.split('/').pop()) - 1], description: '商品详情' } : {};
       return route.fulfill({ json: { code: 0, data } });
@@ -90,6 +93,13 @@ products[3].deliveryMode = 'PRESALE_VOUCHER'; products[3].presaleSaleEndAt = '20
         await page.evaluate((mode) => { document.documentElement.dataset.mode = mode; }, mode);
         await page.waitForTimeout(350); // Let the existing theme color transition settle before visual QA.
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${width} ${mode}: no overflow`);
+        assert(await page.locator('.store-header').evaluate(el => el.scrollWidth <= el.clientWidth), `${width}: navigation fits without clipping`);
+        assert(await page.locator('.catalog-grid').evaluate(el => el.scrollWidth <= el.clientWidth), `${width}: product grid fits`);
+        const actions = await page.locator('.catalog-card-action').evaluateAll(els => els.map(el => {
+          const action = el.getBoundingClientRect(), card = el.closest('.catalog-product').getBoundingClientRect();
+          return action.height >= 40 && action.left >= card.left && action.right <= card.right;
+        }));
+        assert(actions.every(Boolean), `${width}: usable card actions stay inside cards`);
         const boxes = await cards.evaluateAll((els) => els.map((el) => ({ top: el.offsetTop, height: el.getBoundingClientRect().height })));
         for (const box of boxes) assert(boxes.filter((b) => b.top === box.top).every((b) => Math.abs(b.height - box.height) < 1), 'aligned rows');
         if ([390, 1440].includes(width)) {
@@ -109,8 +119,72 @@ products[3].deliveryMode = 'PRESALE_VOUCHER'; products[3].presaleSaleEndAt = '20
     assert.equal(await page.getByRole('button', { name: '下一页', exact: true }).isDisabled(), true);
     await page.goto(base + '/?page=-1&size=999'); await cards.first().waitFor();
     assert.equal(await cards.count(), 12, 'invalid params use bounded defaults');
+    for (const count of [1, 6]) {
+      heroSlides = JSON.stringify(Array.from({ length: count }, (_, i) => ({
+        id: `custom-${i}`, enabled: true, layout: 'illustration', tone: 'accent',
+        titleZh: `自定义轮播 ${i + 1}`, highlightZh: '找到适合你的服务。',
+        descriptionZh: '自定义轮播与行动按钮保持可用。', chipsZh: [],
+        ctaLabelZh: '查看商品', ctaUrl: '#products',
+      })));
+      await page.reload(); await cards.first().waitFor();
+      for (const width of [320, 390]) {
+        await page.setViewportSize({ width, height: 1000 }); await page.evaluate(() => scrollTo(0, 0));
+        const hero = await page.locator('.store-hero').boundingBox();
+        const cta = await page.locator('.hero-slide[aria-hidden="false"] .btn-primary').boundingBox();
+        assert(cta.x >= hero.x && cta.x + cta.width <= hero.x + hero.width, 'custom CTA fits phone');
+        if (count === 1) assert.equal(await page.locator('.hero-controls').isVisible(), false, 'single slide hides controls');
+        else {
+          const controls = await page.locator('.hero-controls').boundingBox();
+          assert(controls.x >= hero.x && controls.x + controls.width <= hero.x + hero.width, 'six-slide controls fit phone');
+          assert(cta.y + cta.height <= controls.y, 'large carousel does not overlap CTA');
+          for (let i = 0; i < 6; i++) {
+            await page.getByRole('button', { name: '下一张', exact: true }).click();
+            const current = await page.locator('.store-hero').boundingBox();
+            assert(Math.abs(current.height - hero.height) < 1, 'custom carousel height stays fixed');
+          }
+        }
+      }
+    }
+    // The banner is optional:停用全部屏后首页直接从分类开始。
+    heroSlides = JSON.stringify([0, 1].map((i) => ({
+      id: `off-${i}`, enabled: false, layout: 'illustration', tone: 'accent',
+      titleZh: '已停用', highlightZh: '', descriptionZh: '', chipsZh: [], ctaLabelZh: '', ctaUrl: '', imageUrl: '',
+    })));
+    await page.reload(); await cards.first().waitFor();
+    assert.equal(await page.locator('.store-hero').count(), 0, '全部停用时首页不出现横幅');
+    const railTop = await page.locator('.catalog-chip-rail').boundingBox();
+    const mainTop = await page.locator('main').boundingBox();
+    assert(railTop.y - mainTop.y < 120, '无横幅时分类紧接顶栏');
+    heroSlides = undefined;
+    // Long branding and a logged-in nickname must not push the desktop/tablet navigation offscreen.
+    await page.evaluate(() => {
+      localStorage.setItem('ka.m.access', 'layout-test-token');
+      localStorage.setItem('ka.m.user', JSON.stringify({ email: 'layout@example.com', nickname: '超长会员名称用于验证导航布局' }));
+      const branding = JSON.parse(localStorage.getItem('ka.site.branding') || '{}');
+      localStorage.setItem('ka.site.branding', JSON.stringify({ ...branding, siteName: 'Ka Store with a very long store name' }));
+    });
+    siteName = 'Ka Store with a very long store name';
+    await page.reload(); await cards.first().waitFor();
+    for (const width of [320, 390, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 1000 });
+      assert(await page.locator('.store-header').evaluate(el => el.scrollWidth <= el.clientWidth), `${width}: member navigation fits`);
+    }
+    // 移动端:顶栏保持单行,文章/提货码/语言只在底部面板里,不常驻遮挡内容。
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileHeader = await page.locator('.store-header').boundingBox();
+    assert(mobileHeader.height < 70, '移动端顶栏保持单行');
+    assert.equal(await page.locator('.store-mobile-secondary').isVisible(), false, '辅助导航行不再常驻');
+    const cardWidth = await cards.first().boundingBox();
+    assert(cardWidth.width > 300, '手机单列卡片占满内容宽');
+    await page.getByRole('button', { name: '更多入口' }).click();
+    await page.getByRole('dialog').waitFor();
+    assert(await page.getByRole('button', { name: '语言', exact: true }).isVisible(), '语言入口在底部面板内可用');
+    assert.equal(await page.evaluate(() => document.body.style.overflow), 'hidden', '面板打开时锁定背景滚动');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.getByRole('dialog').count(), 0, 'Esc 关闭面板');
+    await page.setViewportSize({ width: 1440, height: 1000 });
     assert.deepEqual(errors, []);
-    console.log('PASS: 157 products, 40 categories, paging/back, sort, availability, 5 widths, both modes, aligned rows, URL bounds.');
+    console.log('PASS: 157 products, 40 categories, paging/back, sort, availability, 5 widths, both modes, aligned rows, navigation/action bounds, URL bounds, single/six-slide custom banners.');
     console.log('Screenshots:', output);
   } finally { await browser.close(); }
 })().catch((e) => { console.error(e); process.exitCode = 1; });

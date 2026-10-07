@@ -33,3 +33,25 @@ Catalog pagination currently limits browser rendering. The existing public API s
 `storefront.smoke.cjs` 另验证首次及重复查单不会主动调用滚动 API。后端 `JwtAuthenticationFilterTest` 与 `BalancePaymentStrategyTest` 覆盖过期身份不能落成游客订单、无令牌游客仍可下单、登录入口不受旧令牌阻断，以及余额拒付不误报登录过期。
 
 查单结果现通过原生模态详情框展示。`order-dialog.smoke.cjs` 覆盖点击后立即加载、结果位于手机视口内、Esc 关闭与焦点归还、请求未结束时关闭不被迟到响应重开、错误重试、缺少本机查询凭证时在弹层内填表，以及新查询不显示旧结果。截图输出到 `/tmp/ka-order-query-*.png`。
+
+## 2026-10-05 商城响应式布局
+
+移动端使用顶部商品/订单导航，文章、提货和语言入口保留在辅助导航；商品卡使用标题、封面、价格与药丸按钮的紧凑布局，桌面端三列、平板两列、手机单列。所有颜色继续使用语义主题令牌，商家轮播配置、URL 筛选和分页保持可用。
+
+订单详情为居中限宽弹层，手机两侧至少 20px 留白；固定标题与关闭按钮，内容区域独立滚动。`order-dialog.smoke.cjs` 新增超长名称、订单号、无空格卡密、使用说明、人工交付和完整原文复制测试，覆盖 320/375/390/430/768/1440px 与 844×390 横屏、四主题和两模式。`catalog.smoke.cjs` 另检查顶部导航、会员导航、商品网格、操作按钮边界和单张/六张自定义轮播。模拟接口已对齐 `/orders/query-by-token` 和营业状态接口；不调用真实支付或写入真实订单。
+
+浏览器检查使用本地 Chrome，未替代真实 iPhone Safari 验证。此调整仅涉及前端，无数据库迁移。
+
+## 2026-10-07 首页版面重构
+
+首页横幅改为可选区块：后台「站点设置 → 首页横幅」可一键隐藏全部屏，也可逐屏停用。启用 1 屏渲染静态大标题（`.hero-controls` 不出现），启用 2 屏以上出现进度、页码与前后箭头（`上一张`/`下一张`），全部停用时页面不渲染 `.store-hero`。`catalog.smoke.cjs` 新增「全部停用后首页直接从分类开始」断言；`storefront.smoke.cjs` 的模板轮播断言改为分类药丸 chip 与顶栏「我的订单」入口可见性（原 `.hero-service-links` 版式已移除）。
+
+分类从侧边栏改为顶部可横向滚动的药丸 chip，搜索/排序/仅看可购买收进一条工具行（手机隐藏「每页」）；分类多于 6 个时桌面端保留下拉选择器，手机端仅用 chip。商品卡仍是 `.catalog-product` + `.catalog-card-action`，测试选择器未变。当前环境未安装 Playwright，本次未执行浏览器回归。
+
+同日修复 `/posts` 白屏：`PostsPage` 在接口返回体缺少 `items` 时直接读 `data.items.length` 抛错，而整棵路由树没有错误边界，异常冒泡到根节点后 `#root` 被清空，表现为整页空白。现 `PostsPage` 改用 `!data?.items?.length` 判空（异常响应回落空状态），并新增 `components/AppErrorBoundary.tsx` 包住 `App.tsx` 的整个 `Routes`，按 `pathname+search` 作 key 在路由切换时自动复位。所有前台/后台路由已逐个跑通；`/about` 有一处装饰性光斑按设计溢出视口，不算回归。
+
+## 2026-10-07 移动端专项
+
+移动端不再沿用双行顶栏：≤767px 顶栏固定 3.5rem 单行（品牌 + 全部商品/我的订单 + 主题/登录/更多），`MoreHorizontal` 打开底部面板 `.store-sheet`（`role="dialog"`，Esc 与遮罩关闭、打开时 `body.overflow=hidden`、链接点击后自动关闭）；文章、提货码、语言、明暗的完整入口都在面板里。原先常驻的 `.store-mobile-secondary` 会在滚动时压在卡片内容上，已改为 `display:none`。
+
+横幅在手机上只保留文案与进度/箭头，配图 `display:none`；分类 chip rail 右侧用渐隐 mask 提示可横滑；每页数量选择器移动端隐藏。`catalog.smoke.cjs` 新增断言：移动端顶栏高度 < 70px、辅助导航行不可见、手机单列卡片宽度 > 300px、面板可开且锁滚动、Esc 可关。`storefront.smoke.cjs` 切语言前先打开「更多入口」面板。已在 390×844 逐个跑通 `/`、`/posts`、`/posts/:slug`、`/product/:id`、`/order`、`/redeem`、`/about`、`/tos`、`/pay/:orderNo`、`/login`、`/me`，页面级无横向溢出。Playwright 未安装，浏览器回归待有环境时执行。

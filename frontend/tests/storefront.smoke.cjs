@@ -18,20 +18,22 @@ const base=process.env.UI_BASE_URL || 'http://127.0.0.1:5173';
  await page.route('**/api/**',async route=>{
  const url=new URL(route.request().url());let data={};
  if(url.pathname==='/api/store/site'){siteCalls++;data={siteName:'Ka Store',announcement:'购买后可在「订单查询」中查看交付内容',currency:'CNY',theme:'mint',mode:'light',captchaEnabled:'0'};}
+ else if(url.pathname==='/api/store/availability')data={state:'OPEN'};
  else if(url.pathname==='/api/store/categories')data=[{id:1,name:'会员订阅'},{id:2,name:'数字服务'}];
  else if(url.pathname==='/api/store/products'){if(failProducts)return route.fulfill({status:503,json:{code:503,message:'暂时不可用'}});data=[product,{...product,id:2,name:'云端存储兑换码',price:'19.00',categoryId:2},{...product,id:3,name:'设计素材包',price:'49.00',stock:0,categoryId:2}];}
  else if(url.pathname==='/api/store/products/1')data=product;
+ else if(url.pathname==='/api/store/products/1/member-price')data={unitPrice:product.price,discountPerUnit:'0',levelName:null,source:'LIST',wholesaleTiers:[]};
  else if(url.pathname.includes('/pay/summary/'))data={orderNo:'TEST123',productName:product.name,amount:'29.90',status,orderType:'GOODS',deliveryMode:'AUTO_CARD',walletPaidAmount:'0',expireAt:new Date(Date.now()+600000).toISOString()};
  else if(url.pathname==='/api/pay/channels')data=[{code:'ALIPAY_OFFICIAL',displayName:'支付宝',feeRate:'0',feeFixed:'0'},{code:'CRYPTO_TRANSFER',displayName:'数字货币',feeRate:'1',feeFixed:'0'},{code:'BALANCE',displayName:'余额支付',feeRate:'0',feeFixed:'0'}];
  else if(url.pathname==='/api/pay/crypto/options')data=[{chainCode:'BASE',tokens:[{symbol:'USDC'}]},{chainCode:'BSC',tokens:[{symbol:'USDT'}]}];
  else if(url.pathname.includes('/pay/status/')){statuses++;data=status;}
  else if(url.pathname==='/api/pay/create'){creates++;await new Promise(r=>setTimeout(r,createDelay));data=JSON.parse(route.request().postData()).channelCode.startsWith('CRYPTO')?{kind:'CRYPTO',data:intent}:{kind:'QRCODE',data:{qrContent:'https://example.com/mock-payment'}};}
  else if(url.pathname.includes('/pay/crypto/intent/')){if(!creates || url.searchParams.get('chain')==='BSC')return route.fulfill({json:{code:3001,message:'Not found'}});data=intent;}
- else if(url.pathname==='/api/orders/query'){if(queryCase==='error')return route.fulfill({json:{code:3001,message:'订单不存在或查询凭证错误'}});const body=route.request().postDataJSON();assert.equal(body.queryToken,'test-token');data={orderNo:'EMAILTEST',productName:product.name,amount:'29.90',quantity:1,status:'PENDING',cards:[],createdAt:new Date().toISOString(),deliveryMode:queryCase==='presale'?'PRESALE_VOUCHER':'AUTO_CARD',presaleVoucherStatus:'WAITING_PAYMENT'};}
+ else if(['/api/orders/query','/api/orders/query-by-token'].includes(url.pathname)){if(queryCase==='error')return route.fulfill({json:{code:3001,message:'订单不存在或查询凭证错误'}});const body=route.request().postDataJSON();if(url.pathname.endsWith('query-by-token'))assert.equal(body.queryToken,'test-token');else assert.equal(body.contact,'remember@example.com');data={orderNo:'EMAILTEST',productName:product.name,amount:'29.90',quantity:1,status:'PENDING',cards:[],createdAt:new Date().toISOString(),deliveryMode:queryCase==='presale'?'PRESALE_VOUCHER':'AUTO_CARD',presaleVoucherStatus:'WAITING_PAYMENT'};}
  else if(url.pathname==='/api/orders')data={orderNo:'EMAILTEST',amount:'29.90',queryToken:'test-token'};
  await route.fulfill({json:{code:0,data}});
  });
- await page.goto(base+'/');await page.getByRole('heading',{name:'全部商品'}).waitFor();await page.getByRole('link',{name:/数字会员月卡/}).waitFor();
+ await page.goto(base+'/');await page.getByRole('button',{name:/全部商品/}).waitFor();await page.getByRole('link',{name:/数字会员月卡/}).waitFor();
  assert.equal(siteCalls,1,'site config should be deduplicated');
  const firstTitle=await page.getByRole('heading',{level:1}).textContent();
  await page.getByRole('button',{name:'下一张',exact:true}).click();assert.notEqual(await page.getByRole('heading',{level:1}).textContent(),firstTitle);
@@ -52,11 +54,12 @@ const base=process.env.UI_BASE_URL || 'http://127.0.0.1:5173';
  await page.setViewportSize({width:1280,height:900});
  await page.evaluate(()=>{document.documentElement.dataset.theme='cow';document.documentElement.dataset.mode='light';scrollTo(0,0);});
  await page.waitForTimeout(350);
- assert(await page.locator('.hero-service-links').isVisible(), 'order shortcuts remain visible in CoW theme');
+ assert(await page.getByRole('button',{name:/AI 订阅/}).isVisible(), 'category chips remain visible in CoW theme');
  await page.screenshot({path:join(output,'home-cow.png'),fullPage:false});
  await page.evaluate(()=>{document.documentElement.dataset.theme='mint';});
  await page.waitForTimeout(350);
- assert(await page.locator('.hero-service-links').isVisible(), 'order shortcuts are visible');
+ assert(await page.getByRole('button',{name:/AI 订阅/}).isVisible(), 'category chips are visible');
+ assert(await page.getByRole('link',{name:'我的订单'}).first().isVisible(), 'order entry stays in the header');
  await page.screenshot({path:join(output,'home-mint.png'),fullPage:false});
  await page.setViewportSize({width:390,height:844});
  await page.goto(base+'/product/1');await page.locator('input[type=email]').fill('remember@example.com');
@@ -82,7 +85,8 @@ const base=process.env.UI_BASE_URL || 'http://127.0.0.1:5173';
  assert.equal(await page.evaluate(() => window.__queryScrollCalls), 0, 'repeat query does not force scrolling');
  await page.evaluate(() => { window.scrollTo = window.__originalScrollTo; Element.prototype.scrollIntoView = window.__originalScrollIntoView; });
  await page.getByRole('button',{name:'关闭订单详情'}).click();
- await page.getByRole('button',{name:'语言',exact:true}).filter({visible:true}).click();
+ await page.getByRole('button',{name:'更多入口'}).click();
+ await page.getByRole('button',{name:'语言',exact:true}).click();
  await page.getByRole('heading',{name:'Orders',exact:true}).waitFor();
  await page.getByRole('button',{name:'Look up 数字会员月卡 EMAILTEST',exact:true}).click();
  await page.getByText('Awaiting payment',{exact:true}).waitFor();
