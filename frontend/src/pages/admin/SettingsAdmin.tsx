@@ -298,15 +298,24 @@ export default function SettingsAdmin() {
       <div className="card mb-5 p-6">
         <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="mb-1 flex items-center gap-2 font-bold"><LayoutTemplate size={16} /> 首页轮播设计</h2>
+            <h2 className="mb-1 flex items-center gap-2 font-bold"><LayoutTemplate size={16} /> 首页横幅（可选）</h2>
             <p className="max-w-2xl text-xs leading-relaxed text-ink/45">
-              每一屏都可以使用不同内容和视觉版式。支持主题插画、支付卡片、购买流程以及自定义图片；拖动顺序由上下按钮控制，最多 6 屏。
+              首页横幅是可选区块：启用 1 屏时按静态大标题展示；启用 2 屏以上才出现轮播与页码；全部停用时首页隐藏整个横幅，直接从商品分类开始。每屏可单独设置内容与视觉版式，最多 6 屏。
             </p>
           </div>
-          <button className="btn-ghost !px-4 !py-2.5 text-xs" disabled={heroSlides.length >= 6}
-            onClick={() => setHeroSlides((current) => [...current, newHeroSlide()])}>
-            <Plus size={14} /> 添加一屏
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="btn-ghost !px-4 !py-2.5 text-xs"
+              onClick={() => setHeroSlides((current) => {
+                const allOff = current.every((slide) => !slide.enabled);
+                return current.map((slide) => ({ ...slide, enabled: allOff }));
+              })}>
+              {heroSlides.some((slide) => slide.enabled) ? <><EyeOff size={14} /> 隐藏整个横幅</> : <><Eye size={14} /> 启用横幅</>}
+            </button>
+            <button className="btn-ghost !px-4 !py-2.5 text-xs" disabled={heroSlides.length >= 6}
+              onClick={() => setHeroSlides((current) => [...current, newHeroSlide()])}>
+              <Plus size={14} /> 添加一屏
+            </button>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -428,7 +437,7 @@ export default function SettingsAdmin() {
           ))}
         </div>
         <p className="mt-4 text-[11px] leading-relaxed text-ink/40">
-          保存后前台立即读取新轮播。全部停用时会自动回落到内置默认内容，避免首页出现空白。
+          保存后前台立即读取新横幅。想要更简洁的首页，把不需要的屏逐一点「停用」即可；全部停用后首页只保留商品目录。
         </p>
       </div>
 

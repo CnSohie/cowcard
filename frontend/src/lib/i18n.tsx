@@ -7,10 +7,10 @@ const STORAGE_KEY = "ka.lang";
 const UI_COPY = {
   zh: {
     nav: {
-      store: "商店",
+      store: "全部商品",
       posts: "文章",
-      order: "查单",
-      redeem: "提货",
+      order: "我的订单",
+      redeem: "提货码",
       support: "客服",
       login: "登录",
       memberCenter: "会员中心",
@@ -184,6 +184,8 @@ const UI_COPY = {
       presaleHint: "付款后领取提货码，兑换后可在会员中心查看发货进度",
       presaleVoucher: "预售 · 电子提货码",
       inStock: "库存充足",
+      choosePlan: "选择套餐",
+      backToTop: "返回顶部",
     },
     pay: {
       loadFailed: "订单加载失败",
@@ -435,6 +437,8 @@ const UI_COPY = {
       presaleHint: "Claim the voucher after payment. Signed-in members can redeem early and track delivery status.",
       presaleVoucher: "Presale · voucher",
       inStock: "In stock",
+      choosePlan: "Choose plan",
+      backToTop: "Back to top",
     },
     pay: {
       loadFailed: "Failed to load order",

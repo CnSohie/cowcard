@@ -1,7 +1,7 @@
 import StoreAvailability, { StoreLoadingCard } from "./StoreAvailability";
 import { Suspense, useEffect, useLayoutEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { Languages, Moon, Newspaper, Search, ShoppingBag, Sun, TicketCheck, UserRound, ArrowUpRight, ArrowUp } from "lucide-react";
+import { Languages, Moon, MoreHorizontal, Newspaper, Search, ShoppingBag, Sun, TicketCheck, UserRound, ArrowUpRight, ArrowUp } from "lucide-react";
 import { loadSite, readSiteBranding } from "../lib/site";
 import SiteMark from "./SiteMark";
 import { isMemberLoggedIn, memberInfo } from "../lib/memberApi";
@@ -15,11 +15,13 @@ export default function StoreLayout() {
     announcement: "",
   }));
   const [dark, setDark] = useState(isDark());
+  const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
   const { lang, setLang, copy } = useI18n();
   const member = isMemberLoggedIn() ? memberInfo() : null;
 
   useLayoutEffect(() => {
+    setMenuOpen(false);
     if (!location.hash) window.scrollTo({ top: 0, left: 0, behavior: "instant" });
   }, [location.pathname]);
   const BASE_NAV = [
@@ -41,6 +43,19 @@ export default function StoreLayout() {
       .catch(() => void 0);
   }, []);
 
+  // 移动端入口面板:锁背景滚动 + Esc 关闭。
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setMenuOpen(false); };
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
   const active = (to: string) => {
     const [path, query] = to.split("?");
     if (query) return location.pathname === path && location.search === `?${query}`;
@@ -49,11 +64,11 @@ export default function StoreLayout() {
 
   return (
     <div className="storefront min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-ink/[0.06] bg-surface/95">
-        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-5">
-          <Link to="/" className="flex items-center gap-2.5">
-            <SiteMark alt={site.siteName || "Ka"} className="h-9 w-9 rounded-2xl object-cover" />
-            <span className="hidden text-lg font-extrabold tracking-tight min-[400px]:block">{site.siteName}</span>
+      <header className="store-header sticky top-0 z-40 border-b border-ink/[0.06] bg-base/95">
+        <div className="store-header-inner mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
+          <Link to="/" className="store-brand flex min-w-0 items-center gap-2.5" title={site.siteName}>
+            <SiteMark alt={site.siteName || "Ka"} className="store-brand-icon shrink-0 rounded-xl object-cover" />
+            <span className="truncate text-lg font-extrabold tracking-tight">{site.siteName}</span>
           </Link>
           <nav className="hidden items-center gap-1 md:flex lg:gap-2">
             {nav.map((n) => (
@@ -61,9 +76,7 @@ export default function StoreLayout() {
                 key={n.to}
                 to={n.to}
                 aria-current={active(n.to) ? "page" : undefined}
-                className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition sm:px-4 ${
-                  active(n.to) ? "bg-ink/[0.06] text-ink" : "text-ink/60 hover:text-ink"
-                }`}
+                className="store-nav-link"
               >
                 <n.icon size={16} strokeWidth={1.7} />{n.label}
               </Link>
@@ -95,19 +108,41 @@ export default function StoreLayout() {
               </Link>
             )}
           </nav>
-          <div className="flex min-w-0 items-center gap-1.5 md:hidden">
-            <LanguageButton lang={lang} label={copy.nav.language} onToggle={() => setLang(lang === "zh" ? "en" : "zh")} />
+          <nav className="store-mobile-primary md:hidden" aria-label={lang === "zh" ? "主要导航" : "Main navigation"}>
+            {[BASE_NAV[0], BASE_NAV[2]].map((n) => <Link key={n.to} to={n.to}
+              aria-current={active(n.to) ? "page" : undefined}>
+              {lang === "zh" ? n.to === "/" ? "全部商品" : "我的订单" : n.label}
+            </Link>)}
+          </nav>
+          <div className="store-mobile-actions flex shrink-0 items-center gap-1 md:hidden">
             <button onClick={() => setDark(toggleMode())}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-ink/10 text-ink/60"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink/70 hover:bg-ink/5"
               title={copy.nav.toggleMode} aria-label={copy.nav.toggleMode}>
-              {dark ? <Sun size={15} /> : <Moon size={15} />}
+              {dark ? <Sun size={19} /> : <Moon size={19} />}
             </button>
             <Link to={member ? "/me" : "/login"}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-contrast"
+              className={member
+                ? "grid h-9 w-9 shrink-0 place-items-center rounded-full border border-ink/10 text-ink/70 hover:bg-ink/5"
+                : "btn-primary !min-h-9 !px-3.5 !py-0 text-xs"}
               title={member ? copy.nav.memberCenter : copy.nav.login} aria-label={member ? copy.nav.memberCenter : copy.nav.login}>
-              {member ? <span className="text-xs font-extrabold">{(member.nickname || member.email).slice(0, 1).toUpperCase()}</span> : <UserRound size={15} />}
+              {member ? <span className="text-xs font-extrabold">{(member.nickname || member.email).slice(0, 1).toUpperCase()}</span> : copy.nav.login}
             </Link>
+            <button type="button" onClick={() => setMenuOpen(true)}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink/70 hover:bg-ink/5"
+              title={lang === "zh" ? "更多" : "More"} aria-label={lang === "zh" ? "更多入口" : "More entries"}>
+              <MoreHorizontal size={19} />
+            </button>
           </div>
+        </div>
+        <div className="store-mobile-secondary px-4 md:hidden">
+          <nav aria-label={lang === "zh" ? "更多服务" : "More services"} className="flex min-w-0 items-center gap-x-5">
+            {nav.filter((n) => n.to !== "/" && n.to !== "/order").map((n) => <Link key={n.to} to={n.to}
+              aria-current={active(n.to) ? "page" : undefined}
+              className={`inline-flex min-h-9 items-center gap-1.5 text-xs ${active(n.to) ? "font-semibold text-primary" : "text-ink/55"}`}>
+              <n.icon size={13} />{n.label}
+            </Link>)}
+          </nav>
+          <LanguageButton lang={lang} label={copy.nav.language} onToggle={() => setLang(lang === "zh" ? "en" : "zh")} />
         </div>
         {site.announcement && (
           <div className="bg-accent-soft px-4 py-2 text-center text-xs font-medium text-ink/80">
@@ -115,7 +150,38 @@ export default function StoreLayout() {
           </div>
         )}
       </header>
-      <main className="mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 sm:pt-8 md:pb-20">
+
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label={lang === "zh" ? "更多入口" : "More entries"}>
+          <button type="button" className="store-sheet-mask absolute inset-0 bg-ink/40 backdrop-blur-sm"
+            aria-label={lang === "zh" ? "关闭" : "Close"} onClick={() => setMenuOpen(false)} />
+          <div className="store-sheet absolute inset-x-0 bottom-0 rounded-t-3xl bg-surface p-5 pb-7 shadow-2xl" style={{ paddingBottom: "calc(1.75rem + env(safe-area-inset-bottom))" }}>
+            <div className="store-sheet-handle mx-auto mb-4" aria-hidden="true" />
+            <p className="section-label">{lang === "zh" ? "全部入口" : "All entries"}</p>
+            <div className="grid gap-1.5">
+              {nav.map((n) => (
+                <Link key={n.to} to={n.to} onClick={() => setMenuOpen(false)}
+                  aria-current={active(n.to) ? "page" : undefined}
+                  className={`store-sheet-link ${active(n.to) ? "is-active" : ""}`}>
+                  <n.icon size={17} strokeWidth={1.7} />{n.label}
+                  <span className="store-sheet-count">{lang === "zh" ? "进入" : "Open"}</span>
+                </Link>
+              ))}
+            </div>
+            <p className="section-label mt-5">{lang === "zh" ? "显示" : "Display"}</p>
+            <div className="flex items-center gap-2.5">
+              <LanguageButton className="!h-9 !px-3.5" lang={lang} label={copy.nav.language} onToggle={() => setLang(lang === "zh" ? "en" : "zh")} />
+              <button onClick={() => setDark(toggleMode())}
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-ink/10 bg-surface px-3.5 text-xs font-bold text-ink/60"
+                title={copy.nav.toggleMode}>
+                {dark ? <Sun size={15} /> : <Moon size={15} />}
+                {dark ? (lang === "zh" ? "浅色" : "Light") : (lang === "zh" ? "深色" : "Dark")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <main className="mx-auto max-w-7xl px-4 pb-12 pt-6 sm:px-6 sm:pt-8 md:pb-20">
         <StoreAvailability>
           <Suspense fallback={<StoreLoadingCard label={copy.common.loading} />}>
             <Outlet />
@@ -150,23 +216,14 @@ export default function StoreLayout() {
           </div>
         </div>
       </footer>
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-ink/[0.08] bg-surface/95 px-2 pb-[max(0.45rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-10px_30px_rgb(var(--c-ink)/0.06)] backdrop-blur-xl md:hidden">
-        {BASE_NAV.map((n) => (
-          <Link key={n.to} to={n.to}
-            className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[10px] font-semibold ${active(n.to) ? "text-primary" : "text-ink/45"}`}>
-            <n.icon size={18} strokeWidth={active(n.to) ? 2.5 : 2} />
-            <span className="max-w-full truncate">{n.label}</span>
-          </Link>
-        ))}
-      </nav>
     </div>
   );
 }
 
-function LanguageButton({ lang, label, onToggle }: { lang: "zh" | "en"; label: string; onToggle: () => void }) {
+function LanguageButton({ lang, label, onToggle, className = "" }: { lang: "zh" | "en"; label: string; onToggle: () => void; className?: string }) {
   return (
     <button onClick={onToggle}
-      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-ink/10 bg-surface px-2.5 text-xs font-bold text-ink/60 transition hover:border-primary/35 hover:text-ink"
+      className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-ink/10 bg-surface px-2.5 text-xs font-bold text-ink/60 transition hover:border-primary/35 hover:text-ink ${className}`}
       title={label} aria-label={label}>
       <Languages size={14} />
       <span className="min-w-5 text-center">{lang === "zh" ? "EN" : "中"}</span>

@@ -55,6 +55,8 @@ export default function ProductPage() {
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaEnabled, setCaptchaEnabled] = useState(false);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
+  const orderPanel = useRef<HTMLDivElement>(null);
+  const [mobileBarVisible, setMobileBarVisible] = useState(false);
   const handleCaptchaToken = useCallback((token: string) => {
     setCaptchaToken(token);
     if (token) {
@@ -103,6 +105,16 @@ export default function ProductPage() {
   }, [id, qty, couponCode, memberPrice]);
 
   useStorePageLoading(!error && String(p?.id ?? "") !== String(id ?? ""));
+
+  // 手机端悬浮购买栏:只在页面内真正的「立即购买」按钮不可见时出现,避免遮挡数量/邮箱等输入。
+  useEffect(() => {
+    if (!p) return;
+    const node = orderPanel.current?.querySelector("button.btn-primary:not(.store-buybar-action)");
+    if (!node || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => setMobileBarVisible(!entry.isIntersecting), { rootMargin: "0px 0px -140px 0px", threshold: 0 });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [p]);
 
   useSeo(p ? {
     title: p.name,
@@ -240,7 +252,7 @@ export default function ProductPage() {
           )}
         </div>
 
-        <div className="card h-fit p-6 md:p-7 lg:sticky lg:top-24">
+        <div ref={orderPanel} className="card h-fit scroll-mt-24 p-6 md:p-7 lg:sticky lg:top-24">
           <h2 className="mb-5 font-bold">{t.orderInfo}</h2>
           <div className="mb-1.5 flex h-5 items-center justify-between gap-3">
             <label className="label !mb-0 shrink-0">{t.qty}({effectiveMinBuy} ~ {p.maxBuy})</label>
@@ -362,6 +374,29 @@ export default function ProductPage() {
           <p className="mt-3 flex items-center justify-center gap-1 text-[11px] text-ink/35">
             <ShieldCheck size={12} /> {isPresale ? t.presaleHint : isManual ? t.manualHint : t.autoHint}
           </p>
+        </div>
+      </div>
+
+      {/* 手机端悬浮购买栏:只做跳转,提交仍走右侧面板(校验/验证码/优惠码都在那里)。 */}
+      <div className={`store-buybar ${mobileBarVisible ? "is-visible" : ""}`} aria-hidden={!mobileBarVisible}>
+        <div className="store-buybar-inner">
+          <div className="min-w-0">
+            <p className="store-buybar-price">{money(total)}</p>
+            <p className="store-buybar-meta">
+              {presaleEnded ? copy.common.presaleEnded
+                : !quoteReady ? (lang === "zh" ? "正在更新价格…" : "Updating price…")
+                : !meetsMinimumOrderAmount ? `${lang === "zh" ? "起购" : "Min"} ${money(p.minOrderAmount)}`
+                : `${qty} ${lang === "zh" ? "件" : "×"}`}
+            </p>
+          </div>
+          <button type="button" className="btn-primary store-buybar-action"
+            disabled={!quoteReady || presaleEnded || !meetsMinimumOrderAmount || (!isManual && !isPresale && p.stock <= 0)}
+            onClick={() => {
+              orderPanel.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
+              window.setTimeout(() => orderPanel.current?.querySelector<HTMLButtonElement>("button.btn-primary:not(.store-buybar-action)")?.focus({ preventScroll: true }), 320);
+            }}>
+            {presaleEnded ? copy.common.presaleEnded : !meetsMinimumOrderAmount ? (lang === "zh" ? "未达起购" : "Below minimum") : t.choosePlan}
+          </button>
         </div>
       </div>
     </div>
