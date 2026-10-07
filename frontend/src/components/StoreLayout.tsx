@@ -68,7 +68,7 @@ export default function StoreLayout() {
         <div className="store-header-inner mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
           <Link to="/" className="store-brand flex min-w-0 items-center gap-2.5" title={site.siteName}>
             <SiteMark alt={site.siteName || "Ka"} className="store-brand-icon shrink-0 rounded-xl object-cover" />
-            <span className="truncate text-lg font-extrabold tracking-tight">{site.siteName}</span>
+            <span className={`store-brand-name text-lg font-extrabold tracking-tight${site.siteName.length > 10 ? " is-wrap" : ""}`}>{site.siteName}</span>
           </Link>
           <nav className="hidden items-center gap-1 md:flex lg:gap-2">
             {nav.map((n) => (

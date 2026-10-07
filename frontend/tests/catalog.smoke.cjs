@@ -97,9 +97,11 @@ products[3].deliveryMode = 'PRESALE_VOUCHER'; products[3].presaleSaleEndAt = '20
         assert(await page.locator('.catalog-grid').evaluate(el => el.scrollWidth <= el.clientWidth), `${width}: product grid fits`);
         const actions = await page.locator('.catalog-card-action').evaluateAll(els => els.map(el => {
           const action = el.getBoundingClientRect(), card = el.closest('.catalog-product').getBoundingClientRect();
-          return action.height >= 40 && action.left >= card.left && action.right <= card.right;
+          // 手机上是裸箭头(不再撑满整行),桌面上仍是可点的药丸按钮。
+          const bigEnough = innerWidth <= 767 ? action.width >= 12 : action.height >= 40;
+          return bigEnough && action.left >= card.left && action.right <= card.right;
         }));
-        assert(actions.every(Boolean), `${width}: usable card actions stay inside cards`);
+        assert(actions.every(Boolean), `${width}: card actions stay inside cards`);
         const boxes = await cards.evaluateAll((els) => els.map((el) => ({ top: el.offsetTop, height: el.getBoundingClientRect().height })));
         for (const box of boxes) assert(boxes.filter((b) => b.top === box.top).every((b) => Math.abs(b.height - box.height) < 1), 'aligned rows');
         if ([390, 1440].includes(width)) {

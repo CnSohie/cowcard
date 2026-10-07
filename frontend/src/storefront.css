@@ -11,7 +11,9 @@
 
 /* ── 顶栏 ───────────────────────────────────────────────────────────── */
 .store-header-inner { height: 4.5rem; }
-.store-brand { max-width: 13rem; }
+.store-brand { max-width: 20rem; min-width: 0; }
+.store-brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.store-brand-name.is-wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.15; }
 .store-brand-icon { width: 2.1rem; height: 2.1rem; border-radius: 0.75rem; }
 .store-nav-link {
   display: inline-flex; align-items: center; gap: 0.45rem; height: 2.5rem; padding: 0 1rem;
@@ -295,10 +297,19 @@
 @media (max-width: 767px) {
   /* 单行顶栏:品牌 + 全部商品/我的订单 + 主题/登录/更多,高度压到 3.5rem 让首屏多出一张卡。 */
   .store-header-inner { height: 3.5rem; gap: 0.45rem; }
-  .store-brand { max-width: clamp(4.5rem, 22vw, 7rem); gap: 0.4rem; }
-  .store-brand > span { font-size: 0.95rem; }
-  .store-brand-icon { width: 1.7rem; height: 1.7rem; }
-  .store-mobile-primary { display: flex; flex-shrink: 0; align-self: stretch; align-items: center; gap: 0.85rem; font-size: 0.78rem; }
+  /* 品牌独占剩余空间:站名长时挤压两侧而不是被截断。 */
+  /* 品牌优先拿空间:站名长时先压主标签与图标,而不是先把站名截掉。 */
+  .store-header-inner { justify-content: flex-start; gap: 0.4rem; padding-inline: 0.75rem; }
+  .store-brand { flex: 1 1 0%; max-width: none; min-width: 0; overflow: hidden; gap: 0.4rem; }
+  .store-brand-name { flex: 0 1 auto; min-width: 0; font-size: 0.98rem; letter-spacing: -0.02em; line-height: 1.15; }
+  /* 长站名折两行,而不是被 ellipsis 切掉 */
+  .store-brand-name.is-wrap { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .store-brand > span { font-size: 1.02rem; }
+  .store-brand-icon { width: 1.75rem; height: 1.75rem; }
+  .store-mobile-primary { gap: 0.7rem; }
+  .store-mobile-actions > button { width: 1.95rem; height: 1.95rem; }
+  /* 主标签永远完整可读:不给压缩,空间不够时让站名换行/收敛。 */
+  .store-mobile-primary { display: flex; flex-shrink: 0; align-self: stretch; align-items: center; gap: 0.6rem; font-size: 0.76rem; }
   .store-mobile-primary a { display: flex; align-items: center; height: 100%; padding-top: 2px; border-bottom: 2px solid transparent; color: rgb(var(--c-ink) / 0.5); white-space: nowrap; }
   .store-mobile-primary a[aria-current="page"] { border-color: rgb(var(--c-ink)); color: rgb(var(--c-ink)); font-weight: 600; }
   .store-mobile-actions { gap: 0; }
@@ -355,8 +366,8 @@
   .storefront .catalog-product-footer { gap: 0.5rem; padding-top: 0.6rem; }
   .catalog-product-price { font-size: 1.15rem; }
   .catalog-product-price > span { font-size: 0.8rem; }
-  /* 手机上不再放大按钮:只留一个可点的小圆箭头,价格才是主角。 */
-  .storefront .catalog-card-action { width: 2rem; min-height: 2rem; padding: 0; }
+  /* 手机不放按钮:只留一个裸箭头做"可进入"的暗示,价格是唯一主角。 */
+  .storefront .catalog-card-action { width: auto; min-height: 0; padding: 0; background: none; color: rgb(var(--c-ink) / 0.3); }
   .storefront .catalog-card-action-label { display: none; }
   .storefront .catalog-card-action > svg { width: 0.95rem; height: 0.95rem; }
 }
@@ -369,7 +380,9 @@
   .storefront .catalog-product-art > svg { width: 3rem; height: 3rem; }
   .storefront .catalog-product-footer { gap: 0.7rem; padding-top: 0.85rem; }
   .catalog-product-price { font-size: 1.35rem; }
-  .storefront .catalog-card-action { width: 2.4rem; min-height: 2.4rem; padding: 0; }
+  .storefront .catalog-card-action { width: auto; min-height: 0; padding: 0; background: none; color: rgb(var(--c-ink) / 0.3); }
+  .storefront .catalog-card-action-label { display: none; }
+  .storefront .catalog-card-action > svg { width: 1.05rem; height: 1.05rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .storefront .catalog-product { transition: none; }
