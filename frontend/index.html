@@ -20,7 +20,7 @@
         } catch (_) { /* Invalid or unavailable cache: keep the neutral title. */ }
         try {
           const root = document.documentElement;
-          const theme = localStorage.getItem("ka.site.theme") || "mint";
+          const theme = localStorage.getItem("ka.site.theme") || "gptibo";
           const siteMode = localStorage.getItem("ka.site.mode") || "auto";
           const localMode = localStorage.getItem("ka.mode");
           const dark = localMode === "dark" || (localMode !== "light" && (siteMode === "dark" || (siteMode === "auto" && matchMedia("(prefers-color-scheme: dark)").matches)));
@@ -30,6 +30,7 @@
         } catch (_) { /* localStorage may be unavailable in privacy mode */ }
       })();
     </script>
+    <meta name="theme-color" content="#fafafa" />
     <meta name="description" content="自动发卡 · 极速到账" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" data-ka-icon="svg" />
     <link rel="icon" href="/favicon.ico" sizes="32x32" data-ka-icon="ico" />

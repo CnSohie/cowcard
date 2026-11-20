@@ -20,9 +20,9 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['"Inter"', "system-ui", "-apple-system", '"PingFang SC"', '"Microsoft YaHei"', "sans-serif"],
+        sans: ['"Geist Variable"', "-apple-system", "BlinkMacSystemFont", '"SF Pro Text"', '"Segoe UI"', '"PingFang SC"', '"Microsoft YaHei"', "sans-serif"],
       },
-      animation: { "fade-up": "fadeUp .5s ease both" },
+      animation: { "fade-up": "fadeUp .5s cubic-bezier(.22, 1, .36, 1) both" },
       keyframes: {
         fadeUp: { from: { opacity: "0", transform: "translateY(10px)" }, to: { opacity: "1", transform: "none" } },
       },

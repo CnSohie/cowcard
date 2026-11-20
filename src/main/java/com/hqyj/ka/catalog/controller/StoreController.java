@@ -110,7 +110,7 @@ public class StoreController {
                 Map.entry("announcement", all.getOrDefault("site.announcement", "")),
                 Map.entry("contact", all.getOrDefault("site.contact", "")),
                 Map.entry("currency", all.getOrDefault("site.currency", "CNY")),
-                Map.entry("theme", all.getOrDefault("site.theme", "mint")),
+                Map.entry("theme", all.getOrDefault("site.theme", "gptibo")),
                 Map.entry("mode", all.getOrDefault("site.mode", "auto")),
                 Map.entry("heroSlides", all.getOrDefault("site.hero_slides", "")),
                 Map.entry("seoTitle", all.getOrDefault("seo.title", all.getOrDefault("site.name", "Ka 发卡"))),

@@ -2,7 +2,7 @@ import SecretBlock from "../../components/SecretBlock";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
-import { CheckCircle2, Copy, Loader2, History, KeyRound, Search, ShieldCheck, ShoppingBag, TicketCheck, X } from "lucide-react";
+import { ArrowRight, CheckCircle2, ChevronRight, Copy, Loader2, History, KeyRound, Search, ShieldCheck, ShoppingBag, TicketCheck, X } from "lucide-react";
 import { ApiError, post, type OrderView } from "../../lib/api";
 import { consumePresaleVoucherToken, findLocalOrder, forgetOrder, localOrders, rememberOrder, type LocalOrder } from "../../lib/orderHistory";
 import { recalledContact } from "../../lib/contactMemory";
@@ -202,44 +202,67 @@ export default function OrderQueryPage() {
   </>);
 
   return (
-    <div className="order-query-page mx-auto max-w-2xl animate-fade-up">
-      <div className="mb-6">
-        <h1 className="text-2xl font-extrabold tracking-tight">{t.title}</h1>
-      </div>
-      <section className="card mb-5 p-5 sm:p-7" aria-label={t.recent}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 font-bold"><History size={17} />{t.recent}<span className="text-sm font-normal text-ink/40">{history.length}</span></h2>
-          <Link to="/me" className="text-xs font-semibold text-primary">{t.member}</Link>
+    <div className="order-query-page mx-auto max-w-3xl reveal-in">
+      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <span className="section-label !mb-2">YOUR ORDERS</span>
+          <h1 className="text-3xl font-semibold tracking-tight">{t.title}</h1>
+          <p className="mt-2 text-xs leading-relaxed text-[var(--gpt-muted)]">{t.localNote}</p>
         </div>
-        <p className="mt-2 text-xs leading-relaxed text-ink/45">{t.localNote}</p>
-        {history.length > 0 ? <>
-          <input type="search" className="input my-4" aria-label={t.filter} placeholder={t.search}
-            value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} />
-          <div className="max-h-[420px] space-y-2 overflow-y-auto">
+        <div className="flex items-center gap-2">
+          <Link to="/me" className="btn-ghost !text-xs">{t.member}</Link>
+          <Link to="/" className="btn-ghost !text-xs">{lang === "zh" ? "浏览商品" : "Browse"} <ArrowRight size={13} /></Link>
+        </div>
+      </div>
+
+      <section className="card mb-5 p-5 sm:p-6" aria-label={t.recent}>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--gpt-border)] pb-4">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <History size={15} className="text-[var(--gpt-muted)]" />
+            {t.recent}
+            <span className="rounded-md bg-[var(--gpt-secondary)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--gpt-muted)]">{history.length}</span>
+          </h2>
+          {history.length > 0 && (
+            <div className="relative w-full sm:w-60">
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--gpt-muted)]" />
+              <input type="search" className="input !h-9 !pl-9 !text-xs" aria-label={t.filter} placeholder={t.search}
+                value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} />
+            </div>
+          )}
+        </div>
+        {history.length > 0 ? (
+          <div className="max-h-[440px] overflow-y-auto">
             {history.filter((h) => `${h.productName} ${h.contact} ${h.orderNo}`.toLowerCase().includes(historySearch.trim().toLowerCase())).map((h) => (
-              <div key={h.orderNo} className={`flex items-center gap-1 rounded-2xl border p-2 transition ${orderNo === h.orderNo ? "border-primary/30 bg-accent-soft" : "border-ink/[0.06] hover:border-primary/30"}`}>
+              <div key={h.orderNo} className={`order-row-item ${orderNo === h.orderNo ? "is-selected" : ""}`}>
                 <button type="button" disabled={busy} onClick={() => quickQuery(h)} aria-label={`${t.query} ${h.productName} ${h.orderNo}`}
-                  className="flex min-w-0 flex-1 items-center gap-3 rounded-xl p-2 text-left disabled:opacity-50">
+                  className="flex min-w-0 flex-1 items-center gap-3.5 text-left disabled:opacity-50">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-[var(--gpt-secondary)] text-ink" aria-hidden="true">
+                    <ShoppingBag size={16} />
+                  </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{h.productName}</p>
-                    <p className="mt-1 text-xs text-ink/50">{money(h.amount)} · {fmtDate(h.createdAt)}</p>
-                    <p className="mt-1 truncate text-[11px] text-ink/40">{h.contact} {t.ending} {h.orderNo.slice(-6)}</p>
+                    <p className="truncate text-[13.5px] font-medium text-ink">{h.productName}</p>
+                    <p className="mt-1 truncate text-[11px] text-[var(--gpt-muted)]">
+                      {h.contact} {t.ending} {h.orderNo.slice(-6)} · {fmtDate(h.createdAt)}
+                    </p>
                   </div>
-                  <span className="shrink-0 text-xs font-semibold text-primary">{t.view}</span>
+                  <strong className="shrink-0 text-[13.5px] font-medium tabular-nums text-ink">{money(h.amount)}</strong>
+                  <span className="hidden shrink-0 text-xs font-medium text-primary sm:inline">{t.view}</span>
+                  <ChevronRight size={15} className="shrink-0 text-[var(--gpt-muted)]" aria-hidden="true" />
                 </button>
                 <button type="button" disabled={busy} aria-label={`${t.delete} ${h.orderNo}`} title={t.deleteHint}
-                  onClick={() => removeHistory(h.orderNo)} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink/30 hover:bg-ink/5 hover:text-ink"><X size={14} /></button>
+                  onClick={() => removeHistory(h.orderNo)} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--gpt-muted)] hover:bg-[var(--gpt-secondary)] hover:text-ink"><X size={14} /></button>
               </div>
             ))}
             {!history.some((h) => `${h.productName} ${h.contact} ${h.orderNo}`.toLowerCase().includes(historySearch.trim().toLowerCase())) &&
-              <p className="py-6 text-center text-sm text-ink/50">{t.noMatch}</p>}
+              <p className="py-10 text-center text-sm text-[var(--gpt-muted)]">{t.noMatch}</p>}
           </div>
-        </> : <div className="my-4 rounded-2xl bg-base p-5 text-sm leading-relaxed text-ink/55">{t.empty}</div>}
+        ) : <div className="mt-4 rounded-xl bg-[var(--gpt-tint)] p-6 text-center text-xs leading-relaxed text-[var(--gpt-muted)]">{t.empty}</div>}
       </section>
-      <div className="card p-5 sm:p-7 md:p-8">
+
+      <div className="card p-5 sm:p-6">
         <button type="button" className="flex w-full items-center justify-between gap-3 text-left" aria-expanded={manualOpen} aria-controls="manual-order-query" onClick={() => setManualOpen((open) => !open)}>
-          <span className="flex items-center gap-2 font-bold"><Search size={17} />{t.manual}</span>
-          <span className="text-xs text-primary">{manualOpen ? t.collapse : t.credentials}</span>
+          <span className="flex items-center gap-2 text-sm font-semibold"><Search size={15} className="text-[var(--gpt-muted)]" />{t.manual}</span>
+          <span className="text-xs font-medium text-primary">{manualOpen ? t.collapse : t.credentials}</span>
         </button>
         <div id="manual-order-query" hidden={!manualOpen}>
         {!(resultOpen && needsCredentials) && queryForm}

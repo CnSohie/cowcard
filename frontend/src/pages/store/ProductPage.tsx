@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, BadgePercent, Clock3, KeyRound, Mail, Minus, Plus, ShieldCheck, Wrench } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowRight, BadgePercent, ChevronRight, Clock3, KeyRound, LockKeyhole, Mail, Minus, Plus, ShieldCheck, Wallet, Wrench } from "lucide-react";
 import { ApiError, get, post, type CreateOrderResponse, type ProductDetail } from "../../lib/api";
 import { isMemberLoggedIn, mGet, mPost, memberInfo } from "../../lib/memberApi";
 import { recalledContact, rememberContact } from "../../lib/contactMemory";
@@ -202,81 +202,139 @@ export default function ProductPage() {
     }
   }
 
+  const canBuy = !presaleEnded && (isManual || isPresale || p.stock > 0);
+  const deliveryLabel = isPresale ? t.presaleVoucher : isManual ? copy.common.manualDelivery : copy.common.autoDelivery;
+
   return (
-    <div className="animate-fade-up">
-      <button onClick={() => nav(-1)} className="mb-6 flex items-center gap-1.5 text-sm text-ink/50 hover:text-ink">
-        <ArrowLeft size={15} /> {copy.common.back}
-      </button>
-      {/* 商品身份区:手机上下单面板在前,所以标题/价格独立成块,桌面上则回到左栏顶部。 */}
-      <div className="product-head mb-5 md:mb-6">
-        <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">{p.name}</h1>
-        {p.brief && <p className="mt-2 text-sm leading-relaxed text-ink/55">{p.brief}</p>}
-        <div className="mt-4 flex flex-wrap items-center gap-2.5">
-          <span className="product-head-price text-3xl font-extrabold tracking-tight">
-            <span className="text-[0.95rem] font-semibold text-ink/40">{currencySymbol()}</span>
+    <div className="reveal-in">
+      <nav className="product-breadcrumb" aria-label={lang === "zh" ? "当前位置" : "Breadcrumb"}>
+        <Link to="/">{copy.nav.store}</Link>
+        <ChevronRight size={13} aria-hidden="true" />
+        <span aria-current="page">{p.name}</span>
+      </nav>
+
+      {/* 商品身份区:手机上下单面板在前,所以标题/价格独立成块,桌面则在工作台上方呈现。 */}
+      <div className="product-head mb-6">
+        <h1 className="product-head-title">{p.name}</h1>
+        {p.brief && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--gpt-muted)]">{p.brief}</p>}
+        <div className="mt-3.5 flex flex-wrap items-center gap-2">
+          <span className="product-head-price text-3xl font-semibold tabular-nums tracking-tight">
+            <span className="mr-0.5 text-[1rem] font-medium text-[var(--gpt-muted)]">{currencySymbol()}</span>
             {shownUnitPrice}
           </span>
           {memberPrice && Number(memberPrice.discountPerUnit) > 0 && (
-            <span className="chip !text-sky-600 dark:!text-sky-400">
+            <span className="chip-on">
               {memberPrice.source === "WHOLESALE" ? (lang === "zh" ? "批发价" : "Wholesale") : `${memberPrice.levelName ?? "Member"} ${t.memberPrice}`} · {t.saved} {money((Number(memberPrice.discountPerUnit) * qty).toFixed(2))}
             </span>
           )}
           {p.soldQuantity != null && <span className="chip">{lang === "zh" ? `已售 ${p.soldQuantity.toLocaleString()} 件` : `${p.soldQuantity.toLocaleString()} sold`}</span>}
-          <span className={`chip ${isManual || isPresale || p.stock > 0 ? "!text-primary" : "!text-red-500"}`}>
+          <span className={`status-pill ${canBuy ? "status-pill-success" : "status-pill-warning"}`}>
+            <span className="status-pill-dot" />
             {presaleEnded ? copy.common.presaleEnded : isPresale ? t.presaleVoucher : isManual ? copy.common.manualDelivery : p.stock > 0 ? `${t.inStock} · ${p.stock}` : copy.common.soldOut}
           </span>
         </div>
       </div>
-      <div className="product-layout grid gap-6 lg:grid-cols-[1fr_400px]">
-        <div className="product-facts card p-7 md:p-9">
-          {!!memberPrice?.wholesaleTiers?.length && <div className="rounded-2xl bg-accent-soft p-4">
-            <h3 className="text-sm font-bold">{lang === "zh" ? "可享批发价" : "Volume pricing"}</h3>
-            <div className="mt-2 flex flex-wrap gap-2">{memberPrice.wholesaleTiers.map((tier, i) => <span key={i} className="rounded-xl bg-surface px-3 py-2 text-xs text-ink/70">
-              {lang === "zh" ? `${tier.minQuantity} 件起` : `${tier.minQuantity}+ units`} · {money(tier.unitPrice)} / {lang === "zh" ? "件" : "unit"}
-            </span>)}</div>
-            <p className="mt-2 text-xs text-ink/55">{lang === "zh" ? "按购买数量自动取适用最低单价，与会员价不重复打折。" : "The lowest eligible unit price applies; member discounts are not stacked."}</p>
-          </div>}
+
+      <div className="product-layout product-workspace-shell">
+        <div className="product-facts">
+          <div className="product-topline">
+            <span className="product-kicker">{lang === "zh" ? "01 / 商品详情" : "01 / PRODUCT DETAILS"}</span>
+            <span className={`product-availability${canBuy ? "" : " is-out"}`}>
+              <span aria-hidden="true" />
+              {canBuy ? (lang === "zh" ? "可购买" : "Available") : copy.common.soldOut}
+            </span>
+          </div>
+
+          {!!memberPrice?.wholesaleTiers?.length && (
+            <div className="mb-6">
+              <div className="mb-2.5 flex items-center justify-between text-xs">
+                <span className="font-medium text-ink">{lang === "zh" ? "阶梯批发价" : "Volume pricing"}</span>
+                <span className="text-[11px] text-[var(--gpt-muted)]">{lang === "zh" ? "点击可快速填入起购件数" : "Click a tier to apply quantity"}</span>
+              </div>
+              <div className="tier-grid">
+                {memberPrice.wholesaleTiers.map((tier, i) => {
+                  const nextTier = memberPrice.wholesaleTiers[i + 1];
+                  const activeTier = qty >= tier.minQuantity && (!nextTier || qty < nextTier.minQuantity);
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setQty(Math.min(p.maxBuy, Math.max(effectiveMinBuy, tier.minQuantity)))}
+                      className={`tier-card${activeTier ? " is-selected" : ""}`}
+                    >
+                      <span className="block text-xs font-medium text-[var(--gpt-muted)]">
+                        {lang === "zh" ? `${tier.minQuantity} 件起` : `${tier.minQuantity}+ units`}
+                      </span>
+                      <span className="mt-1.5 block text-lg font-semibold tabular-nums tracking-tight text-ink">
+                        {money(tier.unitPrice)}
+                        <small className="ml-1 text-[11px] font-normal text-[var(--gpt-muted)]">/ {lang === "zh" ? "件" : "unit"}</small>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2.5 text-[11px] text-[var(--gpt-muted)]">
+                {lang === "zh" ? "按购买数量自动取适用最低单价，与会员价不重复打折。" : "The lowest eligible unit price applies; member discounts are not stacked."}
+              </p>
+            </div>
+          )}
+
           {p.description ? (
-            <div className={`whitespace-pre-wrap text-sm leading-relaxed text-ink/60 ${memberPrice?.wholesaleTiers?.length ? "mt-7 border-t border-ink/[0.06] pt-6" : ""}`}>
+            <div className={`whitespace-pre-wrap pb-6 text-[13.5px] leading-[1.85] text-ink/75 ${memberPrice?.wholesaleTiers?.length ? "border-t border-[var(--gpt-border)] pt-5" : ""}`}>
               {p.description}
             </div>
           ) : !memberPrice?.wholesaleTiers?.length ? (
-            <p className="text-sm text-ink/45">{lang === "zh" ? "该商品暂无更多描述,下单前如有疑问可先联系客服。" : "No further description. Contact support if you have questions before ordering."}</p>
+            <p className="pb-6 text-sm text-[var(--gpt-muted)]">{lang === "zh" ? "该商品暂无更多描述，下单前如有疑问可先联系客服。" : "No further description. Contact support if you have questions before ordering."}</p>
           ) : null}
+
+          <div className="product-bottom-bar">
+            <ShieldCheck size={14} className="shrink-0 text-ink" />
+            <span>{deliveryLabel}</span>
+            <span aria-hidden="true">·</span>
+            <span>{lang === "zh" ? "订单进度随时可查" : "Trackable order status"}</span>
+            <Link to="/order" className="ml-auto inline-flex items-center gap-1 font-medium text-ink transition hover:opacity-70">
+              {copy.nav.order} <ChevronRight size={13} />
+            </Link>
+          </div>
         </div>
 
-        <div className="product-order card h-fit p-6 md:p-7 lg:sticky lg:top-24">
-          <h2 className="mb-5 font-bold">{t.orderInfo}</h2>
+        <aside className="product-order" aria-label={t.orderInfo}>
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="text-[15px] font-semibold tracking-tight">{t.orderInfo}</h2>
+            <Wallet size={17} className="text-[var(--gpt-muted)]" aria-hidden="true" />
+          </div>
+
           <div className="mb-1.5 flex h-5 items-center justify-between gap-3">
             <label className="label !mb-0 shrink-0">{t.qty}({effectiveMinBuy} ~ {p.maxBuy})</label>
-            <p role="status" className="flex min-w-0 items-center justify-end gap-2 text-xs text-ink/50">
+            <p role="status" className="flex min-w-0 items-center justify-end gap-2 text-xs text-[var(--gpt-muted)]">
               <span className="truncate">{priceError || (!quoteReady ? (lang === "zh" ? "正在更新价格…" : "Updating price…") : "")}</span>
               {priceError && <button type="button" className="shrink-0 underline" onClick={() => setPriceReload(v => v + 1)}>{lang === "zh" ? "重试" : "Retry"}</button>}
             </p>
           </div>
           <div className="mb-4 flex items-center gap-2">
-            <button aria-label={t.qty + " −"} disabled={qty <= effectiveMinBuy} className="btn-ghost shrink-0 !px-3.5 !py-2.5" onClick={() => setQty(Math.max(effectiveMinBuy, qty - 1))}><Minus size={14} /></button>
+            <button aria-label={t.qty + " −"} disabled={qty <= effectiveMinBuy} className="btn-ghost shrink-0 !px-3 !py-2" onClick={() => setQty(Math.max(effectiveMinBuy, qty - 1))}><Minus size={14} /></button>
             <input
               inputMode="numeric" aria-label={t.qty}
-              className="input !w-20 shrink-0 text-center"
+              className="input !w-20 shrink-0 text-center tabular-nums"
               value={qty}
               onChange={(e) => {
                 const v = parseInt(e.target.value || "0", 10);
                 if (!Number.isNaN(v)) setQty(Math.min(p.maxBuy, Math.max(effectiveMinBuy, v)));
               }}
             />
-            <button aria-label={t.qty + " +"} disabled={qty >= p.maxBuy} className="btn-ghost shrink-0 !px-3.5 !py-2.5" onClick={() => setQty(Math.min(p.maxBuy, qty + 1))}><Plus size={14} /></button>
+            <button aria-label={t.qty + " +"} disabled={qty >= p.maxBuy} className="btn-ghost shrink-0 !px-3 !py-2" onClick={() => setQty(Math.min(p.maxBuy, qty + 1))}><Plus size={14} /></button>
           </div>
           {minimumOrderAmount > 0 && (
-            <p className="-mt-2 mb-4 rounded-2xl bg-accent-soft/60 px-3.5 py-2.5 text-xs leading-relaxed text-ink/55">
-              起购要求：至少 {p.minBuy} 件，且商品标价小计满 <span className="font-bold text-primary">{money(p.minOrderAmount)}</span>。会员价与优惠券不影响起购资格。
+            <p className="-mt-2 mb-4 rounded-xl border border-[var(--gpt-border)] bg-surface px-3.5 py-2.5 text-xs leading-relaxed text-[var(--gpt-muted)]">
+              起购要求：至少 {p.minBuy} 件，且商品标价小计满 <span className="font-semibold text-primary">{money(p.minOrderAmount)}</span>。会员价与优惠券不影响起购资格。
             </p>
           )}
+
           <label className="label">{t.contact}</label>
           <div className="relative mb-4">
-            <Mail size={15} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink/30" />
+            <Mail size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--gpt-muted)]" />
             <input
-              className={`input !pl-11 ${memberLocked ? "cursor-not-allowed bg-ink/[0.04] text-ink/45 focus:ring-0" : ""}`}
+              className={`input !pl-10 ${memberLocked ? "cursor-not-allowed bg-[var(--gpt-secondary)] text-[var(--gpt-muted)] focus:ring-0" : ""}`}
               type="email" autoComplete="email" inputMode="email" aria-label={t.contact}
               placeholder="you@example.com"
               value={contact}
@@ -286,23 +344,25 @@ export default function ProductPage() {
               onChange={(e) => !memberLocked && setContact(e.target.value)}
             />
           </div>
-          {memberLocked && <p className="-mt-2 mb-4 text-[11px] text-ink/35">{t.memberEmailLocked}</p>}
+          {memberLocked && <p className="-mt-2 mb-4 text-[11px] text-[var(--gpt-muted)]">{t.memberEmailLocked}</p>}
+
           <label className="label">{t.queryPassword}</label>
           <input className="input mb-4" type="password" autoComplete="new-password" aria-label={t.queryPassword} placeholder={t.optional} value={queryPassword} onChange={(e) => setQueryPassword(e.target.value)} />
+
           {isManual && (
-            <div className="mb-4 rounded-2xl border border-sky-500/15 bg-sky-500/[0.06] p-4">
+            <div className="mb-4 rounded-xl border border-[var(--gpt-border)] bg-surface p-4">
               <label className="label flex items-center gap-1.5"><Wrench size={13} /> 人工交付资料</label>
-              {p.manualPrompt && <p className="mb-4 whitespace-pre-wrap rounded-xl bg-surface/70 px-3 py-2.5 text-xs leading-relaxed text-ink/55">{p.manualPrompt}</p>}
+              {p.manualPrompt && <p className="mb-3.5 whitespace-pre-wrap rounded-lg bg-[var(--gpt-secondary)] px-3 py-2 text-xs leading-relaxed text-[var(--gpt-muted)]">{p.manualPrompt}</p>}
               <div className="space-y-3">
                 {manualFormFields.map((field) => <div key={field.key}>
-                  <label className="label">{field.label}{field.required ? <span className="ml-1 text-red-500">*</span> : <span className="ml-1 font-normal text-ink/30">选填</span>}</label>
+                  <label className="label">{field.label}{field.required ? <span className="ml-1 text-red-500">*</span> : <span className="ml-1 font-normal text-[var(--gpt-muted)]">选填</span>}</label>
                   {field.type === "SELECT" ? (
                     <select className="input" value={manualValues[field.key] ?? ""}
                       onChange={(e) => setManualValues({ ...manualValues, [field.key]: e.target.value })}>
                       <option value="">请选择</option>{(field.options ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
                     </select>
                   ) : field.type === "TEXTAREA" ? (
-                    <textarea className="input min-h-[96px] resize-none" placeholder={field.placeholder}
+                    <textarea className="input min-h-[88px] resize-none" placeholder={field.placeholder}
                       value={manualValues[field.key] ?? ""} onChange={(e) => setManualValues({ ...manualValues, [field.key]: e.target.value })} />
                   ) : (
                     <input className="input" type={field.type === "EMAIL" ? "email" : "text"} placeholder={field.placeholder}
@@ -310,50 +370,56 @@ export default function ProductPage() {
                   )}
                 </div>)}
               </div>
-              <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-ink/40"><ShieldCheck size={12} className="mt-0.5 shrink-0" /> 请勿填写支付密码、验证码或私钥。</p>
+              <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-[var(--gpt-muted)]"><ShieldCheck size={12} className="mt-0.5 shrink-0" /> 请勿填写支付密码、验证码或私钥。</p>
             </div>
           )}
+
           {isPresale && (
-            <div className="mb-4 rounded-2xl border border-primary/15 bg-accent-soft/70 p-4">
+            <div className="mb-4 rounded-xl border border-[var(--gpt-border)] bg-surface p-4">
               <label className="label flex items-center gap-1.5"><KeyRound size={13} /> {t.presaleRule}</label>
-              <div className="space-y-2 text-xs leading-relaxed text-ink/58">
+              <div className="space-y-1.5 text-xs leading-relaxed text-[var(--gpt-muted)]">
                 <p>{t.presaleText1}</p>
                 <p>{t.presaleText2}</p>
-                <p className="flex items-center gap-1.5 font-medium text-ink/70"><Clock3 size={13} /> {t.presaleSaleEnd}: {fmtTime(presaleSaleEndAt)}</p>
-                <p className="flex items-center gap-1.5 font-medium text-ink/70"><Clock3 size={13} /> {t.presaleStart}: {fmtTime(p.presaleStartAt)}</p>
-                <p className="flex items-center gap-1.5 font-medium text-ink/70"><Clock3 size={13} /> {t.presaleEnd}: {fmtTime(p.presaleEndAt)}</p>
+                <p className="flex items-center gap-1.5 font-medium text-ink"><Clock3 size={12} /> {t.presaleSaleEnd}: {fmtTime(presaleSaleEndAt)}</p>
+                <p className="flex items-center gap-1.5 font-medium text-ink"><Clock3 size={12} /> {t.presaleStart}: {fmtTime(p.presaleStartAt)}</p>
+                <p className="flex items-center gap-1.5 font-medium text-ink"><Clock3 size={12} /> {t.presaleEnd}: {fmtTime(p.presaleEndAt)}</p>
               </div>
             </div>
           )}
-          <details className="mt-2"><summary className="cursor-pointer text-sm text-ink/60">{t.coupon}</summary>
-          <div className="pt-3">
-          <div className="mb-1 flex gap-2">
-            <input className="input flex-1 uppercase" aria-label={t.coupon} placeholder="COUPON" value={couponCode}
-              onChange={(e) => setCouponCode(e.target.value)} />
-            <button className="btn-ghost shrink-0" disabled={!quoteReady || !couponCode.trim()} onClick={checkCoupon}>
-              <BadgePercent size={14} /> {copy.common.verify}
-            </button>
-          </div>
-          {couponMsg && (
-            <p className={`mb-2 text-xs ${discount ? "text-primary" : "text-red-500"}`}>{couponMsg}</p>
-          )}
-          </div></details>
-          <div className="mb-4 mt-4 space-y-1.5 border-t border-ink/[0.06] pt-4">
+
+          <details className="mt-1">
+            <summary className="cursor-pointer text-xs font-medium text-[var(--gpt-muted)] hover:text-ink">{t.coupon}</summary>
+            <div className="pt-3">
+              <div className="mb-1 flex gap-2">
+                <input className="input flex-1 uppercase" aria-label={t.coupon} placeholder="COUPON" value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value)} />
+                <button className="btn-ghost shrink-0 !text-xs" disabled={!quoteReady || !couponCode.trim()} onClick={checkCoupon}>
+                  <BadgePercent size={14} /> {copy.common.verify}
+                </button>
+              </div>
+              {couponMsg && (
+                <p className={`mb-2 text-xs ${discount ? "text-primary" : "text-red-500"}`}>{couponMsg}</p>
+              )}
+            </div>
+          </details>
+
+          <div className="mb-4 mt-5 space-y-2 border-t border-[var(--gpt-border)] pt-5">
             {discount && (
-              <div className="flex items-center justify-between text-xs text-ink/50">
+              <div className="flex items-center justify-between text-xs text-[var(--gpt-muted)]">
                 <span>{t.discount}</span><span className="font-medium text-primary">-{money(discount)}</span>
               </div>
             )}
             {memberPrice && Number(memberPrice.discountPerUnit) > 0 && (
-              <div className="flex items-center justify-between text-xs text-ink/50">
-                <span>{t.memberDiscount}</span><span className="font-medium text-sky-600 dark:text-sky-400">-{money((Number(memberPrice.discountPerUnit) * qty).toFixed(2))}</span>
+              <div className="flex items-center justify-between text-xs text-[var(--gpt-muted)]">
+                <span>{t.memberDiscount}</span><span className="font-medium text-primary">-{money((Number(memberPrice.discountPerUnit) * qty).toFixed(2))}</span>
               </div>
             )}
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-ink/50">{t.total}</span>
-              <span className="text-3xl font-extrabold tracking-tight">{money(total)}</span>
+            <div className="flex items-baseline justify-between">
+              <span className="text-xs font-medium text-[var(--gpt-muted)]">{t.total}</span>
+              <span className="text-3xl font-semibold tabular-nums tracking-tight">{money(total)}</span>
             </div>
           </div>
+
           {error && <p role="alert" className="mb-3 text-xs text-red-500">{error}</p>}
           <CaptchaBox
             action="order_create"
@@ -361,13 +427,13 @@ export default function ProductPage() {
             onEnabledChange={handleCaptchaEnabled}
             resetKey={captchaResetKey}
           />
-          <button className="btn-primary w-full !py-3.5" disabled={!quoteReady || submitting || presaleEnded || !meetsMinimumOrderAmount || (!isManual && !isPresale && p.stock <= 0)} onClick={submit}>
-            {submitting ? t.creating : presaleEnded ? copy.common.presaleEnded : t.buyNow}
+          <button className="btn-primary h-11 w-full" disabled={!quoteReady || submitting || presaleEnded || !meetsMinimumOrderAmount || (!isManual && !isPresale && p.stock <= 0)} onClick={submit}>
+            {submitting ? t.creating : presaleEnded ? copy.common.presaleEnded : <>{t.buyNow} <ArrowRight size={15} /></>}
           </button>
-          <p className="mt-3 flex items-center justify-center gap-1 text-[11px] text-ink/35">
-            <ShieldCheck size={12} /> {isPresale ? t.presaleHint : isManual ? t.manualHint : t.autoHint}
+          <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-[var(--gpt-muted)]">
+            <LockKeyhole size={12} /> {isPresale ? t.presaleHint : isManual ? t.manualHint : t.autoHint}
           </p>
-        </div>
+        </aside>
       </div>
     </div>
   );

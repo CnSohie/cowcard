@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ArrowRight, ChevronLeft, ChevronRight, Grid2X2, ArrowDownUp, Package, Search, X, Sparkles, Languages, Mail, Terminal, Star } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight, Grid2X2, ArrowDownUp, Package, ReceiptText, Search, X, Sparkles, Languages, Mail, Terminal, Star } from "lucide-react";
 import type { Category, ProductCard } from "../lib/api";
 import CatalogSelect from "./CatalogSelect";
 import ProductImage from "./ProductImage";
@@ -140,7 +140,7 @@ export default function ProductCatalog({ products, categories, loading, error, o
           </p>
         </div>
         <div className="catalog-search relative min-w-0" role="search">
-          <Search size={16} className="pointer-events-none absolute left-3.5 top-3.5 text-ink/40" />
+          <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--gpt-muted)]" />
           <input type="search" className="input" aria-label={zh ? "搜索商品" : "Search products"}
             placeholder={zh ? "搜索商品" : "Search products"} value={query} onChange={(e) => update("q", e.target.value)} />
           {query && <button aria-label={zh ? "清空搜索" : "Clear search"} onClick={() => update("q", "")} className="catalog-search-clear"><X size={15} /></button>}
@@ -194,6 +194,12 @@ export default function ProductCatalog({ products, categories, loading, error, o
           </span>)}
           <button className="catalog-page" disabled={page === pageCount} onClick={() => goToPage(page + 1)} aria-label={zh ? "下一页" : "Next page"}><ChevronRight size={16} /></button>
         </nav>
+      )}
+      {!loading && !error && (
+        <p className="catalog-order-note">
+          <ReceiptText size={14} aria-hidden="true" />
+          {zh ? <>付款、交付与进度查询，都可以在<Link to="/order">「我的订单」</Link>中继续。</> : <>Track payments and delivery anytime in <Link to="/order">My Orders</Link>.</>}
+        </p>
       )}
     </section>
   );

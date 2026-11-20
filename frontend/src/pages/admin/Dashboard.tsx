@@ -172,40 +172,44 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="animate-fade-up">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-extrabold tracking-tight">概览</h1>
-        <div className="flex items-center gap-3 text-xs text-ink/50">
+    <div className="reveal-in space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <span className="section-label !mb-1">OVERVIEW</span>
+          <h1 className="text-[28px] font-semibold tracking-[-0.035em] text-ink">运营概览</h1>
+        </div>
+        <div className="flex items-center gap-3 text-xs text-[var(--gpt-muted)]">
           {updatedAt && <span>更新于 {updatedAt}</span>}
-          <button className="btn-ghost !py-2" disabled={loading || opsLoading} onClick={() => { void refresh(); void refreshOps(); }}><RefreshCw size={14} className={loading || opsLoading ? "animate-spin" : ""} />刷新</button>
+          <button className="btn-ghost !py-2 !text-xs" disabled={loading || opsLoading} onClick={() => { void refresh(); void refreshOps(); }}><RefreshCw size={13} className={loading || opsLoading ? "animate-spin" : ""} />刷新</button>
         </div>
       </div>
-      {error && <p role="alert" className="mb-4 text-sm text-red-500">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="admin-metrics">
         {tiles.map((t) => (
-          <div key={t.label} className={`card p-5 ${t.hot ? "!bg-primary !border-transparent" : ""}`}>
-            <div className="flex items-center justify-between">
-              <span className={`text-xs ${t.hot ? "text-primary-contrast/70" : "text-ink/45"}`}>{t.label}</span>
-              <t.icon size={16} className={t.hot ? "text-primary-contrast/80" : "text-primary"} />
+          <div key={t.label}>
+            <div className="admin-metrics-label">
+              <span>{t.label}</span>
+              <t.icon size={15} className={t.hot ? "text-primary" : "text-[var(--gpt-muted)]"} />
             </div>
-            <div className={`mt-2.5 text-3xl font-extrabold tracking-tight ${t.hot ? "text-primary-contrast" : ""}`}>
+            <strong className={`admin-metrics-value ${t.hot ? "text-primary" : "text-ink"}`}>
               {t.value}
-            </div>
+            </strong>
           </div>
         ))}
       </div>
 
-      <section aria-label="运行状态" className="card mt-5 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-bold">运行状态</h2>
+      <section aria-label="运行状态" className="admin-panel">
+        <div className="admin-panel-title">
+          <h2>运行状态</h2>
           {ops && <span className={levelChip(ops.level)}>{levelLabel(ops.level)}</span>}
         </div>
-        <p className="mt-2 text-xs leading-5 text-ink/50">
+        <div className="p-5 sm:p-6">
+        <p className="text-xs leading-5 text-[var(--gpt-muted)]">
           扫链超过 {ops?.stallAfterSeconds ?? 120} 秒没有成功、自动发卡 / 预售 / 充值超过 {ops?.stuckAfterSeconds ?? 60} 秒仍停在已支付，或数据库连接有请求在等待，会标成异常。人工发货只展示。通知失败标成需关注。
         </p>
         {opsError && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">{opsError}</p>}
-        {!ops && !opsError && <p className="mt-4 text-sm text-ink/50">正在读取运行状态…</p>}
+        {!ops && !opsError && <p className="mt-4 text-sm text-[var(--gpt-muted)]">正在读取运行状态…</p>}
         {ops && (
           <div className="mt-4 space-y-4">
             <div className="min-w-0">
@@ -216,17 +220,17 @@ export default function Dashboard() {
                 </span>
               </div>
               {ops.chains.length === 0 ? (
-                <p className="mt-2 text-sm text-ink/55">没有启用的链，扫链任务处于关闭状态。</p>
+                <p className="mt-2 text-sm text-[var(--gpt-muted)]">没有启用的链，扫链任务处于关闭状态。</p>
               ) : (
                 <ul className="mt-2 space-y-2">
                   {ops.chains.map((chain) => (
-                    <li key={chain.chain} className="min-w-0 rounded-2xl bg-ink/[0.03] px-3 py-2">
+                    <li key={chain.chain} className="min-w-0 rounded-xl border border-[var(--gpt-border)] bg-[var(--gpt-tint)] px-3.5 py-2.5">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-semibold">{chain.chain}</span>
                         <span className={levelChip(chain.level)}>{levelLabel(chain.level)}</span>
                       </div>
-                      <p className="mt-1 text-xs leading-5 text-ink/60">{chainLine(chain)}{chain.failures > 0 ? `，累计失败 ${chain.failures} 次` : ""}</p>
-                      {chain.lastError && <p className="mt-1 break-all text-xs leading-5 text-ink/45">最近错误：{chain.lastError}</p>}
+                      <p className="mt-1 text-xs leading-5 text-[var(--gpt-muted)]">{chainLine(chain)}{chain.failures > 0 ? `，累计失败 ${chain.failures} 次` : ""}</p>
+                      {chain.lastError && <p className="mt-1 break-all text-xs leading-5 text-[var(--gpt-muted)]">最近错误：{chain.lastError}</p>}
                     </li>
                   ))}
                 </ul>
@@ -239,9 +243,9 @@ export default function Dashboard() {
                 <span className={levelChip(ops.paid.level)}>{levelLabel(ops.paid.level)}</span>
               </div>
               {ops.paid.readFailed ? (
-                <p className="mt-2 text-sm text-ink/60">暂时读不到订单状态。</p>
+                <p className="mt-2 text-sm text-[var(--gpt-muted)]">暂时读不到订单状态。</p>
               ) : (
-                <ul className="mt-2 space-y-1 text-sm leading-6 text-ink/70">
+                <ul className="mt-2 space-y-1 text-sm leading-6 text-ink/75">
                   <li>{paidText("自动发卡", ops.paid.autoCard, ops.paid.autoCardOldestSeconds, true)}</li>
                   <li>{paidText("预售凭证", ops.paid.presale, ops.paid.presaleOldestSeconds, true)}</li>
                   <li>{paidText("充值未入账", ops.paid.recharge, ops.paid.rechargeOldestSeconds, true)}</li>
@@ -249,7 +253,7 @@ export default function Dashboard() {
                 </ul>
               )}
               {(ops.paid.autoCard + ops.paid.presale + ops.paid.recharge + ops.paid.manual) > 0 && (
-                <Link to="/admin/orders?status=PAID" className="mt-2 inline-block text-xs font-bold text-primary hover:underline">查看未发货订单</Link>
+                <Link to="/admin/orders?status=PAID" className="mt-2 inline-block text-xs font-medium text-primary hover:underline">查看未发货订单</Link>
               )}
             </div>
 
@@ -260,7 +264,7 @@ export default function Dashboard() {
                   {levelLabel(ops.notifications.some((row) => row.level === "DEGRADED") ? "DEGRADED" : "UP")}
                 </span>
               </div>
-              <ul className="mt-2 space-y-1 text-sm leading-6 text-ink/70">
+              <ul className="mt-2 space-y-1 text-sm leading-6 text-ink/75">
                 {ops.notifications.map((row) => <li key={row.channel}>{notifyText(row)}</li>)}
               </ul>
             </div>
@@ -270,31 +274,33 @@ export default function Dashboard() {
                 <h3 className="text-sm font-semibold">数据库连接</h3>
                 <span className={levelChip(ops.pool.level)}>{levelLabel(ops.pool.level)}</span>
               </div>
-              <p className="mt-2 text-sm leading-6 text-ink/70">{poolText(ops.pool)}</p>
+              <p className="mt-2 text-sm leading-6 text-ink/75">{poolText(ops.pool)}</p>
             </div>
           </div>
         )}
-        <p className="mt-4 break-all text-xs leading-5 text-ink/45">
+        <p className="mt-4 break-all text-xs leading-5 text-[var(--gpt-muted)]">
           Prometheus 只在本机抓取 http://127.0.0.1:8080/actuator/prometheus 。公网入口不转发 /actuator。
         </p>
+        </div>
       </section>
 
       {/* 近 7 天商品成交额:单系列柱图(悬停显示数值,文字用墨色) */}
-      <div className="card mt-5 p-6">
-        <div className="mb-5 flex items-baseline justify-between">
-          <h2 className="font-bold">近 7 天商品成交额</h2>
-          <span className="text-sm text-ink/45">合计 <b className="text-ink">{stats ? money(stats.weekRevenue) : "—"}</b></span>
+      <div className="admin-panel">
+        <div className="admin-panel-title">
+          <h2>近 7 天商品成交额</h2>
+          <span className="text-xs text-[var(--gpt-muted)]">合计 <b className="font-semibold text-ink">{stats ? money(stats.weekRevenue) : "—"}</b></span>
         </div>
-        <p className="mb-4 text-xs leading-relaxed text-ink/50">按订单付款日期统计，包含余额抵扣，扣除已退余额；不含充值、未付款及已退款订单。每分钟自动更新。</p>
+        <div className="p-5 sm:p-6">
+        <p className="mb-4 text-xs leading-relaxed text-[var(--gpt-muted)]">按订单付款日期统计，包含余额抵扣，扣除已退余额；不含充值、未付款及已退款订单。每分钟自动更新。</p>
         <div className="flex h-44 items-end gap-2 sm:gap-3" role="img" aria-label="近七天商品成交额柱状图，具体金额见下表">
           {days.map((d) => {
             const h = (Number(d.amount) / max) * 100;
             return (
               <div key={d.date} className="group relative flex h-full min-w-0 flex-1 flex-col items-center">
-                <span className="pointer-events-none absolute -top-8 hidden whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-[11px] font-semibold text-base group-hover:block">
+                <span className="pointer-events-none absolute -top-8 hidden whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-[11px] font-medium text-base group-hover:block">
                   {d.date.slice(5)} · {money(d.amount)}
                 </span>
-                <div className="flex min-h-0 w-full flex-1 items-end justify-center border-b border-ink/10">
+                <div className="flex min-h-0 w-full flex-1 items-end justify-center border-b border-[var(--gpt-border)]">
                 <div
                   data-revenue-bar={d.date}
                   title={`${d.date} · ${money(d.amount)}`}
@@ -302,27 +308,28 @@ export default function Dashboard() {
                   style={{ height: `${h}%`, minHeight: Number(d.amount) > 0 ? 2 : 0 }}
                 />
                 </div>
-                <span className="mt-2 shrink-0 text-[10px] text-ink/40">{d.date.slice(5)}</span>
+                <span className="mt-2 shrink-0 text-[10px] text-[var(--gpt-muted)]">{d.date.slice(5)}</span>
               </div>
             );
           })}
-          {days.length === 0 && <p className="text-sm text-ink/40">{loading ? "加载中…" : "暂无数据"}</p>}
+          {days.length === 0 && <p className="text-sm text-[var(--gpt-muted)]">{loading ? "加载中…" : "暂无数据"}</p>}
         </div>
-        {stats && <details className="mt-4 text-xs text-ink/60"><summary className="cursor-pointer">查看每日金额</summary>
+        {stats && <details className="mt-4 text-xs text-[var(--gpt-muted)]"><summary className="cursor-pointer">查看每日金额</summary>
           <table className="mt-2 w-full text-left"><thead><tr><th className="py-2">日期</th><th>商品成交额</th></tr></thead>
             <tbody>{days.map(d => <tr key={d.date}><td className="py-1">{d.date}</td><td>{money(d.amount)}</td></tr>)}</tbody>
           </table>
         </details>}
+        </div>
       </div>
 
-      <div className={`card mt-5 p-5 text-sm leading-relaxed ${
-        (stats?.paidOrders ?? 0) + (stats?.latePaidOrders ?? 0) > 0 ? "border-amber-500/25 bg-amber-500/[0.06]" : "text-ink/55"
+      <div className={`admin-panel p-5 text-sm leading-relaxed ${
+        (stats?.paidOrders ?? 0) + (stats?.latePaidOrders ?? 0) > 0 ? "!border-amber-500/30 !bg-amber-500/[0.06]" : "text-[var(--gpt-muted)]"
       }`}>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
           <p className="font-semibold text-ink">运营提示</p>
-          <Link to={opsOrderLink} className="text-xs font-bold text-primary hover:underline">查看订单</Link>
+          <Link to={opsOrderLink} className="text-xs font-medium text-primary hover:underline">查看订单</Link>
         </div>
-        <p>
+        <p className="text-xs leading-6">
           已支付待发货/待人工处理 <b className="text-ink">{stats?.paidOrders ?? 0}</b> 单；
           迟到到账但订单已超时/关闭 <b className="text-ink">{stats?.latePaidOrders ?? 0}</b> 单。
           前者通常需要补卡密或人工发货，后者需要先核实渠道流水后用订单管理的人工补单恢复资源占用。订单总量 {stats?.totalOrders ?? 0}。

@@ -58,10 +58,11 @@ const CAPTCHA_SCOPES = [
 ] as const;
 
 const THEME_NOTES: Record<ThemeName, { tone: string; note: string }> = {
-  mint: { tone: "安静、清爽、适合默认发卡站", note: "奶油底色 + 松绿色控件" },
-  ocean: { tone: "冷静、可信、适合支付感更强的站点", note: "浅灰蓝底 + 深海蓝主色" },
-  violet: { tone: "精致、内容感强、适合文章和会员站", note: "紫罗兰主色 + 柔和浅底" },
-  cow: { tone: "活泼、圆润、有奶牛牧场和小动物氛围", note: "蓝天 + 草地绿 + 奶牛斑点" },
+  gptibo: { tone: "GPTibo 极简风格：苹果浅色底面 + Grok 纯黑暗色", note: "极浅灰底 + 纯白卡片 + 苹果蓝主按钮（默认）" },
+  mint: { tone: "安静、清爽、适合默认发卡站", note: "极简中性底面 + 松林绿主色" },
+  ocean: { tone: "冷静、可信、适合支付感更强的站点", note: "极简中性底面 + 深海蓝主色" },
+  violet: { tone: "精致、内容感强、适合文章和会员站", note: "极简中性底面 + 紫罗兰主色" },
+  cow: { tone: "明快、清澈、高对比度极简控件", note: "极简中性底面 + 晴空蓝主色" },
 };
 
 const GOODS_SUBJECT = "【{{siteName}}】订单 {{orderNo}} 已发货";
@@ -236,7 +237,7 @@ export default function SettingsAdmin() {
     }
   }
 
-  const theme = cfg["site.theme"] ?? "mint";
+  const theme = cfg["site.theme"] ?? "gptibo";
   const mode = cfg["site.mode"] ?? "auto";
 
   return (
@@ -504,40 +505,33 @@ export default function SettingsAdmin() {
 
       <div className="card mb-5 p-6">
         <h2 className="mb-1 flex items-center gap-2 font-bold"><Palette size={16} /> 全站主题</h2>
-        <p className="mb-4 text-xs leading-relaxed text-ink/45">
-          买家商城与管理后台共用;买家仍可自行切换明暗。选择后需要点击保存才会生效,避免误触预览导致前台主题变化。CoW 奶牛牧场会启用小动物、草坡和奶牛斑点装饰。
+        <p className="mb-4 text-xs leading-relaxed text-[var(--gpt-muted)]">
+          买家商城与管理后台共用 GPTibo 极简底面；买家仍可自行切换浅色/深色外观。选择后点击保存生效。
         </p>
         <div className="mb-5 grid gap-3 sm:grid-cols-2">
           {THEMES.map((t) => (
             <button key={t.value}
               onClick={() => set("site.theme", t.value)}
-              className={`group overflow-hidden rounded-3xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${
-                theme === t.value ? "border-primary/40 bg-accent-soft" : "border-ink/[0.08] bg-surface hover:border-primary/25"
+              className={`group overflow-hidden rounded-2xl border p-4 text-left transition ${
+                theme === t.value ? "border-primary bg-accent-soft" : "border-[var(--gpt-border)] bg-surface hover:border-[var(--gpt-input)]"
               }`}>
-              <div className="mb-4 flex h-16 items-end overflow-hidden rounded-2xl border border-ink/[0.06] bg-base px-3 pb-2">
-                <span className="mr-2 h-8 w-8 rounded-full shadow-sm" style={{ background: t.swatch }} />
-                <span className="h-5 w-14 rounded-full bg-accent-soft" />
-                <span className="ml-auto h-9 w-9 rounded-full bg-surface shadow-sm" />
-                {t.value === "cow" && (
-                  <span className="relative ml-2 h-9 w-14 rounded-[45%] border-2 border-ink bg-surface shadow-sm">
-                    <span className="absolute left-2 top-2 h-2.5 w-3 rounded-full bg-ink" />
-                    <span className="absolute bottom-2 right-3 h-2 w-2.5 rounded-full bg-ink" />
-                    <span className="absolute -right-3 top-1.5 h-5 w-4 rounded-r-full border-2 border-l-0 border-ink bg-surface" />
-                  </span>
-                )}
+              <div className="mb-3.5 flex h-12 items-center gap-2.5 rounded-xl border border-[var(--gpt-border)] bg-base px-3">
+                <span className="h-6 w-6 rounded-lg shadow-sm" style={{ background: t.swatch }} />
+                <span className="h-3 w-16 rounded-full bg-[var(--gpt-secondary)]" />
+                <span className="ml-auto h-6 w-14 rounded-full bg-surface border border-[var(--gpt-border)]" />
               </div>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-extrabold">{t.label}</p>
-                  <p className="mt-1 text-[11px] leading-relaxed text-ink/45">{THEME_NOTES[t.value].tone}</p>
+                  <p className="text-sm font-semibold">{t.label}</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-[var(--gpt-muted)]">{THEME_NOTES[t.value].tone}</p>
                 </div>
-                <span className={`mt-0.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                  theme === t.value ? "bg-primary text-primary-contrast" : "bg-ink/[0.05] text-ink/35"
+                <span className={`mt-0.5 rounded-full px-2.5 py-0.5 text-[10px] font-medium ${
+                  theme === t.value ? "bg-primary text-primary-contrast" : "bg-[var(--gpt-secondary)] text-[var(--gpt-muted)]"
                 }`}>
                   {theme === t.value ? "待保存" : "选择"}
                 </span>
               </div>
-              <p className="mt-3 rounded-2xl bg-surface/70 px-3 py-2 text-[11px] text-ink/45">
+              <p className="mt-3 rounded-lg bg-[var(--gpt-tint)] px-3 py-2 text-[11px] text-[var(--gpt-muted)]">
                 {THEME_NOTES[t.value].note}
               </p>
             </button>

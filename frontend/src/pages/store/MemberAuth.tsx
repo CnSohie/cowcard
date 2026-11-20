@@ -71,25 +71,25 @@ export default function MemberAuth() {
   }
 
   return (
-    <div className="mx-auto max-w-md animate-fade-up py-6 sm:py-10">
+    <div className="mx-auto max-w-md reveal-in py-6 sm:py-10">
       <div className="card p-7 sm:p-9">
         {/* 品牌 */}
         <div className="mb-7 flex flex-col items-center gap-3 text-center">
-          <SiteMark alt="" className="h-12 w-12 rounded-2xl object-cover shadow-lg" />
+          <SiteMark alt="" className="h-11 w-11 rounded-xl object-cover" />
           <div>
-            <h1 className="text-xl font-extrabold tracking-tight">{mode === "login" ? t.welcome : t.createAccount}</h1>
-            <p className="mt-1 text-xs text-ink/45">
+            <h1 className="text-2xl font-semibold tracking-tight">{mode === "login" ? t.welcome : t.createAccount}</h1>
+            <p className="mt-1.5 text-xs text-[var(--gpt-muted)]">
               {mode === "login" ? t.loginIntro : t.registerIntro}
             </p>
           </div>
         </div>
 
         {/* Tab 切换 */}
-        <div className="mb-6 grid grid-cols-2 gap-1 rounded-full bg-ink/[0.05] p-1">
+        <div className="mb-6 grid grid-cols-2 gap-1 rounded-[10px] bg-[var(--gpt-secondary)] p-1">
           {(["login", "register"] as const).map((m) => (
             <button key={m} onClick={() => { setMode(m); setError(""); }}
-              className={`rounded-full py-2 text-sm font-semibold transition ${
-                mode === m ? "bg-surface text-ink shadow" : "text-ink/45 hover:text-ink"
+              className={`rounded-[7px] py-2 text-xs font-medium transition ${
+                mode === m ? "bg-surface text-ink shadow-sm" : "text-[var(--gpt-muted)] hover:text-ink"
               }`}>
               {m === "login" ? t.login : t.register}
             </button>

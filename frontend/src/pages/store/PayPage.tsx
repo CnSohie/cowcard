@@ -572,50 +572,50 @@ export default function PayPage() {
   const actualPay = orderAmount + channelFee;
 
   return (
-    <div className="mx-auto max-w-2xl animate-fade-up">
-      <button onClick={() => nav(-1)} className="mb-6 flex items-center gap-1.5 text-sm text-ink/50 hover:text-ink">
-        <ArrowLeft size={15} /> {ui.common.back}
+    <div className="mx-auto max-w-2xl reveal-in">
+      <button onClick={() => nav(-1)} className="mb-5 flex items-center gap-1.5 text-xs text-[var(--gpt-muted)] hover:text-ink">
+        <ArrowLeft size={14} /> {ui.common.back}
       </button>
-      <div className="mb-5 flex items-center gap-3 text-xs text-ink/50" aria-label={lang === "zh" ? "支付进度" : "Payment progress"}>
-        <span className="flex items-center gap-1.5"><CheckCircle2 size={14} />{lang === "zh" ? "订单已创建" : "Order created"}</span>
-        <span className="h-px flex-1 bg-ink/10" />
-        <span className="font-semibold text-primary">{lang === "zh" ? "2 · 支付" : "2 · Payment"}</span>
-        <span className="h-px flex-1 bg-ink/10" />
+      <div className="mb-5 flex items-center gap-3 text-xs text-[var(--gpt-muted)]" aria-label={lang === "zh" ? "支付进度" : "Payment progress"}>
+        <span className="flex items-center gap-1.5 text-ink"><CheckCircle2 size={14} className="text-[var(--gpt-success)]" />{lang === "zh" ? "订单已创建" : "Order created"}</span>
+        <span className="h-px flex-1 bg-[var(--gpt-border)]" />
+        <span className="font-medium text-ink">{lang === "zh" ? "2 · 支付" : "2 · Payment"}</span>
+        <span className="h-px flex-1 bg-[var(--gpt-border)]" />
         <span>{lang === "zh" ? "3 · 完成" : "3 · Complete"}</span>
       </div>
-      <div className="card p-5 sm:p-8">
+      <div className="card p-6 sm:p-8">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-extrabold tracking-tight">{t.cashier}</h1>
-          <button onClick={() => copyText(orderNo, "order")} className="inline-flex items-center gap-2 text-xs text-ink/55" aria-label={lang === "zh" ? "复制订单号" : "Copy order number"}><span className="font-mono">{orderNo}</span>{copied === "order" ? <CheckCircle2 size={13} /> : <Copy size={13} />}</button>
+          <h1 className="text-xl font-semibold tracking-tight">{t.cashier}</h1>
+          <button onClick={() => copyText(orderNo, "order")} className="inline-flex items-center gap-2 rounded-lg border border-[var(--gpt-border)] bg-[var(--gpt-tint)] px-2.5 py-1 text-xs text-[var(--gpt-muted)] transition hover:text-ink" aria-label={lang === "zh" ? "复制订单号" : "Copy order number"}><span className="font-mono">{orderNo}</span>{copied === "order" ? <CheckCircle2 size={13} className="text-[var(--gpt-success)]" /> : <Copy size={13} />}</button>
         </div>
 
         {summary ? (<>
         {/* 订单摘要 + 剩余时间倒计时 */}
         {summary && (
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-base px-5 py-5">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--gpt-border)] bg-[var(--gpt-tint)] px-5 py-5">
             <div className="min-w-0">
-              <p className="truncate text-xs text-ink/50">{summary.productName}</p>
-              <p className="text-4xl font-semibold tracking-tight">{money(actualPay.toFixed(2))}</p>
+              <p className="truncate text-xs text-[var(--gpt-muted)]">{summary.productName}</p>
+              <p className="mt-1 text-4xl font-semibold tabular-nums tracking-tight">{money(actualPay.toFixed(2))}</p>
               {selectedChannel && channelFee > 0 && (
-                <div className="mt-1 space-y-0.5 text-[11px] text-ink/45">
+                <div className="mt-1.5 space-y-0.5 text-[11px] text-[var(--gpt-muted)]">
                   <p>{t.orderAmount} {money(summary.amount)} · {t.channelFee} {money(channelFee.toFixed(2))}</p>
                   <p>{t.feeNonRefundable}</p>
                 </div>
               )}
               {Number(summary.walletPaidAmount) > 0 && (
-                <p className="mt-1 text-[11px] leading-relaxed text-ink/45">
+                <p className="mt-1 text-[11px] leading-relaxed text-[var(--gpt-muted)]">
                   {t.walletDeducted.replace("{paid}", money(summary.walletPaidAmount)).replace("{amount}", money(summary.amount))}
                 </p>
               )}
             </div>
             {remainMs != null && (
-              <div className={`flex items-center gap-2 rounded-full px-4 py-2.5 font-mono text-[1rem] font-bold tabular-nums transition-colors ${
+              <div className={`flex items-center gap-2 rounded-full border px-4 py-2 font-mono text-sm font-semibold tabular-nums transition-colors ${
                 remainMs <= 180_000
-                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                  : "bg-surface text-ink/75"
+                  ? "border-amber-500/30 bg-[var(--gpt-warning-bg)] text-[var(--gpt-warning)]"
+                  : "border-[var(--gpt-border)] bg-surface text-ink"
               }`}
                 title={t.remainTitle}>
-                <Timer size={16} className={remainMs <= 180_000 ? "animate-pulse" : ""} />
+                <Timer size={15} className={remainMs <= 180_000 ? "animate-pulse" : ""} />
                 {fmtRemain(remainMs)}
               </div>
             )}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  Activity, BadgePercent, CreditCard, Gift, HandCoins, KeyRound, LayoutDashboard, LogOut, Menu, Moon,
+  Activity, ArrowUpRight, BadgePercent, CreditCard, Gift, HandCoins, KeyRound, LayoutDashboard, LogOut, Menu, Moon,
   MessageSquare, Newspaper, Package, ScrollText, Settings, ShieldAlert, ShieldCheck, ShoppingCart, Sun, Users, UsersRound, X,
 } from "lucide-react";
 import { get, isLoggedIn, setTokens } from "../../lib/api";
@@ -41,6 +41,7 @@ const LEGACY_PERMS: Record<string, string[]> = {
 
 export default function AdminLayout() {
   const nav = useNavigate();
+  const location = useLocation();
   const [drawer, setDrawer] = useState(false);
   const [dark, setDark] = useState(isDark());
   const [supportPending, setSupportPending] = useState(0);
@@ -78,73 +79,108 @@ export default function AdminLayout() {
     return (LEGACY_PERMS[perm] ?? []).some((p) => authorities.includes(p));
   }
 
+  const currentNav = NAV.find((n) => (n.end ? location.pathname === n.to : location.pathname.startsWith(n.to))) ?? NAV[0];
+
   const sidebar = (
     <div className="flex h-full flex-col">
-      <div className="flex h-16 items-center justify-between border-b border-ink/[0.06] px-5">
+      <div className="flex h-[60px] items-center justify-between border-b border-[var(--gpt-border)] px-5">
         <div className="flex items-center gap-2.5">
-          <SiteMark alt="" className="h-8 w-8 rounded-xl object-cover" />
-          <span className="font-extrabold tracking-tight">Ka 后台</span>
+          <SiteMark alt="" className="h-7 w-7 rounded-lg object-cover" />
+          <span className="text-[16px] font-semibold tracking-tight text-ink">管理工作台</span>
         </div>
-        <button className="md:hidden" onClick={() => setDrawer(false)}><X size={18} className="text-ink/50" /></button>
+        <button className="md:hidden" onClick={() => setDrawer(false)} aria-label="关闭导航">
+          <X size={18} className="text-[var(--gpt-muted)]" />
+        </button>
       </div>
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {NAV.filter((n) => canAccess(n.perm)).map((n) => (
-          <NavLink key={n.to} to={n.to} end={n.end} onClick={() => setDrawer(false)}
-            className={({ isActive }) =>
-              `flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm transition ${
-                isActive ? "bg-primary font-semibold text-primary-contrast" : "text-ink/60 hover:bg-ink/[0.05] hover:text-ink"
-              }`}>
-            <n.icon size={16} />
-            <span className="min-w-0 flex-1 truncate">{n.label}</span>
-            {n.to === "/admin/support-tickets" && supportPending > 0 && (
-              <span className="ml-auto rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-extrabold text-white">
-                {supportPending > 99 ? "99+" : supportPending}
-              </span>
-            )}
-          </NavLink>
-        ))}
-      </nav>
-      <div className="border-t border-ink/[0.06] p-3">
-        <div className="mb-1 flex items-center justify-between px-3">
-          <span className="text-xs text-ink/40">{displayName}</span>
-          <button onClick={() => setDark(toggleMode())}
-            className="grid h-8 w-8 place-items-center rounded-full text-ink/50 transition hover:bg-ink/[0.06] hover:text-ink"
-            title="切换明暗">
+      <div className="flex-1 overflow-y-auto px-3 py-4">
+        <p className="mb-2.5 px-3 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--gpt-muted)]">Workspace</p>
+        <nav className="grid gap-1">
+          {NAV.filter((n) => canAccess(n.perm)).map((n) => (
+            <NavLink
+              key={n.to}
+              to={n.to}
+              end={n.end}
+              onClick={() => setDrawer(false)}
+              className={({ isActive }) => `admin-nav-link${isActive ? " is-active" : ""}`}
+            >
+              <n.icon size={15} strokeWidth={1.7} />
+              <span className="min-w-0 flex-1 truncate">{n.label}</span>
+              {n.to === "/admin/support-tickets" && supportPending > 0 && (
+                <span className="ml-auto rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  {supportPending > 99 ? "99+" : supportPending}
+                </span>
+              )}
+            </NavLink>
+          ))}
+        </nav>
+      </div>
+      <div className="border-t border-[var(--gpt-border)] p-3">
+        <div className="mb-1.5 flex items-center justify-between px-3 py-1">
+          <span className="truncate text-xs text-[var(--gpt-muted)]">{displayName || "管理员"}</span>
+          <button
+            onClick={() => setDark(toggleMode())}
+            className="grid h-7 w-7 place-items-center rounded-lg text-[var(--gpt-muted)] transition hover:bg-[var(--gpt-secondary)] hover:text-ink"
+            title="切换明暗"
+          >
             {dark ? <Sun size={14} /> : <Moon size={14} />}
           </button>
         </div>
-        <button onClick={logout} className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm text-ink/60 transition hover:bg-ink/[0.05] hover:text-red-500">
-          <LogOut size={15} /> 退出登录
+        <button onClick={logout} className="admin-nav-link w-full hover:!text-red-500">
+          <LogOut size={15} strokeWidth={1.7} /> 退出登录
         </button>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen">
+    <div className="admin-shell">
       {/* 桌面侧栏 */}
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 border-r border-ink/[0.06] bg-surface md:block">
+      <aside className="admin-sidebar hidden md:flex">
         {sidebar}
       </aside>
       {/* 移动端抽屉 */}
       {drawer && (
         <div className="fixed inset-0 z-50 md:hidden" onClick={() => setDrawer(false)}>
-          <div className="absolute inset-0 bg-ink/30 backdrop-blur-sm" />
-          <aside className="absolute inset-y-0 left-0 w-64 bg-surface shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute inset-0 bg-black/35 backdrop-blur-sm" />
+          <aside className="absolute inset-y-0 left-0 w-64 border-r border-[var(--gpt-border)] bg-surface shadow-2xl" onClick={(e) => e.stopPropagation()}>
             {sidebar}
           </aside>
         </div>
       )}
-      {/* 移动端顶栏 */}
-      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-ink/[0.06] bg-base/80 px-4 backdrop-blur-xl md:hidden">
-        <button onClick={() => setDrawer(true)} className="grid h-9 w-9 place-items-center rounded-full border border-ink/10">
-          <Menu size={16} />
-        </button>
-        <span className="font-bold">Ka 后台</span>
-      </header>
-      <main className="p-5 md:ml-60 md:p-8">
-        <Outlet />
-      </main>
+      <div className="admin-workspace">
+        <header className="admin-topbar">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setDrawer(true)}
+              className="grid h-8 w-8 place-items-center rounded-lg border border-[var(--gpt-border)] text-ink md:hidden"
+              aria-label="打开菜单"
+            >
+              <Menu size={16} />
+            </button>
+            <span className="font-medium text-ink">{currentNav.label}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <a
+              href="/"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-ink transition hover:bg-[var(--gpt-secondary)]"
+            >
+              打开商店 <ArrowUpRight size={13} />
+            </a>
+            <button
+              onClick={() => setDark(toggleMode())}
+              className="grid h-8 w-8 place-items-center rounded-lg text-[var(--gpt-muted)] transition hover:bg-[var(--gpt-secondary)] hover:text-ink"
+              title="切换明暗"
+            >
+              {dark ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+          </div>
+        </header>
+        <main className="admin-main">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
